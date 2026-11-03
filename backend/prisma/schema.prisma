@@ -1,0 +1,289 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CLIENT
+  STAFF
+  ADMIN
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  NEEDS_REVIEW
+  APPROVED
+  EXPORTED
+  REJECTED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  passwordHash     String            @map("password_hash")
+  name             String
+  role             Role              @default(CLIENT)
+  isActive         Boolean           @default(true) @map("is_active")
+  twoFactorSecret  String?           @map("two_factor_secret")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  profile          ClientProfile?
+  staffAssignments StaffAssignment[] @relation("StaffUsers")
+  clientAssignments StaffAssignment[] @relation("ClientUsers")
+  documents        Document[]        @relation("UploadedDocs")
+  assignedTasks    Task[]            @relation("ClientTasks")
+  createdTasks     Task[]            @relation("StaffTasks")
+  reviews          Review[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  exportHistories  ExportHistory[]
+
+  @@map("users")
+}
+
+model ClientProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  companyName String?  @map("company_name")
+  taxNumber   String?  @map("tax_number")
+  vatId       String?  @map("vat_id")
+  address     String?
+  phone       String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("client_profiles")
+}
+
+model StaffAssignment {
+  id           String   @id @default(uuid())
+  staffUserId  String   @map("staff_user_id")
+  clientUserId String   @map("client_user_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+
+  staffUser    User     @relation("StaffUsers", fields: [staffUserId], references: [id], onDelete: Cascade)
+  clientUser   User     @relation("ClientUsers", fields: [clientUserId], references: [id], onDelete: Cascade)
+
+  @@unique([staffUserId, clientUserId])
+  @@map("staff_assignments")
+}
+
+model Document {
+  id               String          @id @default(uuid())
+  clientId         String          @map("client_id")
+  originalFilename String          @map("original_filename")
+  storedPath       String          @map("stored_path")
+  mimeType         String          @map("mime_type")
+  size             Int             @default(0)
+  fileHash         String?         @map("file_hash")
+  folder           String          @default("General")
+  status           DocumentStatus  @default(NEEDS_REVIEW)
+  uploadedAt       DateTime        @default(now()) @map("uploaded_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  user             User            @relation("UploadedDocs", fields: [clientId], references: [id], onDelete: Cascade)
+  extractedData    ExtractedData?
+  validationIssues ValidationIssue[]
+  reviews          Review[]
+  bankStatement    BankStatement?
+  correspondence   Correspondence?
+
+  @@map("documents")
+}
+
+model ExtractedData {
+  id              String   @id @default(uuid())
+  documentId      String   @unique @map("document_id")
+  documentType    String   @default("INVOICE") @map("document_type")
+  supplierName    String?  @map("supplier_name")
+  invoiceNumber   String?  @map("invoice_number")
+  invoiceDate     String?  @map("invoice_date")
+  netAmount       Float?   @map("net_amount")
+  vatRate         Float?   @map("vat_rate")
+  vatAmount       Float?   @map("vat_amount")
+  totalAmount     Float?   @map("total_amount")
+  currency        String   @default("EUR")
+  skr03Code       String?  @map("skr03_code")
+  skr03Desc       String?  @map("skr03_desc")
+  confidenceScore Float?   @map("confidence_score")
+  rawJson         String?  @map("raw_json")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("extracted_data")
+}
+
+model ValidationIssue {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  field       String
+  message     String
+  severity    String   @default("WARNING") // WARNING, ERROR
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("validation_issues")
+}
+
+model Review {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  staffId     String   @map("staff_id")
+  action      String   // APPROVED, CORRECTED, REJECTED
+  notes       String?
+  reviewedAt  DateTime @default(now()) @map("reviewed_at")
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  staff       User     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
+}
+
+model BankStatement {
+  id              String            @id @default(uuid())
+  documentId      String            @unique @map("document_id")
+  accountNumber   String?           @map("account_number")
+  statementPeriod String?           @map("statement_period")
+  openingBalance  Float?            @map("opening_balance")
+  closingBalance  Float?            @map("closing_balance")
+
+  document        Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  transactions    BankTransaction[]
+
+  @@map("bank_statements")
+}
+
+model BankTransaction {
+  id             String        @id @default(uuid())
+  statementId    String        @map("statement_id")
+  date           String
+  description    String
+  debit          Float?
+  credit         Float?
+  runningBalance Float?        @map("running_balance")
+
+  statement      BankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+
+  @@map("bank_transactions")
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  clientId    String     @map("client_id")
+  createdBy   String     @map("created_by")
+  title       String
+  description String?
+  dueDate     DateTime?  @map("due_date")
+  isRecurring Boolean    @default(false) @map("is_recurring")
+  status      TaskStatus @default(PENDING)
+  completedAt DateTime?  @map("completed_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  client      User       @relation("ClientTasks", fields: [clientId], references: [id], onDelete: Cascade)
+  creator     User       @relation("StaffTasks", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@map("tasks")
+}
+
+model Correspondence {
+  id          String    @id @default(uuid())
+  documentId  String    @unique @map("document_id")
+  letterType  String?   @map("letter_type") // e.g. Finanzamt, Health Insurance
+  sender      String?
+  deadline    DateTime?
+  aiSummary   String?   @map("ai_summary")
+
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("correspondence")
+}
+
+model PayrollSubmission {
+  id           String    @id @default(uuid())
+  clientId     String    @map("client_id")
+  employeeName String    @map("employee_name")
+  period       String    // e.g. "2026-10"
+  dataJson     String?   @map("data_json")
+  status       String    @default("PENDING") // PENDING, APPROVED
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  payslips     Payslip[]
+
+  @@map("payroll_submissions")
+}
+
+model Payslip {
+  id               String            @id @default(uuid())
+  submissionId     String?           @map("submission_id")
+  employeeName     String            @map("employee_name")
+  filePath         String            @map("file_path")
+  visibleToClient  Boolean           @default(false) @map("visible_to_client")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  submission       PayrollSubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  @@map("payslips")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  ipAddress    String?  @map("ip_address")
+  detailsJson  String?  @map("details_json")
+  timestamp    DateTime @default(now())
+
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String   // TASK_DUE, DOC_UPLOADED, DOC_APPROVED, ALERT
+  message   String
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model ExportHistory {
+  id            String   @id @default(uuid())
+  staffId       String   @map("staff_id")
+  exportType    String   @default("AGENDA_SKR03") @map("export_type")
+  filePath      String   @map("file_path")
+  documentCount Int      @default(0) @map("document_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  staff         User     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("export_history")
+}
+
+model FolderTemplate {
+  id            String   @id @default(uuid())
+  name          String
+  structureJson String   @map("structure_json")
+
+  @@map("folder_templates")
+}

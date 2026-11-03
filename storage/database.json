@@ -1,0 +1,109 @@
+[
+  {
+    "id": "doc_bank_5a1c317d-f5b1-4c12-b482-68101070439f",
+    "original_filename": "Kontoauszug_DeutscheBank_Oktober2026.pdf",
+    "stored_filename": "doc_bank_5a1c317d-f5b1-4c12-b482-68101070439f.pdf",
+    "file_path": "D:\\web\\UAE\\fintex\\storage\\vault\\doc_bank_5a1c317d-f5b1-4c12-b482-68101070439f.pdf",
+    "mime_type": "application/pdf",
+    "size_bytes": 142800,
+    "uploaded_at": "2026-10-28T10:33:08.807Z",
+    "status": "APPROVED"
+  },
+  {
+    "id": "c30a09c9-441c-4c69-a3d7-b455455b6cad",
+    "original_filename": "web_logo.png",
+    "stored_filename": "doc_f20fc677-0d8b-4fdd-a92f-4c78e5aefe1e.png",
+    "file_path": "D:\\web\\UAE\\fintex\\storage\\vault\\doc_f20fc677-0d8b-4fdd-a92f-4c78e5aefe1e.png",
+    "mime_type": "image/png",
+    "size_bytes": 106895,
+    "uploaded_at": "2026-10-28T10:21:12.343Z",
+    "status": "NEEDS_ATTENTION",
+    "extracted_data": {
+      "document_type": "OTHER",
+      "supplier_name": "OMNI STAR General Trading LLC",
+      "supplier_tax_id": "",
+      "invoice_number": "N/A",
+      "invoice_date": "2026-10-28",
+      "currency": "EUR",
+      "net_amount": 0,
+      "vat_rate_percent": 19,
+      "vat_amount": 0,
+      "total_amount": 0,
+      "confidence_score": 0.2,
+      "skr03_account_code": "4980"
+    },
+    "validation_issues": [
+      {
+        "field": "invoice_number",
+        "message": "Rechnungsnummer konnte nicht sicher erkannt werden.",
+        "severity": "WARNING"
+      },
+      {
+        "field": "total_amount",
+        "message": "Rechnungsbetrag muss größer als 0 sein.",
+        "severity": "ERROR"
+      }
+    ]
+  },
+  {
+    "id": "5dd2aea6-933a-4d2b-84c0-b687c5171200",
+    "original_filename": "web_logo.png",
+    "stored_filename": "doc_2989df63-4043-4d17-b5c8-32dd30ed5671.png",
+    "file_path": "D:\\web\\UAE\\fintex\\storage\\vault\\doc_2989df63-4043-4d17-b5c8-32dd30ed5671.png",
+    "mime_type": "image/png",
+    "size_bytes": 106895,
+    "uploaded_at": "2026-10-28T10:20:46.135Z",
+    "status": "NEEDS_ATTENTION",
+    "extracted_data": {
+      "document_type": "OTHER",
+      "supplier_name": "OMNI STAR General Trading LLC",
+      "supplier_tax_id": "",
+      "invoice_number": "N/A",
+      "invoice_date": "2026-10-28",
+      "currency": "EUR",
+      "net_amount": 0,
+      "vat_rate_percent": 19,
+      "vat_amount": 0,
+      "total_amount": 0,
+      "confidence_score": 0.1,
+      "skr03_account_code": "4930"
+    },
+    "validation_issues": [
+      {
+        "field": "invoice_number",
+        "message": "Rechnungsnummer konnte nicht sicher erkannt werden.",
+        "severity": "WARNING"
+      },
+      {
+        "field": "total_amount",
+        "message": "Rechnungsbetrag muss größer als 0 sein.",
+        "severity": "ERROR"
+      }
+    ]
+  },
+  {
+    "id": "f068a02b-e9f8-4ba3-baf3-04ec6ec1a467",
+    "original_filename": "sample_test_invoice.svg",
+    "stored_filename": "doc_85840598-44c8-4f1e-8595-3110bd7d5a61.svg",
+    "file_path": "D:\\web\\UAE\\fintex\\storage\\vault\\doc_85840598-44c8-4f1e-8595-3110bd7d5a61.svg",
+    "mime_type": "image/svg+xml",
+    "size_bytes": 1050,
+    "uploaded_at": "2026-10-28T06:35:24.761Z",
+    "status": "READY_FOR_REVIEW",
+    "extracted_data": {
+      "document_type": "PURCHASE_INVOICE",
+      "supplier_name": "Bürobedarf Müller GmbH",
+      "supplier_tax_id": "DE318492019",
+      "invoice_number": "RE-2026-1042",
+      "invoice_date": "2026-10-15",
+      "currency": "EUR",
+      "net_amount": 1000,
+      "vat_rate_percent": 19,
+      "vat_amount": 190,
+      "total_amount": 1190,
+      "confidence_score": 0.99,
+      "skr03_account_code": "4930"
+    },
+    "validation_issues": []
+  }
+]

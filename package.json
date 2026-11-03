@@ -1,0 +1,9 @@
+{
+  "name": "fintax-solution",
+  "version": "1.0.0",
+  "description": "FinTax - German AI Document Processing & Agenda SKR03 Export Platform",
+  "scripts": {
+    "start:backend": "cd backend && npm run dev",
+    "start:frontend": "cd frontend && npm run dev"
+  }
+}
