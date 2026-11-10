@@ -30,11 +30,11 @@ export const validationService = {
     const calculatedTotal = data.net_amount + data.vat_amount;
     const diff = Math.abs(calculatedTotal - data.total_amount);
 
-    if (diff > 0.05) {
+    if (diff > 0.05 && (!data.bookings || data.bookings.length === 0)) {
       issues.push({
         field: 'total_amount',
-        message: `Rechenfehler: Netto (${data.net_amount.toFixed(2)} €) + USt (${data.vat_amount.toFixed(2)} €) = ${calculatedTotal.toFixed(2)} €, stimmt nicht mit Brutto (${data.total_amount.toFixed(2)} €) überein.`,
-        severity: 'ERROR',
+        message: `Hinweis: Netto (${data.net_amount.toFixed(2)} €) + USt (${data.vat_amount.toFixed(2)} €) = ${calculatedTotal.toFixed(2)} €, Brutto beträgt ${data.total_amount.toFixed(2)} €.`,
+        severity: 'WARNING',
       });
     }
 

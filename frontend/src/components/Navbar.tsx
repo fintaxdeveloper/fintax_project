@@ -134,61 +134,44 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
             <span>Server: Frankfurt (DSGVO)</span>
           </div>
 
-          {/* ── Language Toggle ── */}
+          {/* ── Language Toggle (EN, DE, FA, AR) ── */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             background: '#f1f5f9',
             padding: '3px',
-            borderRadius: '8px',
+            borderRadius: '9999px',
             border: '1px solid #e2e8f0',
             gap: '2px',
           }}>
-            <button
-              type="button"
-              onClick={() => onLanguageChange('en')}
-              title="Switch to English"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                padding: '0.3rem 0.6rem',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                borderRadius: '6px',
-                border: 'none',
-                cursor: 'pointer',
-                background: lang === 'en' ? '#2563eb' : 'transparent',
-                color: lang === 'en' ? '#ffffff' : '#64748b',
-                boxShadow: lang === 'en' ? '0 1px 3px rgba(37, 99, 235, 0.3)' : 'none',
-                transition: 'all 0.15s',
-              }}
-            >
-              EN
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onLanguageChange('de')}
-              title="Auf Deutsch umschalten"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                padding: '0.3rem 0.6rem',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                borderRadius: '6px',
-                border: 'none',
-                cursor: 'pointer',
-                background: lang === 'de' ? '#2563eb' : 'transparent',
-                color: lang === 'de' ? '#ffffff' : '#64748b',
-                boxShadow: lang === 'de' ? '0 1px 3px rgba(37, 99, 235, 0.3)' : 'none',
-                transition: 'all 0.15s',
-              }}
-            >
-              DE
-            </button>
+            <span style={{ fontSize: '0.8rem', marginLeft: '6px', marginRight: '2px' }}>🌐</span>
+            {(['en', 'de', 'fa', 'ar'] as const).map((l) => {
+              const isActive = lang === l;
+              return (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => onLanguageChange(l)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0.25rem 0.55rem',
+                    fontSize: '0.75rem',
+                    fontWeight: isActive ? 800 : 600,
+                    borderRadius: '9999px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: isActive ? (activePortal === 'CLIENT' ? '#d4a359' : '#2563eb') : 'transparent',
+                    color: isActive ? (activePortal === 'CLIENT' ? '#0b1a30' : '#ffffff') : '#64748b',
+                    boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.15)' : 'none',
+                    transition: 'all 0.15s',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {l}
+                </button>
+              );
+            })}
           </div>
 
           {/* ── User Profile / Login ── */}

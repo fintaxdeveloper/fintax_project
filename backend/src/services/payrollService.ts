@@ -27,9 +27,12 @@ export interface PayslipRecord {
   created_at: string;
 }
 
+let payrollTablesInitialized = false;
+
 export const payrollService = {
   // Ensure tables exist in PostgreSQL
   async initTables() {
+    if (payrollTablesInitialized) return;
     try {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS payroll_submissions (
@@ -59,6 +62,7 @@ export const payrollService = {
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
       `);
+      payrollTablesInitialized = true;
       console.log('[PostgreSQL] Payroll tables initialized.');
     } catch (err) {
       console.error('[PostgreSQL] Failed to initialize payroll tables:', err);

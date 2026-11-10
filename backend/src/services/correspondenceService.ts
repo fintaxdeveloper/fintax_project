@@ -1,12 +1,15 @@
 import fs from 'fs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { pool } from './pgClient.js';
+import { ollamaClient } from './ollamaClient.js';
+import { pdfExtractor } from './pdfExtractor.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const apiKey = process.env.GEMINI_API_KEY || '';
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+const AI_PROVIDER = (process.env.AI_PROVIDER || 'ollama').toLowerCase();
 
 export interface CorrespondenceRecord {
   id: string;
@@ -24,15 +27,16 @@ export interface CorrespondenceRecord {
 }
 
 export const correspondenceService = {
-  // 1. Process Tax Office / Authority Letter with AI
+  // 1. Process Tax Office / Authority Letter with AI (Ollama Local First -> Gemini Fallback)
   async processLetter(filePath: string, mimeType: string, documentId: string): Promise<CorrespondenceRecord> {
-    if (!genAI || !apiKey) {
-      throw new Error('Google Gemini API Key is missing');
+    const isPdf = pdfExtractor.isPdf(filePath, mimeType);
+    let extractedText = '';
+    if (isPdf) {
+      extractedText = await pdfExtractor.extractText(filePath);
     }
 
     const fileBuffer = fs.readFileSync(filePath);
     const base64Data = fileBuffer.toString('base64');
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `
 You are an expert German tax law assistant and official correspondence (Behördenpost / Finanzamt) auditor.
@@ -44,7 +48,7 @@ Return ONLY a strictly valid JSON object with no markdown wrapping, no backticks
   "tax_number": "Steuernummer or Aktenzeichen if present",
   "letter_type": "Official categorization (e.g. Mahnung Umsatzsteuer, Prüfungsanordnung, Beitragsnachweis)",
   "letter_date": "YYYY-MM-DD",
-  "deadline": "YYYY-MM-DD (Explicit legal deadline or reply due date)",
+  "deadline": "YYYY-MM-DD (Explicit legal deadline or reply due date, or empty string)",
   "urgency": "HIGH if penalty/enforcement/short deadline mentioned, otherwise MEDIUM or LOW",
   "ai_summary": "Concise summary in German or English of what the authority requests",
   "action_proposed": "Concrete actionable next step for the tax accountant or client"
@@ -52,23 +56,72 @@ Return ONLY a strictly valid JSON object with no markdown wrapping, no backticks
 
 Important Rules:
 1. Accurately detect if there is a Frist (deadline date) such as "bis zum DD.MM.YYYY".
-2. If deadline is mentioned, return it in YYYY-MM-DD format.
+2. If deadline is mentioned, return it in strict YYYY-MM-DD format.
 3. Classify urgency accurately.
 `;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType || 'application/pdf',
-        },
-      },
-    ]);
+    let raw: any = null;
 
-    const responseText = result.response.text().trim();
-    const cleanJson = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-    const raw = JSON.parse(cleanJson);
+    // 1. Try Local Ollama on RTX A3000
+    if (AI_PROVIDER === 'ollama') {
+      try {
+        console.log('[Tax Letter] Processing official tax letter with local Ollama on RTX GPU...');
+        if (isPdf) {
+          const textPrompt = `
+${prompt}
+
+Here is the extracted text from the official tax letter PDF:
+---
+${extractedText.substring(0, 4000)}
+---
+`;
+          raw = await ollamaClient.generateJson<any>({
+            prompt: textPrompt,
+          });
+        } else {
+          raw = await ollamaClient.generateJson<any>({
+            prompt,
+            images: [base64Data],
+          });
+        }
+        console.log('[Tax Letter] Successfully extracted tax letter details via local Ollama!');
+      } catch (err: any) {
+        console.warn('[Tax Letter] Local Ollama failed, attempting Gemini fallback:', err.message);
+      }
+    }
+
+    // 2. Fallback to Cloud Gemini if needed
+    if (!raw && genAI) {
+      try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.generateContent([
+          prompt,
+          {
+            inlineData: {
+              data: base64Data,
+              mimeType: mimeType || 'application/pdf',
+            },
+          },
+        ]);
+
+        const responseText = result.response.text().trim();
+        const cleanJson = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+        raw = JSON.parse(cleanJson);
+      } catch (err: any) {
+        console.warn('[Tax Letter] Gemini fallback failed:', err.message);
+      }
+    }
+
+    if (!raw) {
+      // Safe fallback when fully offline
+      raw = {
+        sender: 'Finanzamt / Behörde',
+        letter_type: 'Behördenschreiben',
+        urgency: 'MEDIUM',
+        ai_summary: 'Offizielles Schreiben zur manuellen Prüfung eingegangen.',
+        action_proposed: 'Fristen und Rechtsbehelfsbelehrung durch Sachbearbeiter prüfen.',
+      };
+    }
 
     const letterId = `cor_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const record: CorrespondenceRecord = {
@@ -78,8 +131,8 @@ Important Rules:
       tax_number: raw.tax_number || '',
       letter_type: raw.letter_type || 'Behördenschreiben',
       letter_date: raw.letter_date || new Date().toISOString().split('T')[0],
-      deadline: raw.deadline || undefined,
-      urgency: raw.urgency === 'HIGH' ? 'HIGH' : (raw.urgency === 'LOW' ? 'LOW' : 'MEDIUM'),
+      deadline: raw.deadline && raw.deadline.length >= 8 ? raw.deadline : undefined,
+      urgency: raw.urgency === 'HIGH' ? 'HIGH' : raw.urgency === 'LOW' ? 'LOW' : 'MEDIUM',
       ai_summary: raw.ai_summary || 'Schreiben zur Kenntnisnahme und Prüfung.',
       action_proposed: raw.action_proposed || 'Unterlagen prüfen und fristgerecht einreichen.',
     };
@@ -188,8 +241,7 @@ Important Rules:
   // Seed sample demo Finanzamt letter for instant testing (PDF Page 10)
   async seedDemoLetter() {
     const docId = `doc_fa_letter_demo`;
-    
-    // Ensure document record exists
+
     await pool.query(
       `INSERT INTO documents (id, client_id, original_filename, stored_path, mime_type, size, folder, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -207,7 +259,7 @@ Important Rules:
     );
 
     const letterId = `cor_demo_fa_2026`;
-    const deadlineDate = new Date(Date.now() + 18 * 86400000); // 18 days from now (e.g. 15.11.2026)
+    const deadlineDate = new Date(Date.now() + 18 * 86400000);
 
     await pool.query(
       `INSERT INTO correspondence (id, document_id, letter_type, sender, deadline, ai_summary)
@@ -226,5 +278,5 @@ Important Rules:
     );
 
     return { id: letterId, docId };
-  }
+  },
 };

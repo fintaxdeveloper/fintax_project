@@ -49,12 +49,18 @@ export const dbService = {
     const index = list.findIndex((doc) => doc.id === id);
     if (index === -1) return null;
 
-    list[index] = { ...list[index], ...updates };
+    const current = list[index];
+    const hasChange = Object.entries(updates).some(([key, val]) => (current as any)[key] !== val);
+    if (!hasChange) {
+      return current;
+    }
+
+    list[index] = { ...current, ...updates };
     fs.writeFileSync(DB_FILE, JSON.stringify(list, null, 2), 'utf-8');
 
-    // Update in PostgreSQL
+    // Update in PostgreSQL safely
     this.updateInPostgres(id, list[index]).catch((err) => {
-      console.error('[PostgreSQL] Error updating document:', err);
+      console.warn(`[PostgreSQL] Note: doc update warning (${id}):`, err?.message || err);
     });
 
     return list[index];
@@ -69,57 +75,66 @@ export const dbService = {
 
     // Delete in PostgreSQL
     pool.query('DELETE FROM documents WHERE id = $1', [id]).catch((err: any) => {
-      console.error('[PostgreSQL] Error deleting document:', err);
+      console.warn(`[PostgreSQL] Note: doc delete warning (${id}):`, err?.message || err);
     });
 
     return true;
   },
 
   async persistToPostgres(doc: DocumentRecord) {
-    const query = `
-      INSERT INTO documents (id, client_id, original_filename, stored_path, mime_type, size, status, uploaded_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (id) DO UPDATE SET
-        status = EXCLUDED.status,
-        updated_at = CURRENT_TIMESTAMP
-    `;
-    await pool.query(query, [
-      doc.id,
-      'user_client_1', // default linked client
-      doc.original_filename,
-      doc.file_path,
-      doc.mime_type,
-      doc.size_bytes,
-      doc.status,
-      doc.uploaded_at || new Date().toISOString(),
-    ]);
+    try {
+      const query = `
+        INSERT INTO documents (id, client_id, original_filename, stored_path, mime_type, size, status, uploaded_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          stored_path = EXCLUDED.stored_path,
+          updated_at = CURRENT_TIMESTAMP
+      `;
+      await pool.query(query, [
+        doc.id,
+        doc.client_id || 'user_client_1', // default linked client
+        doc.original_filename,
+        doc.file_path,
+        doc.mime_type,
+        doc.size_bytes,
+        doc.status,
+        doc.uploaded_at || new Date().toISOString(),
+      ]);
 
-    if (doc.extracted_data) {
-      await this.saveExtractedData(doc.id, doc.extracted_data);
+      if (doc.extracted_data) {
+        await this.saveExtractedData(doc.id, doc.extracted_data);
+      }
+    } catch (err: any) {
+      console.warn(`[PostgreSQL] Note: persist document warning (${doc.id}):`, err?.message || err);
     }
   },
 
   async updateInPostgres(id: string, doc: DocumentRecord) {
-    const query = `
-      UPDATE documents 
-      SET status = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-    `;
-    await pool.query(query, [doc.status, id]);
+    try {
+      const query = `
+        UPDATE documents 
+        SET status = $1, stored_path = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `;
+      await pool.query(query, [doc.status, doc.file_path, id]);
 
-    if (doc.extracted_data) {
-      await this.saveExtractedData(id, doc.extracted_data);
-    }
-
-    if (doc.validation_issues && doc.validation_issues.length > 0) {
-      // Clear old issues and insert new ones
-      await pool.query('DELETE FROM validation_issues WHERE document_id = $1', [id]);
-      for (const issue of doc.validation_issues) {
-        await pool.query(
-          `INSERT INTO validation_issues (id, document_id, field, message, severity) VALUES ($1, $2, $3, $4, $5)`,
-          [`val_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, id, issue.field, issue.message, issue.severity]
-        );
+      if (doc.extracted_data) {
+        await this.saveExtractedData(id, doc.extracted_data);
       }
+
+      if (doc.validation_issues && doc.validation_issues.length > 0) {
+        // Clear old issues and insert new ones
+        await pool.query('DELETE FROM validation_issues WHERE document_id = $1', [id]);
+        for (const issue of doc.validation_issues) {
+          await pool.query(
+            `INSERT INTO validation_issues (id, document_id, field, message, severity) VALUES ($1, $2, $3, $4, $5)`,
+            [`val_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, id, issue.field, issue.message, issue.severity]
+          );
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[PostgreSQL] Note: doc update warning (${id}):`, err?.message || err);
     }
   },
 
@@ -131,7 +146,8 @@ export const dbService = {
         currency, skr03_code, confidence_score, raw_json
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      ON CONFLICT (document_id) DO UPDATE SET
+      ON CONFLICT (id) DO UPDATE SET
+        document_type = EXCLUDED.document_type,
         supplier_name = EXCLUDED.supplier_name,
         invoice_number = EXCLUDED.invoice_number,
         invoice_date = EXCLUDED.invoice_date,

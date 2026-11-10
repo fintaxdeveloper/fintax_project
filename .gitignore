@@ -26,8 +26,20 @@ yarn-error.log*
 *.tmp
 storage/temp/*
 storage/vault/*
+storage/exports/*
 !storage/temp/.gitkeep
 !storage/vault/.gitkeep
+
+# Local scratch and test artifacts
+*.jpg
+*.png
+!frontend/src/assets/*
+!fintex_app/**/res/**/*
+!fintex_app/**/Assets.xcassets/**/*
+!fintex_app/**/icons/*
+!fintex_app/**/resources/*
+backend/scratch/
+test_documents/
 
 # IDEs and OS files
 .idea/

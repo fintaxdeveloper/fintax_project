@@ -23,7 +23,7 @@ import {
 import { translations, type Language } from './translations';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SnackbarProvider, useSnackbar } from './context/SnackbarContext';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, type ClientTabType } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
 import { LoginModal } from './components/LoginModal';
 import { FirstLoginModal } from './components/FirstLoginModal';
@@ -56,6 +56,8 @@ interface ValidationIssue {
 
 interface DocumentRecord {
   id: string;
+  category?: string;
+  sub_types?: string[];
   original_filename: string;
   stored_filename: string;
   file_path: string;
@@ -91,7 +93,7 @@ function MainAppContent() {
   const { success, error, info } = useSnackbar();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [adminNavTab, setAdminNavTab] = useState<'USERS' | 'ASSIGNMENTS' | 'DELETIONS' | 'FOLDERS' | 'AUDIT'>('USERS');
-  const [clientNavTab, setClientNavTab] = useState<'DOCS' | 'PAYROLL' | 'VAULT'>('DOCS');
+  const [clientNavTab, setClientNavTab] = useState<ClientTabType>('OVERVIEW');
   const [lang, setLang] = useState<Language>(() => {
     const userSelected = localStorage.getItem('fintax_lang_user_selected');
     if (userSelected === 'de') return 'de';
@@ -176,11 +178,15 @@ function MainAppContent() {
     }
   };
 
-  // Fetch documents from backend
-  const fetchDocuments = async () => {
+  // Fetch documents from backend (client isolated or all for staff/admin)
+  const fetchDocuments = async (overrideClientId?: unknown) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/documents`);
+      const activeClientId = typeof overrideClientId === 'string'
+        ? overrideClientId 
+        : (user?.role === 'CLIENT' ? user.id : undefined);
+      const url = activeClientId ? `${API_BASE}/documents?client_id=${encodeURIComponent(activeClientId)}` : `${API_BASE}/documents`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setDocuments(data);
@@ -307,13 +313,20 @@ function MainAppContent() {
     fetchDocuments();
     fetchBankStatements();
     fetchCorrespondence();
+    const handleDocUpdated = () => {
+      fetchDocuments();
+    };
+    window.addEventListener('fintax_doc_updated', handleDocUpdated);
     const interval = setInterval(() => {
       fetchDocuments();
       fetchBankStatements();
       fetchCorrespondence();
     }, 8000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      window.removeEventListener('fintax_doc_updated', handleDocUpdated);
+      clearInterval(interval);
+    };
+  }, [user?.id, user?.role]);
 
   // Handle direct file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -327,6 +340,9 @@ function MainAppContent() {
     setUploading(true);
     const formData = new FormData();
     formData.append('document', file);
+    if (user?.id) {
+      formData.append('client_id', user.id);
+    }
 
     try {
       const res = await fetch(`${API_BASE}/documents/upload`, {
@@ -435,7 +451,12 @@ function MainAppContent() {
 
   const handleExportAgenda = () => {
     window.open(`${API_BASE}/export/agenda-skr03`, '_blank');
-    info(lang === 'de' ? 'Agenda SKR03 CSV Export wurde heruntergeladen.' : 'Agenda SKR03 CSV Export downloaded.', 'Agenda Export');
+    success(
+      lang === 'de'
+        ? 'Agenda SKR03 CSV erfolgreich generiert und direkt in Google Drive (fintax/CSVs) gespeichert!'
+        : 'Agenda SKR03 CSV generated and automatically synced to Google Drive (fintax/CSVs)!',
+      'Google Drive Sync'
+    );
   };
 
   const stats = {
@@ -503,6 +524,7 @@ function MainAppContent() {
             uploading={uploading}
             externalTab={clientNavTab}
             onTabChange={setClientNavTab}
+            onLanguageChange={handleLangChange}
           />
         )}
 
@@ -888,6 +910,21 @@ function MainAppContent() {
 
                           <td style={{ padding: '14px 18px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                              {doc.extracted_data && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    window.open(`${API_BASE}/documents/${doc.id}/export-agenda`, '_blank');
+                                    info(lang === 'de' ? 'Agenda SKR03 CSV heruntergeladen.' : 'Agenda SKR03 CSV downloaded.', 'CSV Export');
+                                  }}
+                                  className="btn btn-secondary"
+                                  title={lang === 'de' ? 'Agenda SKR03 CSV herunterladen' : 'Download Agenda SKR03 CSV'}
+                                  style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#047857', color: '#ffffff', border: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+                                >
+                                  <FileSpreadsheet size={14} />
+                                  <span>SKR03 CSV</span>
+                                </button>
+                              )}
                               <button
                                 onClick={() => openReviewModal(doc)}
                                 className="btn btn-primary"
@@ -1824,8 +1861,9 @@ function MainAppContent() {
                 </div>
 
                 {/* Modal Action Buttons */}
-                <div style={{ marginTop: 'auto', paddingTop: 16, display: 'flex', gap: 12 }}>
+                <div style={{ marginTop: 'auto', paddingTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <button
+                    type="button"
                     onClick={() => handleReviewSave(false)}
                     className="btn btn-secondary"
                     style={{ flex: 1, padding: '12px' }}
@@ -1833,12 +1871,31 @@ function MainAppContent() {
                     {t.btnSaveDraft}
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleReviewSave(true)}
                     className="btn btn-primary"
-                    style={{ flex: 1.5, padding: '12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+                    style={{ flex: 1.2, padding: '12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
                   >
                     <CheckCircle2 size={18} />
                     <span>{t.btnApprove}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleReviewSave(true);
+                      window.open(`${API_BASE}/documents/${selectedDoc.id}/export-agenda`, '_blank');
+                      success(
+                        lang === 'de'
+                          ? 'Freigegeben & Agenda SKR03 CSV direkt in Google Drive (fintax/CSVs) gespeichert!'
+                          : 'Approved & Agenda SKR03 CSV synced to Google Drive (fintax/CSVs)!',
+                        'Google Drive Sync'
+                      );
+                    }}
+                    className="btn btn-primary"
+                    style={{ flex: 1.4, padding: '12px', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', boxShadow: '0 4px 12px rgba(5, 150, 105, 0.35)' }}
+                  >
+                    <FileSpreadsheet size={18} />
+                    <span>{lang === 'de' ? 'Freigeben & CSV Export' : 'Approve & Export CSV'}</span>
                   </button>
                 </div>
               </div>

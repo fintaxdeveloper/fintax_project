@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSnackbar } from '../context/SnackbarContext';
 import type { Language } from '../translations';
+import { FileExplorer } from '../components/FileExplorer';
 import {
   ShieldCheck,
   Users,
   FolderTree,
   FileText,
   CheckCircle2,
-  Folder,
   RefreshCw,
   Link2,
 } from 'lucide-react';
@@ -69,15 +69,6 @@ interface DeletionRequest {
   created_at: string;
 }
 
-interface FolderNode {
-  name: string;
-  path: string;
-  type: 'directory' | 'file';
-  sizeBytes?: number;
-  fileCount?: number;
-  children?: FolderNode[];
-}
-
 export const AdminPortal: React.FC<{
   lang: Language;
   externalTab?: 'USERS' | 'ASSIGNMENTS' | 'DELETIONS' | 'FOLDERS' | 'AUDIT';
@@ -97,8 +88,7 @@ export const AdminPortal: React.FC<{
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
   const [clientFolderList, setClientFolderList] = useState<string[]>([]);
-  const [selectedClientForTree, setSelectedClientForTree] = useState<string>('user_client_1');
-  const [clientTree, setClientTree] = useState<FolderNode | null>(null);
+  const [selectedClientForTree, setSelectedClientForTree] = useState<string>('ALL');
 
   const [loading, setLoading] = useState(true);
   const [auditFilter, setAuditFilter] = useState('ALL');
@@ -147,26 +137,9 @@ export const AdminPortal: React.FC<{
     }
   };
 
-  const fetchFolderTree = async (clientId: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/storage/clients/${clientId}/tree`);
-      if (res.ok) {
-        setClientTree(await res.json());
-      }
-    } catch (e) {
-      console.error('Failed to load folder tree:', e);
-    }
-  };
-
   useEffect(() => {
     fetchData();
   }, [token]);
-
-  useEffect(() => {
-    if (selectedClientForTree) {
-      fetchFolderTree(selectedClientForTree);
-    }
-  }, [selectedClientForTree]);
 
   // Set default selection when users load
   useEffect(() => {
@@ -194,11 +167,21 @@ export const AdminPortal: React.FC<{
 
       if (res.ok) {
         setShowAddUserModal(false);
+        const createdName = newUserName;
+        const createdNum = newUserClientNum;
+        const wasClient = newUserRole === 'CLIENT';
         setNewUserName('');
         setNewUserEmail('');
         setNewUserClientNum('');
         success(lang === 'de' ? 'Benutzerkonto erfolgreich angelegt!' : 'User created successfully!', 'Benutzerverwaltung');
         await fetchData();
+        // Immediately notify FileExplorer to re-fetch folder tree
+        window.dispatchEvent(new CustomEvent('fintax_doc_updated'));
+        window.dispatchEvent(new CustomEvent('fintax_client_created'));
+        if (wasClient) {
+          const folderName = createdNum ? `${createdNum}_${createdName}` : createdName;
+          setSelectedClientForTree(folderName);
+        }
       } else {
         const data = await res.json();
         error(data.error || 'Fehler beim Erstellen des Benutzers');
@@ -312,45 +295,6 @@ export const AdminPortal: React.FC<{
     } catch (err: any) {
       alert(`Fehler: ${err?.message}`);
     }
-  };
-
-  // Render Folder Tree Recursive Component
-  const renderTreeNode = (node: FolderNode, depth = 0) => {
-    const isDir = node.type === 'directory';
-    return (
-      <div key={node.path} style={{ marginLeft: `${depth * 1.25}rem`, marginTop: '0.25rem' }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.35rem 0.5rem',
-          borderRadius: '0.375rem',
-          background: isDir ? 'rgba(241, 245, 249, 0.7)' : 'transparent',
-          borderLeft: isDir ? '3px solid #3b82f6' : 'none',
-          fontSize: '0.8125rem',
-        }}>
-          {isDir ? (
-            <Folder size={16} color="#2563eb" />
-          ) : (
-            <FileText size={16} color="#64748b" />
-          )}
-          <span style={{ fontWeight: isDir ? 700 : 400, color: isDir ? '#1e3a8a' : '#334155' }}>
-            {node.name}
-          </span>
-          {isDir && node.fileCount !== undefined && (
-            <span style={{ fontSize: '0.6875rem', background: '#e2e8f0', color: '#475569', padding: '0.1rem 0.4rem', borderRadius: '9999px', marginLeft: 'auto' }}>
-              {node.fileCount} Dateien
-            </span>
-          )}
-          {!isDir && node.sizeBytes && (
-            <span style={{ fontSize: '0.6875rem', color: '#94a3b8', marginLeft: 'auto' }}>
-              {(node.sizeBytes / 1024).toFixed(1)} KB
-            </span>
-          )}
-        </div>
-        {node.children && node.children.map((child) => renderTreeNode(child, depth + 1))}
-      </div>
-    );
   };
 
   return (
@@ -864,20 +808,25 @@ export const AdminPortal: React.FC<{
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
-                🗂️ {lang === 'de' ? 'Mandanten-Ordnerstruktur (00_ bis 03_)' : 'Client Folder Structure'}
+                🗂️ {lang === 'de' ? 'Shared with me > _INBOX > 01_Clients' : 'Shared with me > _INBOX > 01_Clients'}
               </h2>
               <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-                {lang === 'de' ? 'Automatische Jahresscheiben & Monatshierarchie auf dem Server in Deutschland' : 'Automated year & month folder hierarchy'}
+                {lang === 'de'
+                  ? 'Mandanten-Ordnerstruktur: 00_Correspondence, 01_Financial Accounting – FiBu (Jahr/Monat/00_CSV), 02_Payrol - Lohn'
+                  : 'Client folder hierarchy: 00_Correspondence, 01_Financial Accounting – FiBu (Year/Month/00_CSV), 02_Payrol - Lohn'}
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#475569' }}>Mandant auswählen:</label>
+              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#475569' }}>
+                {lang === 'de' ? 'Ansicht / Mandant:' : 'View / Client:'}
+              </label>
               <select
-                value={selectedClientForTree}
+                value={selectedClientForTree || 'ALL'}
                 onChange={(e) => setSelectedClientForTree(e.target.value)}
                 style={{ padding: '0.4rem 0.75rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontWeight: 600, color: '#0f172a', backgroundColor: '#ffffff' }}
               >
+                <option value="ALL">📁 _INBOX (Alle Mandanten / 01_Clients)</option>
                 {clientFolderList.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
@@ -888,33 +837,28 @@ export const AdminPortal: React.FC<{
           {/* Folder Hierarchy Legend */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
             <div style={{ padding: '0.75rem', borderRadius: '0.5rem', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '0.8125rem' }}>
-              <div style={{ fontWeight: 700, color: '#1e40af' }}>00_Schriftverkehr</div>
-              <div style={{ color: '#3b82f6', fontSize: '0.75rem' }}>Finanzamt, IHK, Krankenkassen</div>
+              <div style={{ fontWeight: 700, color: '#1e40af' }}>00_Correspondence - Schriftverkehr</div>
+              <div style={{ color: '#3b82f6', fontSize: '0.75rem' }}>FinTax, Company Formation, Tax Office</div>
             </div>
             <div style={{ padding: '0.75rem', borderRadius: '0.5rem', background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: '0.8125rem' }}>
-              <div style={{ fontWeight: 700, color: '#166534' }}>01_FiBu</div>
-              <div style={{ color: '#15803d', fontSize: '0.75rem' }}>Rechnungen, Belege, Kassenbücher</div>
+              <div style={{ fontWeight: 700, color: '#166534' }}>01_Financial Accounting – FiBu</div>
+              <div style={{ color: '#15803d', fontSize: '0.75rem' }}>Jahr ➔ Monat (01–12) ➔ PDFs & 00_CSV</div>
             </div>
             <div style={{ padding: '0.75rem', borderRadius: '0.5rem', background: '#faf5ff', border: '1px solid #e9d5ff', fontSize: '0.8125rem' }}>
-              <div style={{ fontWeight: 700, color: '#6b21a8' }}>02_LoBu</div>
-              <div style={{ color: '#7e22ce', fontSize: '0.75rem' }}>Personalfragebögen, Lohnabrechnungen</div>
+              <div style={{ fontWeight: 700, color: '#6b21a8' }}>02_Payrol - Lohn</div>
+              <div style={{ color: '#7e22ce', fontSize: '0.75rem' }}>Payroll Statements, Health Insurance, SOKA</div>
             </div>
             <div style={{ padding: '0.75rem', borderRadius: '0.5rem', background: '#fdf2f8', border: '1px solid #fbcfe8', fontSize: '0.8125rem' }}>
-              <div style={{ fontWeight: 700, color: '#9d174d' }}>03_Agenda</div>
-              <div style={{ color: '#be185d', fontSize: '0.75rem' }}>Agenda SKR03 Exportdateien</div>
+              <div style={{ fontWeight: 700, color: '#9d174d' }}>00_CSV (im Monatsordner)</div>
+              <div style={{ color: '#be185d', fontSize: '0.75rem' }}>SKR03 CSV & Excel Exportdateien</div>
             </div>
           </div>
 
-          {/* Tree View Display */}
-          <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0', minHeight: '200px' }}>
-            {clientTree ? (
-              renderTreeNode(clientTree)
-            ) : (
-              <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
-                Ordnerstruktur wird geladen...
-              </div>
-            )}
-          </div>
+          <FileExplorer
+            clientId={selectedClientForTree || 'ALL'}
+            lang={lang}
+            startAtInbox={!selectedClientForTree || selectedClientForTree === 'ALL'}
+          />
         </div>
       )}
 

@@ -1,5 +1,7 @@
 import { pool } from './pgClient.js';
 import { authService } from './authService.js';
+import { googleDriveService } from './googleDriveService.js';
+import { clientFolderService } from './clientFolderService.js';
 
 export interface UserRecord {
   id: string;
@@ -29,8 +31,11 @@ export interface StaffAssignment {
   assigned_at: string;
 }
 
+let adminTablesInitialized = false;
+
 export const adminService = {
   async initTables() {
+    if (adminTablesInitialized) return;
     try {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
@@ -115,6 +120,7 @@ export const adminService = {
       // Ensure seed accounts exist
       await this.seedInitialAccounts();
 
+      adminTablesInitialized = true;
       console.log('[PostgreSQL] Admin tables and audit trail initialized.');
     } catch (err) {
       console.error('[PostgreSQL] Admin table initialization error:', err);
@@ -250,6 +256,22 @@ export const adminService = {
         [l.id, l.user_id, l.action, l.resource_type, l.ip, l.details]
       );
     }
+
+    // Ensure all existing CLIENT accounts have "Shared with me > _INBOX > 01_Clients" folder structure
+    try {
+      clientFolderService.ensureDemoReferenceClient();
+      googleDriveService.createClientFolderTree('704_QA24 GbmH', 2024);
+      const clientRows = await pool.query("SELECT id, name, client_number FROM users WHERE role = 'CLIENT'");
+      for (const c of clientRows.rows) {
+        if (c.name) {
+          const folderName = clientFolderService.registerClientName(c.id, c.name, c.client_number);
+          googleDriveService.createClientFolderTree(folderName);
+          clientFolderService.ensureClientFolderTree(folderName);
+        }
+      }
+    } catch (gdErr) {
+      console.warn('[AdminService] Note: Initial Google Drive folder setup:', gdErr);
+    }
   },
 
   // 1. List Users
@@ -348,6 +370,23 @@ export const adminService = {
       role,
       name,
     });
+
+    // When a client is created, automatically generate the folder structure in:
+    // Shared with me > _INBOX > 01_Clients > <Client Name>
+    const normalizedRole = String(role || '').trim().toUpperCase();
+    if (normalizedRole === 'CLIENT') {
+      try {
+        const folderName = clientFolderService.registerClientName(userId, name, clientNum);
+        const driveResult = googleDriveService.createClientFolderTree(folderName, new Date().getFullYear(), clientNum);
+        const vaultDir = clientFolderService.ensureClientFolderTree(folderName, new Date().getFullYear(), new Date().getMonth() + 1, name, clientNum);
+        console.log(`[Client Creation] Client folder created successfully for "${folderName}":`, {
+          storageVault: vaultDir,
+          googleDrive: driveResult?.clientDir,
+        });
+      } catch (fErr) {
+        console.warn('[AdminService] Note: Client folder tree setup on drive/storage:', fErr);
+      }
+    }
 
     return res.rows[0];
   },

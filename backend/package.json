@@ -12,12 +12,15 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
     "@prisma/client": "^7.10.1",
+    "@types/pdf-parse": "^1.1.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
+    "pdf-parse-fork": "^1.2.0",
     "pg": "^8.13.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -25,8 +28,11 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^22.13.5",
     "@types/uuid": "^10.0.0",
+    "prisma": "8.0.0-rc.28",
     "tsx": "^4.19.3",
-    "typescript": "^5.7.3",
-    "prisma": "8.0.0-rc.28"
+    "typescript": "^5.7.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }

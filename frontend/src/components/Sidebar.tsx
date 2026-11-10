@@ -14,7 +14,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  LayoutDashboard,
+  Building2,
 } from 'lucide-react';
+
+export type ClientTabType = 'OVERVIEW' | 'FORMATION' | 'ACCOUNTING' | 'PAYROLL' | 'CORRESPONDENCE' | 'VAULT';
 
 interface SidebarProps {
   lang: Language;
@@ -27,8 +31,8 @@ interface SidebarProps {
   staffTab?: 'INVOICES' | 'BANK' | 'CORR' | 'PAYROLL' | 'VAULT';
   onStaffTabChange?: (tab: 'INVOICES' | 'BANK' | 'CORR' | 'PAYROLL' | 'VAULT') => void;
   // Client navigation state
-  clientTab?: 'DOCS' | 'PAYROLL' | 'VAULT';
-  onClientTabChange?: (tab: 'DOCS' | 'PAYROLL' | 'VAULT') => void;
+  clientTab?: ClientTabType | 'DOCS';
+  onClientTabChange?: (tab: ClientTabType) => void;
   // Stats for badge counts
   pendingReviewCount?: number;
   pendingApprovalsCount?: number;
@@ -339,22 +343,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {activePortal === 'CLIENT' && (
           <>
             <NavItem
-              icon={<Receipt size={18} />}
-              label={lang === 'de' ? 'Belege & Aufgaben' : 'Invoices & Tasks'}
-              active={clientTab === 'DOCS'}
+              icon={<LayoutDashboard size={18} />}
+              label={lang === 'de' ? 'Übersicht & Dashboard' : 'Overview & Dashboard'}
+              active={clientTab === 'OVERVIEW' || clientTab === 'DOCS' || !clientTab}
               collapsed={collapsed}
-              onClick={() => onClientTabChange && onClientTabChange('DOCS')}
+              onClick={() => onClientTabChange && onClientTabChange('OVERVIEW')}
+            />
+            <NavItem
+              icon={<Building2 size={18} />}
+              label={lang === 'de' ? 'Gründungsunterlagen' : 'Formation Documents'}
+              active={clientTab === 'FORMATION'}
+              collapsed={collapsed}
+              onClick={() => onClientTabChange && onClientTabChange('FORMATION')}
+            />
+            <NavItem
+              icon={<Receipt size={18} />}
+              label={lang === 'de' ? 'Finanzbuchhaltung' : 'Financial Accounting'}
+              active={clientTab === 'ACCOUNTING'}
+              collapsed={collapsed}
+              onClick={() => onClientTabChange && onClientTabChange('ACCOUNTING')}
             />
             <NavItem
               icon={<Users size={18} />}
-              label={lang === 'de' ? 'Lohn & Mitarbeiter' : 'Payroll & Team'}
+              label={lang === 'de' ? 'Lohn & Personal' : 'Payroll Documents'}
               active={clientTab === 'PAYROLL'}
               collapsed={collapsed}
               onClick={() => onClientTabChange && onClientTabChange('PAYROLL')}
             />
             <NavItem
+              icon={<Mail size={18} />}
+              label={lang === 'de' ? 'Schriftverkehr' : 'Correspondence'}
+              active={clientTab === 'CORRESPONDENCE'}
+              collapsed={collapsed}
+              badge={lang === 'de' ? 'Neu' : 'New'}
+              badgeColor="#d4a359"
+              onClick={() => onClientTabChange && onClientTabChange('CORRESPONDENCE')}
+            />
+            <NavItem
               icon={<FolderTree size={18} />}
-              label={lang === 'de' ? 'Mein Archiv (4 Ordner)' : 'My Vault Folders'}
+              label={lang === 'de' ? 'Mandanten-Archiv (00-03)' : 'My Vault Folders'}
               active={clientTab === 'VAULT'}
               collapsed={collapsed}
               onClick={() => onClientTabChange && onClientTabChange('VAULT')}
@@ -391,7 +418,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div
         style={{
           borderTop: '1px solid #e2e8f0',
-          padding: collapsed ? '1rem 0.5rem' : '1rem 1.25rem',
+          padding: collapsed ? '1rem 0.5rem' : '1.15rem 1.25rem',
           backgroundColor: '#f8fafc',
           display: 'flex',
           flexDirection: 'column',
@@ -401,56 +428,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
           <div
             style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              backgroundColor: '#dbeafe',
-              color: '#1d4ed8',
-              fontWeight: 700,
-              fontSize: '0.875rem',
+              width: '38px',
+              height: '38px',
+              borderRadius: '10px',
+              background: user.role === 'CLIENT'
+                ? 'linear-gradient(135deg, #0b1a30 0%, #1e3a68 100%)'
+                : 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)',
+              color: user.role === 'CLIENT' ? '#dfb772' : '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.95rem',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
               border: '2px solid #ffffff',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              boxShadow: '0 2px 8px rgba(11,26,48,0.18)',
+              position: 'relative',
             }}
           >
             {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+            <span
+              style={{
+                position: 'absolute',
+                bottom: -2,
+                right: -2,
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                backgroundColor: '#10b981',
+                border: '2px solid #ffffff',
+              }}
+              title="Aktiv / Online"
+            />
           </div>
 
           {!collapsed && (
             <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
               <div
                 style={{
-                  fontWeight: 700,
-                  fontSize: '0.875rem',
-                  color: '#0f172a',
+                  fontWeight: 800,
+                  fontSize: '0.9rem',
+                  color: '#0b1a30',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
+                  letterSpacing: '-0.01em',
                 }}
+                title={user.name}
               >
-                {user.name}
+                {user.name || 'Test von Webapp'}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
                 <span
                   style={{
                     fontSize: '0.625rem',
                     fontWeight: 700,
-                    backgroundColor: roleBadgeInfo.bg,
-                    color: roleBadgeInfo.text,
-                    border: `1px solid ${roleBadgeInfo.border}`,
-                    padding: '1px 5px',
+                    backgroundColor: user.role === 'CLIENT' ? '#fef3c7' : roleBadgeInfo.bg,
+                    color: user.role === 'CLIENT' ? '#92400e' : roleBadgeInfo.text,
+                    border: `1px solid ${user.role === 'CLIENT' ? '#fde68a' : roleBadgeInfo.border}`,
+                    padding: '1.5px 6px',
                     borderRadius: '4px',
                     whiteSpace: 'nowrap',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.02em',
                   }}
                 >
                   {roleBadgeInfo.label}
                 </span>
-                {user.clientNumber && (
+                {(user.clientNumber || user.role === 'CLIENT') && (
                   <span style={{ fontSize: '0.6875rem', color: '#64748b', fontWeight: 600 }}>
-                    {user.clientNumber}
+                    {user.clientNumber || 'KD-10042'}
                   </span>
                 )}
               </div>
@@ -499,7 +546,7 @@ interface NavItemProps {
   icon: React.ReactNode;
   label: string;
   active: boolean;
-  badge?: number;
+  badge?: number | string;
   badgeColor?: string;
   collapsed: boolean;
   onClick: () => void;
@@ -556,17 +603,18 @@ const NavItem: React.FC<NavItemProps> = ({
         {!collapsed && <span>{label}</span>}
       </div>
 
-      {!collapsed && badge !== undefined && badge > 0 && (
+      {!collapsed && badge !== undefined && (typeof badge === 'string' ? badge.length > 0 : badge > 0) && (
         <span
           style={{
             backgroundColor: badgeColor,
             color: '#ffffff',
             fontSize: '0.6875rem',
             fontWeight: 700,
-            padding: '2px 6px',
+            padding: '2px 7px',
             borderRadius: '9999px',
             minWidth: '18px',
             textAlign: 'center',
+            letterSpacing: '0.02em',
           }}
         >
           {badge}

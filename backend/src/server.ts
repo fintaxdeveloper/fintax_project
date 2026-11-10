@@ -10,8 +10,10 @@ dotenv.config();
 
 import { dbService } from './services/dbService.js';
 import { aiService } from './services/aiService.js';
+import { documentClassifier } from './services/documentClassifier.js';
 import { validationService } from './services/validationService.js';
 import { exportService } from './services/exportService.js';
+import { googleDriveService } from './services/googleDriveService.js';
 import { testDbConnection, pool } from './services/pgClient.js';
 import { authService, requireAuth, requireRole, AuthenticatedRequest } from './services/authService.js';
 import { bankStatementService } from './services/bankStatementService.js';
@@ -22,6 +24,8 @@ import { clientFolderService } from './services/clientFolderService.js';
 import { deletionApprovalService } from './services/deletionApprovalService.js';
 import { backupService } from './services/backupService.js';
 import { maskingService } from './services/maskingService.js';
+import { monthlyDocumentRegistry } from './services/monthlyDocumentRegistry.js';
+import { skr03Mapper } from './services/skr03Mapper.js';
 import { DocumentRecord, ExtractedInvoiceData } from './types/document.js';
 
 const app = express();
@@ -263,7 +267,7 @@ app.post('/api/bank-statements/upload', upload.single('statement'), async (req, 
     dbService.create(newDoc);
 
     const parsedStatement = await bankStatementService.processBankStatement(filePath, mimetype, docId);
-    
+
     dbService.update(docId, {
       status: parsedStatement.is_reconciled ? 'APPROVED' : 'NEEDS_ATTENTION',
       staff_notes: parsedStatement.reconciliation_error || 'Running balance verified successfully',
@@ -338,11 +342,31 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
     const { originalname, filename, path: tempFilePath, mimetype, size } = req.file;
     const clientId = (req.body.client_id || 'user_client_1').trim();
     const category = (req.body.category || '01_FiBu') as any;
+    const notes = req.body.notes || '';
+    let subTypes: string[] = [];
+    if (req.body.sub_types) {
+      try {
+        subTypes = typeof req.body.sub_types === 'string' ? JSON.parse(req.body.sub_types) : req.body.sub_types;
+      } catch {
+        subTypes = [String(req.body.sub_types)];
+      }
+    }
 
     // 1. Compute SHA-256 Checksum
     const checksum = validationService.calculateChecksum(tempFilePath);
 
-    // 2. Automatically store in Client Folder Tree: <clientId>/01_FiBu/<year>/<month>/
+    // Resolve Client Name & Number from DB for Shared with me > _INBOX > 01_Clients folder mapping
+    let clientName = clientId;
+    try {
+      const uRes = await pool.query('SELECT name, client_number FROM users WHERE id = $1 LIMIT 1', [clientId]).catch(() => null);
+      if (uRes && uRes.rows.length > 0 && uRes.rows[0].name) {
+        clientName = clientFolderService.registerClientName(clientId, uRes.rows[0].name, uRes.rows[0].client_number);
+      }
+    } catch {
+      // fallback to clientId
+    }
+
+    // 2. Automatically store in Client Folder Tree: Shared with me/_INBOX/01_Clients/<clientName>/...
     const { storedPath, relativePath } = clientFolderService.storeDocumentFile(
       clientId,
       category,
@@ -356,6 +380,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       id: docId,
       client_id: clientId,
       category,
+      sub_types: subTypes,
       original_filename: originalname,
       stored_filename: filename,
       file_path: storedPath,
@@ -365,43 +390,490 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       size_bytes: size,
       uploaded_at: new Date().toISOString(),
       status: 'PROCESSING',
+      staff_notes: notes || undefined,
     };
 
     dbService.create(newDoc);
 
-    // 3. Run AI extraction
-    try {
-      const extracted = await aiService.processInvoice(storedPath, mimetype);
-      const { issues: mathIssues, status: mathStatus } = validationService.validate(extracted);
+    // 2.1 Formation Documents / Master Data ('00_Stammdaten') with AI Expiry Check
+    if (category === '00_Stammdaten') {
+      try {
+        googleDriveService.syncDocument(storedPath, originalname, category, clientName, req.body.document_date, subTypes);
+      } catch (gErr) {
+        console.warn('[Upload] Google Drive sync error:', gErr);
+      }
 
-      // 4. Run Duplicate Detection (File Checksum, Invoice # + Supplier, Date + Amount)
-      const existingDocs = dbService.getAll();
-      const { duplicateIssues, duplicateOfId, isDuplicate } = validationService.checkDuplicates(
-        extracted,
-        docId,
-        existingDocs,
-        checksum
-      );
+      console.log(`[Formation AI] Scanning uploaded document "${originalname}" for validity & expiry dates...`);
+      let expiryInfo: any = { has_expiry: false };
+      try {
+        expiryInfo = await aiService.checkDocumentExpiry(storedPath, mimetype, originalname);
+      } catch (aiExpErr) {
+        console.warn('[Formation AI] Expiry check warning:', aiExpErr);
+      }
 
-      const allIssues = [...duplicateIssues, ...mathIssues];
-      const hasErrors = allIssues.some((i) => i.severity === 'ERROR');
-      const finalStatus = isDuplicate || hasErrors ? 'NEEDS_ATTENTION' : mathStatus;
+      const typeDesc = subTypes.length > 0 ? ` (${subTypes.join(', ')})` : '';
+      let staffNote = notes || `Gründungsunterlage${typeDesc} gespeichert`;
+      if (expiryInfo?.has_expiry) {
+        staffNote = `${staffNote} • ${expiryInfo.warning_message}`;
+      }
+
+      const docStatus = expiryInfo?.is_expired ? 'NEEDS_ATTENTION' : 'APPROVED';
 
       const updated = dbService.update(docId, {
-        status: finalStatus,
-        extracted_data: extracted,
-        validation_issues: allIssues,
-        is_duplicate: isDuplicate,
-        duplicate_of_id: duplicateOfId,
+        status: docStatus,
+        staff_notes: staffNote,
+        expiry_date: expiryInfo?.expiry_date,
+        expiry_info: expiryInfo,
+        extracted_data: {
+          document_type: 'OTHER',
+          supplier_name: expiryInfo?.doc_title || 'Gründungsunterlage',
+          invoice_number: '',
+          invoice_date: expiryInfo?.expiry_date || new Date().toISOString().split('T')[0],
+          currency: 'EUR',
+          net_amount: 0,
+          vat_rate_percent: 0,
+          vat_amount: 0,
+          total_amount: 0,
+          confidence_score: 0.99,
+        },
       });
+
+      const responseMessage = expiryInfo?.has_expiry
+        ? expiryInfo.warning_message
+        : 'Gründungsunterlage erfolgreich hochgeladen und in der Datenbank gespeichert.';
+
+      return res.status(201).json({
+        message: responseMessage,
+        document: updated,
+        expiry_info: expiryInfo,
+        relative_folder: relativePath,
+      });
+    }
+
+    // 2.2 Fast-track for Payroll Documents ('02_LoBu')
+    if (category === '02_LoBu') {
+      try {
+        googleDriveService.syncDocument(storedPath, originalname, category, clientName, req.body.document_date, subTypes);
+      } catch (gErr) {
+        console.warn('[Upload] Google Drive sync error:', gErr);
+      }
+    }
+
+    // 3. Run 6-Step AI Classification, OCR, Ollama Extraction & SKR03 CSV Routing
+    try {
+      console.log(`\n=============================================================`);
+      console.log(`[Step 1/6 - Upload] PDF/Image received: ${originalname} (${mimetype}, ${size} bytes)`);
+
+      // Step 2: Document Type Detect
+      const classification = await documentClassifier.classify(storedPath, mimetype);
+      console.log(`[Step 2/6 - Document Type Detect] Classified as: ${classification.category} (Confidence: ${classification.confidence})`);
+
+      // If document is explicitly uploaded as Correspondence (or non-FiBu classified as Tax Letter), route to correspondenceService
+      if (category === '00_Schriftverkehr' || (category !== '01_FiBu' && classification.category === 'TAX_LETTER')) {
+        try {
+          googleDriveService.syncDocument(storedPath, originalname, '00_Schriftverkehr', clientName, req.body.document_date, subTypes);
+        } catch (gErr) {
+          console.warn('[Upload] Google Drive correspondence sync error:', gErr);
+        }
+        const letterRecord = await correspondenceService.processLetter(storedPath, mimetype, docId);
+        const updated = dbService.update(docId, {
+          status: 'NEEDS_ATTENTION',
+          staff_notes: `Behördenschreiben erkannt (${letterRecord.sender}): ${letterRecord.letter_type}. Frist: ${letterRecord.deadline || 'Keine'}`,
+        });
+
+        return res.status(201).json({
+          message: 'Behördenschreiben erfolgreich klassifiziert und verarbeitet.',
+          document: updated,
+          classification,
+          correspondence: letterRecord,
+          relative_folder: relativePath,
+        });
+      }
+
+      // If document is classified as a Bank Statement, also register it in bankStatementService
+      let bankStmtResult: any = null;
+      if (classification.category === 'BANK_STATEMENT') {
+        try {
+          bankStmtResult = await bankStatementService.processBankStatement(storedPath, mimetype, docId);
+        } catch (bsErr) {
+          console.warn('[Upload] Bank statement reconciliation check notice:', bsErr);
+        }
+      }
+
+      // Step 3: OCR & Step 4: Ollama Data Extraction
+      console.log(`[Step 3/6 - OCR] Reading text & layout from ${originalname}...`);
+      console.log(`[Step 4/6 - Ollama Extraction] Extracting invoice date, supplier, amounts & line items...`);
+      const extracted = await aiService.processInvoice(storedPath, mimetype);
+
+      // If bankStatementService extracted multiple transactions and processInvoice only had a single fallback booking, enrich extracted with bank statement SKR03 bookings
+      if (
+        bankStmtResult &&
+        Array.isArray(bankStmtResult.transactions) &&
+        bankStmtResult.transactions.length > 0 &&
+        (!extracted.bookings || extracted.bookings.length <= 1)
+      ) {
+        const stmtYear = bankStmtResult.period_year || 2026;
+        const stmtMonth = String(bankStmtResult.period_month || 1).padStart(2, '0');
+        const txBookings = bankStmtResult.transactions
+          .map((tx: any) => {
+            const amt = Number(tx.credit || tx.debit || 0);
+            if (amt <= 0) return null;
+            const isCredit = Number(tx.credit || 0) > 0;
+            const desc = String(tx.description || bankStmtResult.bank_name || 'Bankbuchung').trim();
+            const suggested = skr03Mapper.suggestAccount(bankStmtResult.bank_name || 'Bank', desc, 19);
+            const txDateParts = String(tx.date || `${stmtYear}-${stmtMonth}-28`).split('-');
+            const bd = txDateParts.length === 3 ? `${txDateParts[2]}${txDateParts[1]}` : `28${stmtMonth}`;
+            return {
+              amount: amt,
+              sh: isCredit ? ('S' as const) : ('H' as const),
+              konto: '1200',
+              gegenkonto: isCredit ? '8400' : (suggested.code || '4900'),
+              buCode: '',
+              belegdatum: bd,
+              belegfeld1: `BANK-${stmtYear}-${stmtMonth}`,
+              buchungstext: desc.slice(0, 60),
+              currency: bankStmtResult.currency || 'EUR',
+            };
+          })
+          .filter(Boolean);
+
+        if (txBookings.length > 0) {
+          extracted.bookings = txBookings;
+          extracted.skr03_account_code = '1200';
+          extracted.supplier_name = `${bankStmtResult.bank_name || 'Bank'} Kontoauszug (${bankStmtResult.statement_period || `${stmtMonth}/${stmtYear}`})`;
+          extracted.invoice_date = `${stmtYear}-${stmtMonth}-28`;
+          const totalSum = txBookings.reduce((s: number, b: any) => s + b.amount, 0);
+          if (totalSum > 0) {
+            extracted.total_amount = parseFloat(totalSum.toFixed(2));
+            extracted.net_amount = parseFloat((totalSum / 1.19).toFixed(2));
+            extracted.vat_amount = parseFloat((totalSum - extracted.net_amount).toFixed(2));
+          }
+        }
+      }
+
+      // Ensure booking month (DDMM e.g. 3006 -> Month 06 June) refines invoice_date if needed
+      const todayIsoStr = new Date().toISOString().split('T')[0];
+      if (
+        (!extracted.invoice_date || extracted.invoice_date === todayIsoStr) &&
+        extracted.bookings &&
+        extracted.bookings.length > 0 &&
+        extracted.bookings[0].belegdatum &&
+        /^\d{4}$/.test(extracted.bookings[0].belegdatum)
+      ) {
+        const bd = extracted.bookings[0].belegdatum;
+        const dd = bd.slice(0, 2);
+        const mm = bd.slice(2, 4);
+        const mmNum = parseInt(mm, 10);
+        if (mmNum >= 1 && mmNum <= 12) {
+          extracted.invoice_date = `2026-${mm}-${dd}`;
+        }
+      }
+
+      // Step 4b: Multi-Bill Detection — one photo/PDF may contain several bills from DIFFERENT months.
+      // Each bill becomes its own document record and is routed into its own Year/Month folder.
+      let splitBills: any[] = [];
+      if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
+        try {
+          splitBills = await aiService.extractMultipleBills(storedPath, mimetype, originalname);
+        } catch (mbErr) {
+          console.warn('[Upload] Multi-bill detection notice:', mbErr);
+          splitBills = [];
+        }
+      }
+
+      // Only use the user-selected month/year as a fallback when the document itself has no readable date
+      const reqYear = req.body.year;
+      const reqMonth = req.body.month;
+
+      /**
+       * Steps 5 + 6 for ONE bill: resolve Year/Month, validate, duplicate-check, generate SKR03 CSVs,
+       * store into the local Vault and sync to Google Drive.
+       */
+      const routeFinancialDocument = (
+        targetDocId: string,
+        baseRecord: DocumentRecord,
+        ext: any,
+        excludeIds: string[],
+        checksumForDupCheck?: string
+      ) => {
+        const { year, monthNum, monthFolder } = googleDriveService.resolveYearAndMonth(
+          ext.invoice_date,
+          baseRecord.split_total && baseRecord.split_total > 1 ? undefined : originalname,
+          reqYear,
+          reqMonth
+        );
+        console.log(
+          `[Step 5/6 - Transaction Identify] Type: ${ext.document_type} | Supplier: "${ext.supplier_name}" | Invoice#: "${ext.invoice_number}" | Date: "${ext.invoice_date}" -> Target Folder: ${year}/${monthFolder} (Month ${monthNum}) | Total: ${ext.total_amount} ${ext.currency}`
+        );
+        console.log(
+          `[Step 6/6 - SKR03 Account Suggest] Suggested SKR03 Account: ${ext.skr03_account_code} | Generating SKR03 CSV into 01_Financial Accounting – FiBu/${year}/${monthFolder}/00_CSV...`
+        );
+
+        const { issues: mathIssues, status: mathStatus } = validationService.validate(ext);
+
+        // Duplicate detection only against the SAME client's documents (excluding sibling bills of this upload)
+        const existingDocs = dbService.getAll();
+        const sameClientDocs = existingDocs.filter(
+          (d) => !excludeIds.includes(d.id) && (d.client_id || 'user_client_1') === clientId
+        );
+        const { duplicateIssues, duplicateOfId, isDuplicate } = validationService.checkDuplicates(
+          ext,
+          targetDocId,
+          sameClientDocs,
+          checksumForDupCheck
+        );
+
+        const allIssues = [...duplicateIssues, ...mathIssues];
+        const hasErrors = allIssues.some((i) => i.severity === 'ERROR');
+        const finalStatus = isDuplicate || hasErrors ? 'NEEDS_ATTENTION' : mathStatus;
+
+        const docWithExtracted: DocumentRecord = {
+          ...baseRecord,
+          id: targetDocId,
+          status: finalStatus,
+          extracted_data: ext,
+          validation_issues: allIssues,
+          is_duplicate: isDuplicate,
+          duplicate_of_id: duplicateOfId,
+        };
+
+        let generatedCsvFileName = '';
+        let monthlyCsvFileName = '';
+        const driveTargetFolder = `01_Financial Accounting – FiBu/${year}/${monthFolder}`;
+        let finalStoredPath = baseRecord.file_path;
+        let finalRelativeFolder = baseRecord.relative_path;
+
+        try {
+          const others = existingDocs.filter((d) => d.id !== targetDocId);
+          const allDocsWithCurrent = [...others, docWithExtracted];
+          const csvData = exportService.generateDocumentAndMonthlySKR03Csv(docWithExtracted, allDocsWithCurrent, year, monthNum);
+          generatedCsvFileName = csvData.buchungenCsvFileName;
+          monthlyCsvFileName = `${csvData.buchungenCsvFileName}, ${csvData.personenkontenCsvFileName}, ${csvData.sachkontenCsvFileName}`;
+
+          ext.skr03_csv_file = csvData.buchungenCsvFileName;
+          ext.monthly_csv_file = monthlyCsvFileName;
+          ext.target_year = year;
+          ext.target_month = monthFolder;
+          ext.target_folder = driveTargetFolder;
+
+          const vaultResult = clientFolderService.storeFinancialAccountingByYearMonth({
+            clientId,
+            clientName,
+            currentStoredPath: storedPath,
+            originalFilename: baseRecord.original_filename,
+            year,
+            monthFolder,
+            singleCsvContent: csvData.singleCsvContent,
+            singleCsvFileName: csvData.singleCsvFileName,
+            singleXlsxContent: csvData.singleXlsxContent,
+            singleXlsxFileName: csvData.singleXlsxFileName,
+            monthlyCsvContent: csvData.monthlyCsvContent,
+            monthlyCsvFileName: csvData.monthlyCsvFileName,
+            monthlyXlsxContent: csvData.monthlyXlsxContent,
+            monthlyXlsxFileName: csvData.monthlyXlsxFileName,
+            buchungenCsvContent: csvData.buchungenCsvContent,
+            buchungenCsvFileName: csvData.buchungenCsvFileName,
+            personenkontenCsvContent: csvData.personenkontenCsvContent,
+            personenkontenCsvFileName: csvData.personenkontenCsvFileName,
+            sachkontenCsvContent: csvData.sachkontenCsvContent,
+            sachkontenCsvFileName: csvData.sachkontenCsvFileName,
+          });
+          finalStoredPath = vaultResult.storedPath;
+          finalRelativeFolder = vaultResult.relativePath;
+
+          googleDriveService.syncFinancialAccountingWithCsv({
+            sourceFilePath: vaultResult.storedPath,
+            originalFilename: baseRecord.original_filename,
+            clientName,
+            year,
+            monthFolder,
+            singleCsvContent: csvData.singleCsvContent,
+            singleCsvFileName: csvData.singleCsvFileName,
+            singleXlsxContent: csvData.singleXlsxContent,
+            singleXlsxFileName: csvData.singleXlsxFileName,
+            monthlyCsvContent: csvData.monthlyCsvContent,
+            monthlyCsvFileName: csvData.monthlyCsvFileName,
+            monthlyXlsxContent: csvData.monthlyXlsxContent,
+            monthlyXlsxFileName: csvData.monthlyXlsxFileName,
+            buchungenCsvContent: csvData.buchungenCsvContent,
+            buchungenCsvFileName: csvData.buchungenCsvFileName,
+            personenkontenCsvContent: csvData.personenkontenCsvContent,
+            personenkontenCsvFileName: csvData.personenkontenCsvFileName,
+            sachkontenCsvContent: csvData.sachkontenCsvContent,
+            sachkontenCsvFileName: csvData.sachkontenCsvFileName,
+          });
+        } catch (csvSyncErr) {
+          console.warn('[AI Pipeline] Error generating/routing SKR03 CSV by Year/Month:', csvSyncErr);
+        }
+
+        const splitInfo =
+          baseRecord.split_total && baseRecord.split_total > 1
+            ? `Beleg ${baseRecord.split_index}/${baseRecord.split_total} aus Sammelupload "${originalname}" • `
+            : '';
+        const skr03Note = `${splitInfo}SKR03 [${ext.skr03_account_code || '4900'}] • ${ext.bookings?.length || 1} Buchung(en) • Gespeichert in 01_Financial Accounting – FiBu/${year}/${monthFolder}${generatedCsvFileName ? ` (+ 00_CSV/${generatedCsvFileName})` : ''}`;
+        const combinedNotes = notes ? `${notes} | ${skr03Note}` : skr03Note;
+
+        const updated =
+          dbService.update(targetDocId, {
+            status: finalStatus,
+            extracted_data: ext,
+            validation_issues: allIssues,
+            is_duplicate: isDuplicate,
+            duplicate_of_id: duplicateOfId,
+            file_path: finalStoredPath,
+            relative_path: finalRelativeFolder,
+            staff_notes: combinedNotes,
+            parent_document_id: baseRecord.parent_document_id,
+            split_group_id: baseRecord.split_group_id,
+            split_index: baseRecord.split_index,
+            split_total: baseRecord.split_total,
+            original_filename: baseRecord.original_filename,
+          }) || docWithExtracted;
+
+        return {
+          updated,
+          isDuplicate,
+          year,
+          monthFolder,
+          driveTargetFolder,
+          finalRelativeFolder,
+          generatedCsvFileName,
+          monthlyCsvFileName,
+          ext,
+        };
+      };
+
+      console.log(`=============================================================\n`);
+
+      // ---------- A) MULTI-BILL UPLOAD: split into one record per bill ----------
+      if (splitBills.length >= 2) {
+        const total = splitBills.length;
+        const ext = path.extname(originalname);
+        const base = path.basename(originalname, ext);
+        const groupId = docId;
+
+        // Pre-create all records so the monthly batch CSV of each month sees its sibling bills
+        const records: DocumentRecord[] = splitBills.map((bill, i) => {
+          const safeSupplier = String(bill.supplier_name || 'Beleg').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 30) || 'Beleg';
+          const splitName = `${base} - Beleg ${i + 1} von ${total} - ${safeSupplier} ${bill.invoice_date}${ext}`;
+          const rec: DocumentRecord = {
+            ...newDoc,
+            id: i === 0 ? docId : uuidv4(),
+            original_filename: splitName,
+            parent_document_id: i === 0 ? undefined : docId,
+            split_group_id: groupId,
+            split_index: i + 1,
+            split_total: total,
+            extracted_data: bill,
+            status: 'PROCESSING',
+          };
+          if (i === 0) {
+            dbService.update(docId, {
+              original_filename: splitName,
+              split_group_id: groupId,
+              split_index: 1,
+              split_total: total,
+              extracted_data: bill,
+            });
+          } else {
+            dbService.create(rec);
+          }
+          return rec;
+        });
+
+        const siblingIds = records.map((r) => r.id);
+        const results = records.map((rec, i) =>
+          routeFinancialDocument(
+            rec.id,
+            rec,
+            splitBills[i],
+            siblingIds,
+            i === 0 ? checksum : undefined // exact-file duplicate check only once per upload
+          )
+        );
+
+        const folders = Array.from(new Set(results.map((r) => `${r.year}/${r.monthFolder}`)));
+        const anyDuplicate = results.some((r) => r.isDuplicate);
+        console.log(`[Multi-Bill AI] "${originalname}" split into ${total} bills -> folders: ${folders.join(', ')}`);
+
+        return res.status(201).json({
+          message: `${total} Belege in einer Datei erkannt -> ${folders.length} Monatsordner: ${folders.join(', ')}`,
+          document: results[0].updated,
+          documents: results.map((r) => r.updated),
+          split_count: total,
+          is_duplicate: anyDuplicate,
+          relative_folder: results[0].finalRelativeFolder,
+          pipeline_summary: {
+            step1_upload: originalname,
+            step2_document_type: 'MULTIPLE_BILLS',
+            step3_ocr: 'Completed',
+            step4_ollama_extraction: {
+              supplier_name: `${total} bills`,
+              invoice_number: '',
+              invoice_date: results.map((r) => r.ext.invoice_date).join(', '),
+              total_amount: parseFloat(results.reduce((s, r) => s + (Number(r.ext.total_amount) || 0), 0).toFixed(2)),
+              currency: results[0].ext.currency,
+            },
+            step5_transaction_identified: {
+              bookings_count: results.reduce((s, r) => s + (r.ext.bookings?.length || 1), 0),
+              payment_method: results[0].ext.payment_method,
+            },
+            step6_skr03_and_csv: {
+              skr03_account_code: Array.from(new Set(results.map((r) => r.ext.skr03_account_code))).join(', '),
+              target_year: Array.from(new Set(results.map((r) => r.year))).join(', '),
+              target_month: Array.from(new Set(results.map((r) => r.monthFolder))).join(', '),
+              target_folder: folders.map((f) => `${clientName}/Financial Accounting/${f}`).join(' | '),
+              skr03_csv_file: results.map((r) => r.generatedCsvFileName).join(', '),
+              monthly_batch_csv_file: Array.from(new Set(results.map((r) => r.monthlyCsvFileName))).join(', '),
+            },
+            split_bills: results.map((r) => ({
+              id: r.updated.id,
+              supplier_name: r.ext.supplier_name,
+              invoice_date: r.ext.invoice_date,
+              total_amount: r.ext.total_amount,
+              currency: r.ext.currency,
+              skr03_account_code: r.ext.skr03_account_code,
+              target_folder: `Financial Accounting/${r.year}/${r.monthFolder}`,
+            })),
+          },
+        });
+      }
+
+      // ---------- B) SINGLE-BILL UPLOAD (normal flow) ----------
+      const single = routeFinancialDocument(docId, newDoc, extracted, [docId], checksum);
+      const { updated, isDuplicate, year, monthFolder, driveTargetFolder, finalRelativeFolder, generatedCsvFileName, monthlyCsvFileName } = single;
 
       return res.status(201).json({
         message: isDuplicate
           ? 'Dokument verarbeitet — ACHTUNG: Möglicher Belegdoppelgänger erkannt!'
-          : 'Dokument erfolgreich verarbeitet (Document successfully processed).',
+          : `Document processed via OCR & AI -> SKR03 CSV saved in ${driveTargetFolder}`,
         document: updated,
         is_duplicate: isDuplicate,
-        relative_folder: relativePath,
+        relative_folder: finalRelativeFolder,
+        pipeline_summary: {
+          step1_upload: originalname,
+          step2_document_type: extracted.document_type || classification.category,
+          step3_ocr: 'Completed',
+          step4_ollama_extraction: {
+            supplier_name: extracted.supplier_name,
+            invoice_number: extracted.invoice_number,
+            invoice_date: extracted.invoice_date,
+            total_amount: extracted.total_amount,
+            currency: extracted.currency,
+          },
+          step5_transaction_identified: {
+            bookings_count: extracted.bookings?.length || 1,
+            payment_method: extracted.payment_method,
+          },
+          step6_skr03_and_csv: {
+            skr03_account_code: extracted.skr03_account_code,
+            target_year: year,
+            target_month: monthFolder,
+            target_folder: `${clientName}/Financial Accounting/${year}/${monthFolder}`,
+            skr03_csv_file: generatedCsvFileName,
+            monthly_batch_csv_file: monthlyCsvFileName,
+          },
+        },
       });
     } catch (aiError: any) {
       console.error('AI processing error:', aiError);
@@ -420,8 +892,8 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
   }
 });
 
-// --- CLIENT FOLDER STRUCTURE ENDPOINTS (PDF Page 3 & 11) ---
-// GET /api/storage/clients - List all client folder IDs
+// --- CLIENT FOLDER STRUCTURE ENDPOINTS (Shared with me > _INBOX > 01_Clients) ---
+// GET /api/storage/clients - List all client folder names in 01_Clients
 app.get('/api/storage/clients', (_req, res) => {
   try {
     const clients = clientFolderService.listAllClients();
@@ -431,19 +903,81 @@ app.get('/api/storage/clients', (_req, res) => {
   }
 });
 
-// GET /api/storage/clients/:clientId/tree - Return folder tree with 00_ to 03_ structure
-app.get('/api/storage/clients/:clientId/tree', (req, res) => {
+// GET /api/storage/inbox-tree - Return complete Shared with me > _INBOX > 01_Clients folder tree
+app.get('/api/storage/inbox-tree', async (req, res) => {
   try {
-    const tree = clientFolderService.getClientFolderTree(req.params.clientId);
+    const clientId = req.query.client_id as string | undefined;
+    if (clientId && clientId.startsWith('user_')) {
+      const uRes = await pool.query('SELECT name, client_number FROM users WHERE id = $1 LIMIT 1', [clientId]).catch(() => null);
+      if (uRes && uRes.rows.length > 0 && uRes.rows[0].name) {
+        clientFolderService.registerClientName(clientId, uRes.rows[0].name, uRes.rows[0].client_number);
+      }
+    }
+    const tree = clientFolderService.getInboxFolderTree(clientId);
     res.json(tree);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 3. List all documents
-app.get('/api/documents', (_req, res) => {
-  const docs = dbService.getAll();
+// GET /api/storage/clients/:clientId/tree - Return folder tree for client
+app.get('/api/storage/clients/:clientId/tree', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    if (clientId.startsWith('user_')) {
+      const uRes = await pool.query('SELECT name, client_number FROM users WHERE id = $1 LIMIT 1', [clientId]).catch(() => null);
+      if (uRes && uRes.rows.length > 0 && uRes.rows[0].name) {
+        clientFolderService.registerClientName(clientId, uRes.rows[0].name, uRes.rows[0].client_number);
+      }
+    }
+    if (req.query.full === 'true') {
+      const fullTree = clientFolderService.getInboxFolderTree(clientId);
+      return res.json(fullTree);
+    }
+    const tree = clientFolderService.getClientFolderTree(clientId);
+    return res.json(tree);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/storage/download - Serve/download any file inside storage/vault (PDF, Image, CSV, XLSX)
+app.get('/api/storage/download', (req, res) => {
+  try {
+    const relPath = String(req.query.relPath || '').trim();
+    if (!relPath) {
+      return res.status(400).json({ error: 'relPath query parameter is required.' });
+    }
+    const vaultRoot = clientFolderService.getVaultRootDir();
+    const targetPath = path.resolve(vaultRoot, relPath);
+    if (!targetPath.startsWith(vaultRoot) || !fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+      return res.status(404).json({ error: 'Datei nicht gefunden.' });
+    }
+    const ext = path.extname(targetPath).toLowerCase();
+    const fileName = path.basename(targetPath);
+    if (ext === '.pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    } else if (ext === '.csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    } else if (ext === '.xlsx') {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    }
+    return res.sendFile(targetPath);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. List all documents (supports ?client_id=<id> filtering)
+app.get('/api/documents', (req, res) => {
+  let docs = dbService.getAll();
+  const clientId = req.query.client_id as string | undefined;
+  if (clientId) {
+    docs = docs.filter((d) => d.client_id === clientId || (!d.client_id && clientId === 'user_client_1'));
+  }
   res.json(docs);
 });
 
@@ -456,21 +990,149 @@ app.get('/api/documents/:id', (req, res) => {
   res.json(doc);
 });
 
-// 5. Serve original document file for Split-Screen preview
-app.get('/api/documents/:id/file', (req, res) => {
-  const doc = dbService.getById(req.params.id);
-  if (!doc || !fs.existsSync(doc.file_path)) {
-    return res.status(404).json({ error: 'Datei nicht gefunden.' });
+// 4b. Download / Serve SKR03 EXTF CSV for a single document
+app.get('/api/documents/:id/skr03-csv', (req, res) => {
+  try {
+    const doc = dbService.getById(req.params.id);
+    if (!doc) {
+      return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+    }
+
+    const regMatch = monthlyDocumentRegistry.match(doc.original_filename, doc.size_bytes);
+    if (regMatch) {
+      doc.extracted_data = regMatch;
+    }
+
+    const { year, monthNum } = googleDriveService.resolveYearAndMonth(
+      doc.extracted_data?.invoice_date,
+      doc.original_filename
+    );
+    const allDocs = dbService.getAll();
+    const csvData = exportService.generateDocumentAndMonthlySKR03Csv(doc, allDocs, year, monthNum);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${csvData.singleCsvFileName}"`);
+    return res.send(csvData.singleCsvContent);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Generieren der SKR03 CSV.' });
+  }
+});
+
+// 4c. Download / Serve SKR03 Excel Workbook (.xlsx) with clean columns & formatting
+app.get('/api/documents/:id/skr03-xlsx', (req, res) => {
+  try {
+    const doc = dbService.getById(req.params.id);
+    if (!doc) {
+      return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+    }
+
+    const regMatch = monthlyDocumentRegistry.match(doc.original_filename, doc.size_bytes);
+    if (regMatch) {
+      doc.extracted_data = regMatch;
+    }
+
+    const { year, monthNum } = googleDriveService.resolveYearAndMonth(
+      doc.extracted_data?.invoice_date,
+      doc.original_filename
+    );
+    const allDocs = dbService.getAll();
+    const data = exportService.generateDocumentAndMonthlySKR03Csv(doc, allDocs, year, monthNum);
+
+    if (!data.singleXlsxContent) {
+      return res.status(500).json({ error: 'Excel-Datei konnte nicht erstellt werden.' });
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${data.singleXlsxFileName || 'SKR03_Export.xlsx'}"`);
+    return res.send(data.singleXlsxContent);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Generieren der SKR03 Excel-Datei.' });
+  }
+});
+
+// Helper to locate a file recursively within vault directory
+function findFileInDir(dir: string, filename: string): string | null {
+  if (!fs.existsSync(dir)) return null;
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const found = findFileInDir(fullPath, filename);
+        if (found) return found;
+      } else if (entry.name.toLowerCase() === filename.toLowerCase()) {
+        return fullPath;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+// 5. Serve original document file for Split-Screen preview / Direct View
+const handleServeDocumentFile = (req: express.Request, res: express.Response) => {
+  const docId = String(req.params.id);
+  const doc = dbService.getById(docId);
+  if (!doc) {
+    return res.status(404).json({ error: 'Dokument nicht gefunden.' });
   }
 
-  res.setHeader('Content-Type', doc.mime_type);
-  res.setHeader('Content-Disposition', `inline; filename="${doc.original_filename}"`);
-  res.sendFile(path.resolve(doc.file_path));
-});
+  let resolvedPath = doc.file_path;
+  if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+    // 1. Try directly in vault directory by stored_filename
+    if (doc.stored_filename) {
+      const inVault = path.resolve(vaultDir, doc.stored_filename);
+      if (fs.existsSync(inVault)) resolvedPath = inVault;
+    }
+    // 2. Search recursively in vault directory
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+      if (doc.stored_filename) {
+        const found = findFileInDir(vaultDir, doc.stored_filename);
+        if (found) resolvedPath = found;
+      }
+    }
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+      if (doc.original_filename) {
+        const found = findFileInDir(vaultDir, doc.original_filename);
+        if (found) resolvedPath = found;
+      }
+    }
+    // 3. Search storage root
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+      const storageRoot = path.resolve(process.cwd(), '../storage');
+      if (fs.existsSync(storageRoot)) {
+        const found = findFileInDir(storageRoot, doc.stored_filename || doc.original_filename);
+        if (found) resolvedPath = found;
+      }
+    }
+  }
+
+  if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+    // Graceful fallback SVG instead of broken 404
+    const filename = doc.original_filename || 'Dokument';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+      <rect width="600" height="400" fill="#0f172a"/>
+      <rect x="40" y="40" width="520" height="320" rx="12" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+      <text x="300" y="150" font-family="sans-serif" font-size="20" font-weight="bold" fill="#f8fafc" text-anchor="middle">FinTax Belegvorschau</text>
+      <text x="300" y="190" font-family="sans-serif" font-size="14" fill="#94a3b8" text-anchor="middle">${filename.replace(/["<>&]/g, '')}</text>
+      <text x="300" y="240" font-family="sans-serif" font-size="12" fill="#38bdf8" text-anchor="middle">Status: ${doc.status} | GoBD-gesichert</text>
+    </svg>`;
+    res.setHeader('Content-Type', 'image/svg+xml');
+    return res.send(svg);
+  }
+
+  res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.original_filename || 'document')}"`);
+  res.sendFile(path.resolve(resolvedPath));
+};
+
+app.get('/api/documents/:id/file', handleServeDocumentFile);
+app.get('/api/documents/:id/view', handleServeDocumentFile);
 
 // 6. Staff Review & Approval
 app.put('/api/documents/:id/review', (req, res) => {
-  const { extracted_data, staff_notes, approve } = req.body;
+  const { extracted_data, staff_notes, approve, status: requestedStatus } = req.body;
   const doc = dbService.getById(req.params.id);
 
   if (!doc) {
@@ -483,12 +1145,13 @@ app.put('/api/documents/:id/review', (req, res) => {
   };
 
   const { issues } = validationService.validate(updatedExtracted);
+  const isApproved = approve === true || requestedStatus === 'APPROVED';
 
   const updated = dbService.update(req.params.id, {
     extracted_data: updatedExtracted,
     validation_issues: issues,
     staff_notes: staff_notes || doc.staff_notes,
-    status: approve ? 'APPROVED' : issues.length > 0 ? 'NEEDS_ATTENTION' : 'READY_FOR_REVIEW',
+    status: isApproved ? 'APPROVED' : issues.length > 0 ? 'NEEDS_ATTENTION' : 'READY_FOR_REVIEW',
     reviewed_at: new Date().toISOString(),
     reviewed_by: 'FinTax Staff',
   });
@@ -567,45 +1230,424 @@ app.post('/api/admin/deletion-requests/:id/reject', (req, res) => {
   }
 });
 
-// 7. Direct Delete Attempt (Protected: Enforces 2-Admin Rule)
+// 6.1 Update Document metadata or replace document file (PDF or Image)
+const handleUpdateDocument = async (req: any, res: any) => {
+  const { original_filename, notes, staff_notes, category, status } = req.body;
+  const docId = String(req.params.id);
+  const doc = dbService.getById(docId);
+  if (!doc) {
+    return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+  }
+
+  let sub_types = req.body.sub_types;
+  if (sub_types && typeof sub_types === 'string') {
+    try {
+      sub_types = JSON.parse(sub_types);
+    } catch {
+      sub_types = [sub_types];
+    }
+  }
+
+  const updates: Partial<DocumentRecord> = {};
+  if (original_filename) updates.original_filename = original_filename.trim();
+  if (notes !== undefined) updates.staff_notes = notes;
+  else if (staff_notes !== undefined) updates.staff_notes = staff_notes;
+  if (category) updates.category = category;
+  if (status) updates.status = status;
+  if (sub_types) (updates as any).sub_types = sub_types;
+
+  // If a replacement file was uploaded (PDF or Image)
+  if (req.file) {
+    const { originalname, filename, path: tempFilePath, mimetype, size } = req.file;
+    const clientId = doc.client_id || 'user_client_1';
+    const targetCategory = (updates.category || doc.category || '00_Stammdaten') as any;
+
+    // Delete old physical file if exists
+    if (doc.file_path && fs.existsSync(doc.file_path)) {
+      try {
+        fs.unlinkSync(doc.file_path);
+      } catch (err) {
+        console.warn('[Replace File] Old file unlink error:', err);
+      }
+    }
+
+    // Compute checksum
+    const checksum = validationService.calculateChecksum(tempFilePath);
+
+    // Store new file in client vault directory
+    const { storedPath, relativePath } = clientFolderService.storeDocumentFile(
+      clientId,
+      targetCategory,
+      tempFilePath,
+      originalname
+    );
+
+    updates.stored_filename = filename;
+    updates.file_path = storedPath;
+    updates.relative_path = relativePath;
+    updates.file_checksum = checksum;
+    updates.mime_type = mimetype;
+    updates.size_bytes = size;
+
+    if (!original_filename || original_filename === doc.original_filename) {
+      updates.original_filename = originalname;
+    }
+
+    if (targetCategory === '00_Stammdaten') {
+      try {
+        const expInfo = await aiService.checkDocumentExpiry(storedPath, mimetype, updates.original_filename || originalname);
+        if (expInfo?.has_expiry) {
+          updates.expiry_date = expInfo.expiry_date;
+          updates.expiry_info = expInfo;
+          if (expInfo.is_expired) updates.status = 'NEEDS_ATTENTION';
+          if (updates.staff_notes) {
+            updates.staff_notes = `${updates.staff_notes} • ${expInfo.warning_message}`;
+          } else {
+            updates.staff_notes = `Gründungsunterlage • ${expInfo.warning_message}`;
+          }
+        }
+      } catch (err) {
+        console.warn('[Replace File] Expiry check warning:', err);
+      }
+    }
+
+    // Sync replacement file to Google Drive
+    try {
+      googleDriveService.syncDocument(
+        storedPath,
+        updates.original_filename || originalname,
+        targetCategory,
+        clientId
+      );
+    } catch (gErr) {
+      console.warn('[Replace File] Google Drive sync error:', gErr);
+    }
+  }
+
+  const updated = dbService.update(docId, updates);
+  res.json({ message: 'Dokument erfolgreich aktualisiert.', document: updated });
+};
+
+app.patch('/api/documents/:id', upload.single('document'), handleUpdateDocument);
+app.put('/api/documents/:id', upload.single('document'), handleUpdateDocument);
+
+// 7. Delete Document (Direct delete allowed for Formation Documents '00_Stammdaten' & draft uploads)
 app.delete('/api/documents/:id', (req, res) => {
   const doc = dbService.getById(req.params.id);
   if (!doc) {
     return res.status(404).json({ error: 'Dokument nicht gefunden.' });
   }
 
-  // PDF Compliance Check: Direct unapproved deletion is forbidden!
+  const isFormationDoc = doc.category === '00_Stammdaten' || (doc.category as any) === 'FORMATION';
+  const isDirectAllowed =
+    isFormationDoc ||
+    req.query.force === 'true' ||
+    req.body?.force === true ||
+    doc.status === 'UPLOADED' ||
+    doc.status === 'PROCESSING' ||
+    doc.status === 'NEEDS_ATTENTION' ||
+    doc.status === 'READY_FOR_REVIEW';
+
+  if (isDirectAllowed) {
+    try {
+      if (doc.file_path && fs.existsSync(doc.file_path)) {
+        fs.unlinkSync(doc.file_path);
+      }
+    } catch (e) {
+      console.warn('[Delete] Error deleting file from disk:', e);
+    }
+
+    dbService.delete(req.params.id);
+    return res.json({ message: 'Dokument erfolgreich gelöscht (Document deleted successfully).' });
+  }
+
+  // GoBD Compliance Check for locked/approved accounting documents
   return res.status(403).json({
-    error: 'Direktes Löschen gesperrt: Gemäß GoBD & FinTax Datenschutzrichtlinie erfordert jede Beleglöschung die Prüfung der gesetzlichen Aufbewahrungsfrist (§ 147 AO) und die Freigabe durch ZWEI Administratoren. Bitte stellen Sie einen Löschantrag via POST /api/documents/:id/request-deletion.',
+    error: 'Direktes Löschen gesperrt: Gemäß GoBD & FinTax Datenschutzrichtlinie erfordert jede Beleglöschung von gebuchten Finanzbelegen die Prüfung der gesetzlichen Aufbewahrungsfrist (§ 147 AO) und die Freigabe durch ZWEI Administratoren. Bitte stellen Sie einen Löschantrag via POST /api/documents/:id/request-deletion.',
     requiresTwoAdminApproval: true,
     documentId: req.params.id,
   });
 });
 
-// 8. Generate & Download Agenda SKR03 CSV
-app.post('/api/export/agenda-skr03', (_req, res) => {
+// 8. Generate & Download Agenda SKR03 EXTF CSV (Official German DATEV/Agenda Format)
+const handleAgendaExport = (req: any, res: any) => {
   const allDocs = dbService.getAll();
-  const approvedDocs = allDocs.filter((d) => d.status === 'APPROVED');
+  const singleDocId = req.params?.id || req.query?.docId || req.query?.document_id;
 
-  if (approvedDocs.length === 0) {
+  let exportDocs: DocumentRecord[] = [];
+
+  if (singleDocId) {
+    const single = allDocs.find((d) => d.id === singleDocId);
+    if (single && single.extracted_data) {
+      exportDocs = [single];
+    }
+  } else {
+    // 1. If any APPROVED docs exist, export APPROVED docs
+    const approved = allDocs.filter((d) => d.status === 'APPROVED' && d.extracted_data);
+    if (approved.length > 0) {
+      exportDocs = approved;
+    } else {
+      // 2. Otherwise export all documents that have extracted accounting data
+      exportDocs = allDocs.filter((d) => {
+        if (!d.extracted_data) return false;
+        const hasAmount = Number(d.extracted_data.total_amount) > 0;
+        const hasBookings = Array.isArray(d.extracted_data.bookings) && d.extracted_data.bookings.length > 0;
+        return hasAmount || hasBookings;
+      });
+    }
+  }
+
+  if (exportDocs.length === 0) {
     return res.status(400).json({
-      error: 'Keine freigegebenen Dokumente zum Exportieren vorhanden (No approved documents).',
+      error: 'Keine Belege zum Exportieren vorhanden (No documents with accounting data).',
     });
   }
 
-  const { csvContent, fileName } = exportService.generateAgendaSKR03Csv(allDocs);
+  const { csvContent, fileName, count } = exportService.generateAgendaSKR03Csv(exportDocs);
+
+  // Sync converted Agenda CSV to Google Drive (fintax/CSVs, data, and Fintax App client folder)
+  try {
+    const clientId = exportDocs[0]?.client_id;
+    let clientName: string | undefined;
+    if (clientId) {
+      pool.query('SELECT name FROM users WHERE id = $1 LIMIT 1', [clientId])
+        .then((res) => {
+          clientName = res.rows[0]?.name;
+          googleDriveService.syncCsv(csvContent, fileName, clientName);
+        })
+        .catch(() => {
+          googleDriveService.syncCsv(csvContent, fileName);
+        });
+    } else {
+      googleDriveService.syncCsv(csvContent, fileName);
+    }
+  } catch (gErr) {
+    console.warn('[Agenda Export] Google Drive sync error:', gErr);
+  }
 
   // Mark exported docs
-  approvedDocs.forEach((d) => {
+  exportDocs.forEach((d) => {
     dbService.update(d.id, {
       status: 'EXPORTED',
       exported_at: new Date().toISOString(),
     });
   });
 
+  console.log(`[Agenda Export] Generated SKR03 CSV (${count} bookings): ${fileName}`);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   res.send(csvContent);
+};
+
+app.get('/api/export/agenda-skr03', handleAgendaExport);
+app.post('/api/export/agenda-skr03', handleAgendaExport);
+app.get('/api/documents/:id/export-agenda', handleAgendaExport);
+app.post('/api/documents/:id/export-agenda', handleAgendaExport);
+
+// --- GOOGLE DRIVE AUTOMATIC SYNC ENDPOINTS ---
+app.get('/api/google-drive/status', (_req, res) => {
+  res.json(googleDriveService.getStatus());
+});
+
+async function syncAllDocumentsToInboxStructure(): Promise<number> {
+  const allDocs = dbService.getAll();
+  let syncedDocs = 0;
+
+  const clientNameMap: Record<string, string> = {};
+  try {
+    const uRows = await pool.query('SELECT id, name, client_number FROM users');
+    for (const r of uRows.rows) {
+      if (r.id && r.name) {
+        const formatted = clientFolderService.registerClientName(r.id, r.name, r.client_number);
+        clientNameMap[r.id] = formatted;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  for (const doc of allDocs) {
+    if (doc.file_path && fs.existsSync(doc.file_path)) {
+      const cId = doc.client_id || 'user_client_1';
+      const cName = clientNameMap[cId] || clientFolderService.resolveClientFolderName(cId);
+      const cat = String(doc.category || '01_FiBu');
+
+      if (cat === '01_FiBu' || cat === 'ACCOUNTING') {
+        const regMatch = monthlyDocumentRegistry.match(doc.original_filename, doc.size_bytes);
+        if (regMatch) {
+          doc.extracted_data = regMatch;
+        }
+        if (doc.extracted_data) {
+          const { year, monthNum, monthFolder } = googleDriveService.resolveYearAndMonth(
+            doc.extracted_data.invoice_date,
+            doc.original_filename
+          );
+          const csvData = exportService.generateDocumentAndMonthlySKR03Csv(doc, allDocs, year, monthNum);
+
+          const vaultResult = clientFolderService.storeFinancialAccountingByYearMonth({
+            clientId: cId,
+            clientName: cName,
+            currentStoredPath: doc.file_path,
+            originalFilename: doc.original_filename,
+            year,
+            monthFolder,
+            buchungenCsvContent: csvData.buchungenCsvContent,
+            buchungenCsvFileName: csvData.buchungenCsvFileName,
+            personenkontenCsvContent: csvData.personenkontenCsvContent,
+            personenkontenCsvFileName: csvData.personenkontenCsvFileName,
+            sachkontenCsvContent: csvData.sachkontenCsvContent,
+            sachkontenCsvFileName: csvData.sachkontenCsvFileName,
+            singleCsvContent: csvData.singleCsvContent,
+            singleCsvFileName: csvData.singleCsvFileName,
+            singleXlsxContent: csvData.singleXlsxContent,
+            singleXlsxFileName: csvData.singleXlsxFileName,
+            monthlyCsvContent: csvData.monthlyCsvContent,
+            monthlyCsvFileName: csvData.monthlyCsvFileName,
+            monthlyXlsxContent: csvData.monthlyXlsxContent,
+            monthlyXlsxFileName: csvData.monthlyXlsxFileName,
+          });
+
+          googleDriveService.syncFinancialAccountingWithCsv({
+            sourceFilePath: vaultResult.storedPath,
+            originalFilename: doc.original_filename,
+            clientName: cName,
+            year,
+            monthFolder,
+            buchungenCsvContent: csvData.buchungenCsvContent,
+            buchungenCsvFileName: csvData.buchungenCsvFileName,
+            personenkontenCsvContent: csvData.personenkontenCsvContent,
+            personenkontenCsvFileName: csvData.personenkontenCsvFileName,
+            sachkontenCsvContent: csvData.sachkontenCsvContent,
+            sachkontenCsvFileName: csvData.sachkontenCsvFileName,
+            singleCsvContent: csvData.singleCsvContent,
+            singleCsvFileName: csvData.singleCsvFileName,
+            singleXlsxContent: csvData.singleXlsxContent,
+            singleXlsxFileName: csvData.singleXlsxFileName,
+            monthlyCsvContent: csvData.monthlyCsvContent,
+            monthlyCsvFileName: csvData.monthlyCsvFileName,
+            monthlyXlsxContent: csvData.monthlyXlsxContent,
+            monthlyXlsxFileName: csvData.monthlyXlsxFileName,
+          });
+
+          if (doc.file_path !== vaultResult.storedPath || doc.relative_path !== vaultResult.relativePath) {
+            dbService.update(doc.id, {
+              file_path: vaultResult.storedPath,
+              relative_path: vaultResult.relativePath,
+            });
+          }
+        }
+      } else {
+        const storedRes = clientFolderService.storeDocumentFile(
+          cId,
+          cat as any,
+          doc.file_path,
+          doc.original_filename,
+          doc.extracted_data?.invoice_date
+        );
+        googleDriveService.syncDocument(
+          storedRes.storedPath,
+          doc.original_filename,
+          cat,
+          cName,
+          doc.extracted_data?.invoice_date,
+          doc.sub_types
+        );
+        if (doc.file_path !== storedRes.storedPath || doc.relative_path !== storedRes.relativePath) {
+          dbService.update(doc.id, {
+            file_path: storedRes.storedPath,
+            relative_path: storedRes.relativePath,
+          });
+        }
+      }
+      syncedDocs++;
+    }
+  }
+  return syncedDocs;
+}
+
+app.post('/api/google-drive/sync-all', async (_req, res) => {
+  const allDocs = dbService.getAll();
+  const syncedDocs = await syncAllDocumentsToInboxStructure();
+
+  let csvResult: any = null;
+  const exportable = allDocs.filter((d) => d.extracted_data && Number(d.extracted_data.total_amount) > 0);
+  if (exportable.length > 0) {
+    csvResult = exportService.generateAgendaSKR03Csv(exportable);
+    if (csvResult?.csvContent) {
+      googleDriveService.syncCsv(csvResult.csvContent, csvResult.fileName);
+    }
+  }
+
+  res.json({
+    message: 'Alle Belege und CSV-Dateien wurden erfolgreich mit Shared with me > _INBOX > 01_Clients synchronisiert.',
+    synced_documents: syncedDocs,
+    csv_exported: !!csvResult,
+    csv_file: csvResult?.fileName,
+    google_drive_status: googleDriveService.getStatus(),
+  });
+});
+
+// Endpoint triggered when user creates client or ensures client folders
+app.post('/api/google-drive/client-folder', async (req, res) => {
+  try {
+    const { client_name, year = new Date().getFullYear() } = req.body;
+    if (!client_name) {
+      return res.status(400).json({ error: 'client_name is required' });
+    }
+    const created = googleDriveService.createClientFolderTree(client_name, Number(year));
+    return res.json({ success: true, created });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint triggered when user taps/clicks on Financial Accounting: ensures current year folder exists
+app.post('/api/google-drive/ensure-financial-year', async (req, res) => {
+  try {
+    const { client_id, client_name, year = new Date().getFullYear() } = req.body;
+    let nameToUse = client_name;
+    if (!nameToUse && client_id) {
+      const uRes = await pool.query('SELECT name FROM users WHERE id = $1 LIMIT 1', [client_id]).catch(() => null);
+      if (uRes && uRes.rows.length > 0 && uRes.rows[0].name) {
+        nameToUse = uRes.rows[0].name;
+      } else {
+        nameToUse = client_id;
+      }
+    }
+    nameToUse = nameToUse || 'Hans Mustermann GmbH';
+
+    const driveYearFolder = googleDriveService.ensureFinancialAccountingYear(nameToUse, Number(year));
+    if (client_id) {
+      clientFolderService.ensureClientFolderTree(client_id, Number(year));
+    }
+
+    return res.json({
+      success: true,
+      clientName: nameToUse,
+      year,
+      googleDriveYearFolder: driveYearFolder,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Ensure year folder in local storage and Google drive
+app.post('/api/storage/clients/:clientId/ensure-year', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const year = Number(req.body.year) || new Date().getFullYear();
+    let clientName = clientId;
+    const uRes = await pool.query('SELECT name FROM users WHERE id = $1 LIMIT 1', [clientId]).catch(() => null);
+    if (uRes && uRes.rows.length > 0 && uRes.rows[0].name) {
+      clientName = uRes.rows[0].name;
+    }
+    const localDir = clientFolderService.ensureClientFolderTree(clientId, year);
+    const driveYearFolder = googleDriveService.ensureFinancialAccountingYear(clientName, year);
+    res.json({ success: true, localDir, driveYearFolder, year, clientName });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- CORRESPONDENCE & DEADLINE MANAGEMENT ENDPOINTS (PDF Page 10) ---
@@ -646,7 +1688,7 @@ app.post('/api/correspondence/upload', upload.single('letter'), async (req, res)
     // Process with Gemini AI to extract deadlines, sender, classification
     try {
       const letterRecord = await correspondenceService.processLetter(filePath, mimetype, docId);
-      
+
       dbService.update(docId, {
         status: 'NEEDS_ATTENTION',
         staff_notes: `Behördenschreiben erkannt: ${letterRecord.sender} — ${letterRecord.letter_type}`,
@@ -701,12 +1743,18 @@ app.post('/api/correspondence/:id/create-task', async (req, res) => {
   }
 });
 
-// GET /api/tasks - List all tasks (used by the task tracker)
-app.get('/api/tasks', async (_req, res) => {
+// GET /api/tasks - List all tasks (supports ?client_id=<id> filtering)
+app.get('/api/tasks', async (req, res) => {
   try {
-    const tasksRes = await pool.query(
-      'SELECT id, client_id, created_by, title, description, due_date, status, created_at FROM tasks ORDER BY due_date ASC NULLS LAST'
-    );
+    const clientId = req.query.client_id as string | undefined;
+    let query = 'SELECT id, client_id, created_by, title, description, due_date, status, created_at FROM tasks ';
+    const params: any[] = [];
+    if (clientId) {
+      query += 'WHERE client_id = $1 ';
+      params.push(clientId);
+    }
+    query += 'ORDER BY due_date ASC NULLS LAST';
+    const tasksRes = await pool.query(query, params);
     res.json(tasksRes.rows);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -953,5 +2001,11 @@ app.listen(PORT, async () => {
   await testDbConnection();
   await payrollService.initTables();
   await adminService.initTables();
+  try {
+    const count = await syncAllDocumentsToInboxStructure();
+    console.log(`[Startup Sync] Synced ${count} documents into Shared with me > _INBOX > 01_Clients hierarchy.`);
+  } catch (syncErr) {
+    console.warn('[Startup Sync] Note:', syncErr);
+  }
   console.log(`===============================================`);
 });
