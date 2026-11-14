@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { UserRole } from '../context/AuthContext';
 import type { Language } from '../translations';
+import fintaxLogo from '../assets/fintax_logo.jpeg';
 
 interface NavbarProps {
   lang: Language;
@@ -48,62 +49,48 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {!user && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: '1.125rem',
+              <img
+                src={fintaxLogo}
+                alt="FinTax Consulting"
+                style={{
+                  height: '36px',
+                  width: 'auto',
+                  objectFit: 'contain',
+                }}
+              />
+              <span style={{
+                fontSize: '0.625rem',
+                fontWeight: 700,
+                backgroundColor: '#f1f5f9',
+                color: '#475569',
+                border: '1px solid #e2e8f0',
+                padding: '2px 6px',
+                borderRadius: '4px',
               }}>
-                🏛️
-              </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{
-                    fontWeight: 800,
-                    fontSize: '1.125rem',
-                    color: '#0f172a',
-                    letterSpacing: '-0.02em',
-                  }}>
-                    FinTax
-                  </span>
-                  <span style={{
-                    fontSize: '0.625rem',
-                    fontWeight: 700,
-                    backgroundColor: '#dbeafe',
-                    color: '#1d4ed8',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                  }}>
-                    SKR03
-                  </span>
-                </div>
-              </div>
+                SKR03
+              </span>
             </div>
           )}
 
           {user && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <img
+                src={fintaxLogo}
+                alt="FinTax Consulting"
+                style={{
+                  height: '30px',
+                  width: 'auto',
+                  objectFit: 'contain',
+                  display: 'block',
+                }}
+              />
+              <span style={{ color: '#cbd5e1' }}>/</span>
               <span style={{
                 fontSize: '0.8125rem',
                 fontWeight: 600,
                 color: '#64748b',
               }}>
                 {activePortal === 'ADMIN' ? 'Administrator Portal' : activePortal === 'STAFF' ? 'Kanzlei & Prüfer Portal' : 'Mandantenportal'}
-              </span>
-              <span style={{ color: '#cbd5e1' }}>/</span>
-              <span style={{
-                fontSize: '0.8125rem',
-                fontWeight: 700,
-                color: '#0f172a',
-              }}>
-                FinTax Consulting GmbH
               </span>
             </div>
           )}

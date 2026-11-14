@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { Language } from '../translations';
+import fintaxLogo from '../assets/fintax_logo.jpeg';
 import {
   Users,
   FolderTree,
@@ -13,7 +14,6 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Shield,
   LayoutDashboard,
   Building2,
 } from 'lucide-react';
@@ -91,45 +91,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
-          <div
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-              flexShrink: 0,
-            }}
-          >
-            <Shield size={22} strokeWidth={2.2} />
-          </div>
-          {!collapsed && (
-            <div style={{ overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontWeight: 800, fontSize: '1.125rem', color: '#0f172a', letterSpacing: '-0.02em' }}>
-                  FinTax
-                </span>
-                <span
-                  style={{
-                    fontSize: '0.625rem',
-                    fontWeight: 700,
-                    backgroundColor: '#dbeafe',
-                    color: '#1d4ed8',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  SKR03
-                </span>
-              </div>
-              <div style={{ fontSize: '0.6875rem', color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                {lang === 'de' ? 'Kanzlei & Mandantenportal' : 'Tax Advisory & Cloud'}
-              </div>
+          {!collapsed ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <img
+                src={fintaxLogo}
+                alt="FinTax Consulting"
+                style={{
+                  height: '38px',
+                  width: 'auto',
+                  maxWidth: '175px',
+                  objectFit: 'contain',
+                  display: 'block',
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '0.6rem',
+                  fontWeight: 700,
+                  backgroundColor: '#f1f5f9',
+                  color: '#475569',
+                  border: '1px solid #e2e8f0',
+                  padding: '2px 5px',
+                  borderRadius: '4px',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                SKR03
+              </span>
+            </div>
+          ) : (
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '10px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                padding: '4px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+              }}
+            >
+              <img
+                src={fintaxLogo}
+                alt="FinTax"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                }}
+              />
             </div>
           )}
         </div>

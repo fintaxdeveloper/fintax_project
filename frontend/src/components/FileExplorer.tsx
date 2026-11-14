@@ -435,6 +435,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
             background: darkTheme ? '#1e293b' : '#f8fafc',
             borderBottom: `1px solid ${border}`,
             fontSize: '0.9rem',
+
           }}
         >
           {breadcrumbNodes.map((bNode, index) => {

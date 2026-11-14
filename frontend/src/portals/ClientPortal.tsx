@@ -13,13 +13,10 @@ import {
   AlertCircle,
   FileText,
   Search,
-  ExternalLink,
   Calendar,
   Sparkles,
   ShieldCheck,
-  Plus,
   BarChart3,
-  Send,
   ArrowUp,
   Building2,
   Pencil,
@@ -29,6 +26,10 @@ import {
   Check,
   Upload,
   FileImage,
+  FileSpreadsheet,
+  Download,
+  Mail,
+  ChevronRight,
 } from 'lucide-react';
 
 const API_BASE = 'http://127.0.0.1:5000/api';
@@ -119,7 +120,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
   uploading: _uploading,
   externalTab = 'OVERVIEW',
   onTabChange,
-  onLanguageChange,
+  onLanguageChange: _onLanguageChange,
 }) => {
   const { user } = useAuth();
   const { success, error } = useSnackbar();
@@ -136,6 +137,50 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
   const [modalFiles, setModalFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropzoneInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isQuickUploading, setIsQuickUploading] = useState(false);
+
+  const handleQuickDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setIsQuickUploading(true);
+      for (let i = 0; i < e.dataTransfer.files.length; i++) {
+        const file = e.dataTransfer.files[i];
+        try {
+          await _onUpload(file, '01_FiBu');
+          success(
+            isDe ? `"${file.name}" erfolgreich hochgeladen und analysiert!` : `"${file.name}" uploaded and processed!`,
+            isDe ? 'Beleg hochgeladen' : 'Document uploaded'
+          );
+        } catch (err: any) {
+          error(err?.message || 'Upload failed', 'Upload Error');
+        }
+      }
+      setIsQuickUploading(false);
+    }
+  };
+
+  const handleQuickFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIsQuickUploading(true);
+      for (let i = 0; i < e.target.files.length; i++) {
+        const file = e.target.files[i];
+        try {
+          await _onUpload(file, '01_FiBu');
+          success(
+            isDe ? `"${file.name}" erfolgreich hochgeladen und analysiert!` : `"${file.name}" uploaded and processed!`,
+            isDe ? 'Beleg hochgeladen' : 'Document uploaded'
+          );
+        } catch (err: any) {
+          error(err?.message || 'Upload failed', 'Upload Error');
+        }
+      }
+      setIsQuickUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   // Submissions search & filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -772,6 +817,59 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
     return true;
   });
 
+  // Financial formatting helpers
+  const formatEuro = (amount?: number) => {
+    if (amount === undefined || amount === null || isNaN(amount)) return '—';
+    return new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return '0 KB';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const formatGermanDate = (dateStr?: string) => {
+    if (!dateStr) return '—';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [y, m, d] = dateStr.split('-');
+      return `${d}.${m}.${y}`;
+    }
+    return dateStr;
+  };
+
+  const cleanSupplierName = (name?: string) => {
+    if (!name) return '—';
+    return name
+      .replace(/\s+Kontoauszug\s+\d{1,2}\/\d{4}.*$/i, '')
+      .replace(/\s+\(?(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\)?/i, '')
+      .trim();
+  };
+
+  const getFolderBadgeLabel = (doc: DocumentRecord) => {
+    if (doc.category === '00_Stammdaten') return 'Stammdaten';
+    if (doc.extracted_data?.invoice_date) {
+      const [y, m] = doc.extracted_data.invoice_date.split('-');
+      const mNames = ['Jan', 'Feb', 'März', 'Apr', 'Mai', 'Juni', 'Juli', 'Aug', 'Sept', 'Okt', 'Nov', 'Dez'];
+      const mIdx = (parseInt(m, 10) || 1) - 1;
+      return `FiBu • ${mNames[mIdx] || m} ${y}`;
+    }
+    if (doc.extracted_data?.target_folder) {
+      const parts = doc.extracted_data.target_folder.split('/');
+      if (parts.length >= 3) {
+        return `FiBu • ${parts[2]}/${parts[1]}`;
+      }
+      return doc.extracted_data.target_folder;
+    }
+    return 'FiBu';
+  };
+
   const stats = {
     total: userDocs.length,
     needsReview: userDocs.filter((d) => d.status === 'READY_FOR_REVIEW' || d.status === 'NEEDS_ATTENTION').length,
@@ -780,64 +878,8 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
 
   return (
     <div style={{ minHeight: '100%', background: '#f8fafc', color: '#0f172a' }}>
-      
-      {/* ── TOP LUXURY CONTEXT BAR (MATCHING SCREENSHOT 3) ── */}
-      <div style={{
-        background: '#0b1a30',
-        color: '#ffffff',
-        padding: '10px 28px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        fontSize: '0.85rem',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em', fontSize: '1.05rem' }}>
-            FinTax
-          </span>
-          <span style={{ fontFamily: 'Georgia, "Playfair Display", serif', fontStyle: 'italic', color: '#dfb772', fontSize: '1.05rem' }}>
-            Consulting
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-          {/* Language Toggle Pills */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.85rem', marginRight: 4, opacity: 0.8 }}>🌐</span>
-            {(['EN', 'DE', 'FA', 'AR'] as const).map((lCode) => {
-              const currentUpper = (lang || 'en').toUpperCase();
-              const isSelected = currentUpper === lCode;
-              return (
-                <button
-                  key={lCode}
-                  type="button"
-                  onClick={() => onLanguageChange && onLanguageChange(lCode.toLowerCase() as Language)}
-                  style={{
-                    background: isSelected ? '#dfb772' : 'transparent',
-                    color: isSelected ? '#0b1a30' : '#ffffff',
-                    border: 'none',
-                    borderRadius: 999,
-                    padding: '2px 8px',
-                    fontWeight: isSelected ? 800 : 600,
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {lCode}
-                </button>
-              );
-            })}
-          </div>
-          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
-            Platform provided by FinTax Consulting
-          </span>
-        </div>
-      </div>
-
       {/* ── MAIN WORKSPACE ── */}
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 28px 60px' }}>
+      <div style={{ maxWidth: 1380, margin: '0 auto', padding: '24px 28px 60px' }}>
 
         {/* ── TOP BREADCRUMB BAR (SHOWN WHEN IN FORMATION VIEW) ── */}
         {activeInternalTab === 'FORMATION' && (
@@ -851,7 +893,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               gap: 12,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
                 onClick={() => {
@@ -860,44 +902,44 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 }}
                 style={{
                   background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: 8,
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 10,
                   padding: '8px 16px',
                   fontSize: '0.85rem',
-                  fontWeight: 700,
-                  color: '#0b1a30',
+                  fontWeight: 600,
+                  color: '#0f172a',
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
                   transition: 'all 0.15s ease',
                 }}
               >
-                ← {isDe ? 'Zurück zum Dashboard / Übersicht' : 'Back to Dashboard / Overview'}
+                ← {isDe ? 'Zurück zur Übersicht' : 'Back to Overview'}
               </button>
-              <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>/</span>
-              <span style={{ color: '#0b1a30', fontWeight: 700, fontSize: '0.9rem' }}>
+              <span style={{ color: '#cbd5e1' }}>/</span>
+              <span style={{ color: '#0f172a', fontWeight: 700, fontSize: '0.9rem' }}>
                 {isDe ? 'Gründungsunterlagen (00_Stammdaten)' : 'Formation Documents (00_Stammdaten)'}
               </span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                {isDe ? 'Mandant' : 'Client'}: <strong>{user?.clientNumber || (user?.id ? user.id.slice(-8) : 'KD-NEU')}</strong>
+                {isDe ? 'Mandant' : 'Client'}: <strong>{user?.clientNumber || (user?.id ? user.id.slice(-8) : 'BN-85200')}</strong>
               </span>
               <span
                 style={{
-                  background: '#dcfce7',
-                  color: '#15803d',
-                  border: '1px solid #bbf7d0',
+                  background: '#ecfdf5',
+                  color: '#059669',
+                  border: '1px solid #a7f3d0',
                   borderRadius: 999,
                   fontSize: '0.75rem',
                   fontWeight: 700,
-                  padding: '3px 10px',
+                  padding: '3px 12px',
                 }}
               >
-                ✓ {formationDocs.length} {isDe ? 'Dokumente hochgeladen' : 'documents uploaded'}
+                ✓ {formationDocs.length} {isDe ? 'Dokumente erfasst' : 'documents recorded'}
               </span>
             </div>
           </div>
@@ -906,444 +948,680 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
         {/* ── OVERVIEW HERO & 4 CORE ACTION CARDS (SHOWN ON DASHBOARD/OVERVIEW) ── */}
         {activeInternalTab !== 'FORMATION' && (
           <>
-            {/* ── 1. GORGEOUS WELCOME HERO BANNER ── */}
-        <div style={{
-          background: 'linear-gradient(135deg, #0b1a30 0%, #15294a 55%, #1d3964 100%)',
-          borderRadius: 20,
-          padding: '32px 38px',
-          color: '#ffffff',
-          position: 'relative',
-          overflow: 'hidden',
-          boxShadow: '0 12px 30px -8px rgba(11,26,48,0.3)',
-          border: '1px solid rgba(212, 163, 89, 0.35)',
-          marginBottom: 28,
-        }}>
-          {/* Subtle background glow effect */}
-          <div style={{
-            position: 'absolute',
-            top: -60,
-            right: -60,
-            width: 260,
-            height: 260,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(212,163,89,0.18) 0%, rgba(11,26,48,0) 70%)',
-            pointerEvents: 'none',
-          }} />
+            {/* Hidden Input for Instant Quick Dropzone */}
+            <input
+              type="file"
+              ref={dropzoneInputRef}
+              style={{ display: 'none' }}
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.csv,.xlsx,.xml"
+              onChange={handleQuickFileSelect}
+            />
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20, position: 'relative', zIndex: 1 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: '1.1rem' }}>👋</span>
-                <span style={{ fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {isDe ? 'Mandantenportal' : 'Client Workspace'}
-                </span>
-              </div>
+            {/* ── 1. MODERN EXECUTIVE GREETING & ACTION BAR (LIGHT LUXURY) ── */}
+            <div style={{
+              background: '#ffffff',
+              borderRadius: 20,
+              padding: '24px 30px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
+              marginBottom: 20,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 20,
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              {/* Top Accent Gradient Line */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 3,
+                background: 'linear-gradient(90deg, #2563eb 0%, #6366f1 50%, #10b981 100%)',
+              }} />
 
-              {/* USER'S NAME RENDERED PROMINENTLY & ELEGANTLY */}
-              <h1 style={{
-                margin: 0,
-                fontSize: '2.1rem',
-                fontWeight: 700,
-                fontFamily: 'Georgia, "Playfair Display", -apple-system, serif',
-                letterSpacing: '-0.02em',
-                lineHeight: 1.2,
-                color: '#ffffff',
-              }}>
-                {isDe ? 'Willkommen,' : 'Welcome,'}{' '}
-                <span style={{
-                  color: '#ffffff',
-                  borderBottom: '2.5px solid #d4a359',
-                  paddingBottom: 2,
-                }}>
-                  {user?.name || 'Test von Webapp'}
-                </span>
-              </h1>
-
-              <p style={{
-                margin: '10px 0 0 0',
-                fontSize: '1.05rem',
-                color: '#dfb772',
-                fontFamily: 'Georgia, "Playfair Display", serif',
-                fontWeight: 400,
-              }}>
-                {isDe ? 'im Mandantenportal der FinTax Consulting' : 'to the client portal of FinTax Consulting'}
-              </p>
-
-              {/* Client metadata badge pill row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-                <span style={{
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  padding: '4px 12px',
-                  borderRadius: 999,
-                  fontSize: '0.78rem',
-                  color: '#f1f5f9',
-                  fontWeight: 600,
-                  border: '1px solid rgba(255,255,255,0.15)',
-                }}>
-                  Mandant: <strong>{user?.clientNumber || (user?.id ? user.id.slice(-8) : 'KD-NEU')}</strong>
-                </span>
-                <span style={{
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  padding: '4px 12px',
-                  borderRadius: 999,
-                  fontSize: '0.78rem',
-                  color: '#34d399',
-                  fontWeight: 600,
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
+              {/* Left Profile & Metadata */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{
+                  width: 54,
+                  height: 54,
+                  borderRadius: 16,
+                  background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 5,
-                }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                  {isDe ? 'GoBD-Archiv Aktiv' : 'GoBD Vault Active'}
-                </span>
-              </div>
-            </div>
-
-            {/* Right Side: Active Client Gold Pill & Quick Submit Button */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
-              <div style={{
-                background: 'linear-gradient(135deg, #dfb772 0%, #d4a359 100%)',
-                color: '#0b1a30',
-                fontWeight: 800,
-                padding: '10px 24px',
-                borderRadius: 999,
-                fontSize: '0.92rem',
-                letterSpacing: '0.02em',
-                boxShadow: '0 4px 16px rgba(212,163,89,0.35)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-              }}>
-                <Sparkles size={16} />
-                {isDe ? 'Aktiver Mandant' : 'Active client'}
-              </div>
-
-              <button
-                onClick={() => openModal('ACCOUNTING')}
-                style={{
-                  background: 'rgba(255,255,255,0.12)',
+                  justifyContent: 'center',
                   color: '#ffffff',
-                  border: '1px solid rgba(255,255,255,0.25)',
-                  padding: '8px 18px',
-                  borderRadius: 10,
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
-                }}
-              >
-                <Plus size={16} />
-                {isDe ? 'Beleg schnell einreichen' : 'Quick Submit Receipt'}
-              </button>
-            </div>
-          </div>
+                  fontWeight: 800,
+                  fontSize: '1.25rem',
+                  letterSpacing: '-0.02em',
+                  boxShadow: '0 8px 16px -4px rgba(37,99,235,0.35)',
+                  position: 'relative',
+                }}>
+                  {(user?.name || 'Bon Bull')
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 2)}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: -2,
+                    right: -2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    background: '#10b981',
+                    border: '2.5px solid #ffffff',
+                  }} />
+                </div>
 
-          {/* ── METRIC STAT COUNTERS ROW INSIDE HERO ── */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: 16,
-            marginTop: 26,
-            paddingTop: 22,
-            borderTop: '1px solid rgba(255,255,255,0.12)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 42,
-                height: 42,
-                borderRadius: 10,
-                background: 'rgba(255,255,255,0.1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#ffffff',
-              }}>
-                <FileText size={20} />
-              </div>
-              <div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>
-                  {stats.total}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: 4 }}>
-                  {isDe ? 'Eingereichte Belege' : 'Total Documents'}
-                </div>
-              </div>
-            </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <h1 style={{
+                      margin: 0,
+                      fontSize: '1.5rem',
+                      fontWeight: 800,
+                      color: '#0f172a',
+                      letterSpacing: '-0.02em',
+                    }}>
+                      {isDe ? 'Guten Tag,' : 'Good day,'} {user?.name || 'Bon Bull'} 👋
+                    </h1>
+                    <span style={{
+                      background: '#ecfdf5',
+                      color: '#059669',
+                      border: '1px solid #a7f3d0',
+                      borderRadius: 999,
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      padding: '2px 10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+                      {isDe ? 'Aktiver Mandant' : 'Active Client'}
+                    </span>
+                  </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 42,
-                height: 42,
-                borderRadius: 10,
-                background: 'rgba(245, 158, 11, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fbbf24',
-              }}>
-                <Clock size={20} />
-              </div>
-              <div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#fbbf24', lineHeight: 1 }}>
-                  {stats.needsReview}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: 4 }}>
-                  {isDe ? 'In Prüfung durch Kanzlei' : 'Pending Review'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b' }}>
+                    <span>QA24 GmbH</span>
+                    <span>•</span>
+                    <span>Mandanten-Nr: <strong style={{ color: '#0f172a' }}>{user?.clientNumber || (user?.id ? user.id.slice(-8) : 'BN-85200')}</strong></span>
+                    <span>•</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#059669', fontWeight: 600 }}>
+                      <ShieldCheck size={14} color="#059669" />
+                      {isDe ? 'GoBD 100% Revisionssicher' : 'GoBD Audit-Proof'}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 42,
-                height: 42,
-                borderRadius: 10,
-                background: 'rgba(16, 185, 129, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#34d399',
-              }}>
-                <CheckCircle2 size={20} />
-              </div>
-              <div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34d399', lineHeight: 1 }}>
-                  {stats.approved}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: 4 }}>
-                  {isDe ? 'Freigegeben für Agenda' : 'Approved & Exported'}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 42,
-                height: 42,
-                borderRadius: 10,
-                background: 'rgba(212, 163, 89, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#dfb772',
-              }}>
-                <ShieldCheck size={20} />
-              </div>
-              <div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#dfb772', lineHeight: 1 }}>
-                  100%
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: 4 }}>
-                  {isDe ? 'GoBD Revisionssicher' : 'Tax-Audit Proof'}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── 2. THE 4 CORE ACTION CARDS (2x2 GRID MATCHING SCREENSHOT) ── */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: 18,
-          marginBottom: 32,
-        }}>
-
-          {/* CARD 1: FORMATION DOCUMENTS */}
-          <div
-            onClick={() => {
-              setActiveInternalTab('FORMATION');
-              if (onTabChange) onTabChange('FORMATION');
-            }}
-            style={{
-              background: '#ffffff',
-              borderRadius: 14,
-              padding: '24px 26px',
-              border: '1.5px solid #e5e7eb',
-              cursor: 'pointer',
-              transition: 'all 0.18s ease',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'flex-start',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#d4a359';
-              e.currentTarget.style.boxShadow = '0 8px 18px -4px rgba(11,26,48,0.08)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#e5e7eb';
-              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)';
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div style={{ color: '#b4833e' }}>
-                <Building2 size={26} strokeWidth={1.8} />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span
+              {/* Right Quick Actions */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => openModal('CORRESPONDENCE')}
                   style={{
                     background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 999,
-                    fontSize: '0.75rem',
+                    color: '#334155',
+                    border: '1.5px solid #e2e8f0',
+                    padding: '10px 18px',
+                    borderRadius: 12,
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f1f5f9'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = '#f8fafc'; }}
+                >
+                  <Mail size={16} />
+                  <span>{isDe ? 'Kanzlei kontaktieren' : 'Contact Advisor'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openModal('ACCOUNTING')}
+                  style={{
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '10px 22px',
+                    borderRadius: 12,
+                    fontSize: '0.85rem',
                     fontWeight: 700,
-                    color: '#0b1a30',
-                    padding: '3px 10px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)',
+                    transition: 'all 0.18s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(37, 99, 235, 0.45)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 14px rgba(37, 99, 235, 0.35)';
                   }}
                 >
-                  {allFormationDocs.length} {isDe ? 'hochgeladen' : 'uploaded'}
-                </span>
+                  <UploadCloud size={17} />
+                  <span>{isDe ? '+ Belege hochladen' : '+ Upload Documents'}</span>
+                </button>
               </div>
             </div>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', fontWeight: 700, color: '#0b1a30' }}>
-              {isDe ? 'Gründungsunterlagen' : 'Formation documents'}
-            </h3>
-            <p style={{ margin: '0 0 14px 0', fontSize: '0.92rem', color: '#64748b' }}>
-              {isDe ? 'Einmalig · vor Freischaltung erforderlich' : 'One-time · required before activation'}
-            </p>
-            <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#b4833e' }}>
-                {isDe ? 'Dokumentenliste anzeigen & verwalten →' : 'View uploaded documents & manage →'}
-              </span>
+
+            {/* ── 2. FOUR ELEGANT BENTO KPI WIDGETS (HORIZONTAL ROW) ── */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+              gap: 16,
+              marginBottom: 20,
+            }}>
+              {/* Bento 1: Total Documents */}
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                padding: '18px 20px',
+                border: '1.5px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(15,23,42,0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {isDe ? 'Eingereichte Belege' : 'Total Submissions'}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.2, marginTop: 4 }}>
+                    {stats.total}
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0369a1', background: '#e0f2fe', padding: '2px 8px', borderRadius: 6 }}>
+                      {isDe ? '100% GoBD-Archiv' : 'GoBD Vault'}
+                    </span>
+                  </div>
+                </div>
+                <div style={{
+                  width: 46,
+                  height: 46,
+                  borderRadius: 12,
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#2563eb',
+                }}>
+                  <FileText size={22} />
+                </div>
+              </div>
+
+              {/* Bento 2: Pending Review */}
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                padding: '18px 20px',
+                border: '1.5px solid #fed7aa',
+                boxShadow: '0 2px 8px rgba(245,158,11,0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {isDe ? 'In Kanzlei-Prüfung' : 'Needs Review'}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#b45309', lineHeight: 1.2, marginTop: 4 }}>
+                    {stats.needsReview}
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 6 }}>
+                      {isDe ? 'Kanzleiteam prüft' : 'Advisor review'}
+                    </span>
+                  </div>
+                </div>
+                <div style={{
+                  width: 46,
+                  height: 46,
+                  borderRadius: 12,
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#d97706',
+                }}>
+                  <Clock size={22} />
+                </div>
+              </div>
+
+              {/* Bento 3: Approved / Agenda Export */}
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                padding: '18px 20px',
+                border: '1.5px solid #bbf7d0',
+                boxShadow: '0 2px 8px rgba(16,185,129,0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {isDe ? 'Freigegeben für Agenda' : 'Agenda / DATEV Ready'}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#047857', lineHeight: 1.2, marginTop: 4 }}>
+                    {stats.approved}
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: 6 }}>
+                      {isDe ? 'SKR03 CSV generiert' : 'EXTF CSV Ready'}
+                    </span>
+                  </div>
+                </div>
+                <div style={{
+                  width: 46,
+                  height: 46,
+                  borderRadius: 12,
+                  background: '#ecfdf5',
+                  border: '1px solid #a7f3d0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#059669',
+                }}>
+                  <CheckCircle2 size={22} />
+                </div>
+              </div>
+
+              {/* Bento 4: Compliance 100% */}
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                padding: '18px 20px',
+                border: '1.5px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(15,23,42,0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {isDe ? 'Prüfungssicherheit' : 'Tax-Audit Proof'}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.2, marginTop: 4 }}>
+                    100%
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#6d28d9', background: '#f5f3ff', padding: '2px 8px', borderRadius: 6 }}>
+                      {isDe ? 'DSGVO Frankfurt' : 'GoBD Certified'}
+                    </span>
+                  </div>
+                </div>
+                <div style={{
+                  width: 46,
+                  height: 46,
+                  borderRadius: 12,
+                  background: '#f5f3ff',
+                  border: '1px solid #ede9fe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#7c3aed',
+                }}>
+                  <ShieldCheck size={22} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── 3. SMART DRAG & DROP QUICK-DROPZONE (DIRECT ON DASHBOARD) ── */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleQuickDrop}
+              onClick={() => dropzoneInputRef.current?.click()}
+              style={{
+                background: isDragOver ? '#eff6ff' : '#ffffff',
+                border: isDragOver ? '2px dashed #2563eb' : '2px dashed #cbd5e1',
+                borderRadius: 16,
+                padding: '24px 28px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                marginBottom: 24,
+                boxShadow: isDragOver ? '0 8px 24px -4px rgba(37,99,235,0.2)' : '0 2px 8px rgba(15,23,42,0.02)',
+              }}
+              onMouseEnter={(e) => {
+                if (!isDragOver) {
+                  e.currentTarget.style.borderColor = '#3b82f6';
+                  e.currentTarget.style.background = '#f8fafc';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isDragOver) {
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.background = '#ffffff';
+                }
+              }}
+            >
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                background: isDragOver ? '#dbeafe' : '#f1f5f9',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: isDragOver ? '#1d4ed8' : '#2563eb',
+                marginBottom: 10,
+                transition: 'all 0.15s ease',
+              }}>
+                <UploadCloud size={24} />
+              </div>
+
+              <div style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>
+                {isQuickUploading
+                  ? (isDe ? '⏳ Dokumente werden hochgeladen & von KI analysiert...' : '⏳ Uploading & running AI accounting analysis...')
+                  : (isDe ? 'Belege, Rechnungen oder Kontoauszüge hier hineinziehen' : 'Drag & drop receipts, invoices or bank statements here')}
+              </div>
+
+              <p style={{ margin: '4px 0 12px 0', fontSize: '0.85rem', color: '#64748b' }}>
+                {isDe
+                  ? 'Automatische OCR-Erkennung, SKR03-Kontierung & Sortierung in den Monatsordner (PDF, PNG, JPG, CSV)'
+                  : 'Automatic OCR scanning, SKR03 mapping & routing to target year/month folder (PDF, PNG, JPG, CSV)'}
+              </p>
+
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  openModal('FORMATION');
+                  dropzoneInputRef.current?.click();
                 }}
                 style={{
-                  background: 'rgba(212,163,89,0.15)',
-                  border: '1px solid #dfb772',
-                  borderRadius: 6,
-                  color: '#0b1a30',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  padding: '4px 10px',
+                  background: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  padding: '6px 16px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  color: '#1e293b',
                   cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
                 }}
               >
-                + {isDe ? 'Neu hochladen' : 'Upload'}
+                <span>📁 {isDe ? 'Datei vom Computer auswählen' : 'Browse files on device'}</span>
               </button>
             </div>
-          </div>
 
-          {/* CARD 2: PAYROLL DOCUMENTS */}
-          <div
-            onClick={() => openModal('PAYROLL')}
-            style={{
-              background: '#ffffff',
-              borderRadius: 14,
-              padding: '24px 26px',
-              border: '1.5px solid #e5e7eb',
-              cursor: 'pointer',
-              transition: 'all 0.18s ease',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'flex-start',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#d4a359';
-              e.currentTarget.style.boxShadow = '0 8px 18px -4px rgba(11,26,48,0.08)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#e5e7eb';
-              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)';
-            }}
-          >
-            <div style={{ color: '#b4833e', marginBottom: 14 }}>
-              <Users size={26} strokeWidth={1.8} />
+            {/* ── 4. FOUR STREAMLINED KANZLEI-MODULES (MODERN TILES) ── */}
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
+                  {isDe ? 'Kanzlei-Services & Einreichungsbereiche' : 'Client Accounting Services & Portals'}
+                </h2>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                  {isDe ? 'Klicken Sie auf einen Bereich für gezielte Einreichungen' : 'Click any module for structured monthly submissions'}
+                </span>
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                gap: 14,
+              }}>
+                {/* Tile 1: FiBu */}
+                <div
+                  onClick={() => openModal('ACCOUNTING')}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: 14,
+                    padding: '18px 20px',
+                    border: '1.5px solid #e2e8f0',
+                    cursor: 'pointer',
+                    transition: 'all 0.18s ease',
+                    boxShadow: '0 2px 6px rgba(15,23,42,0.02)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: 150,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#059669';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 8px 18px -2px rgba(5,150,105,0.12)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(15,23,42,0.02)';
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        background: '#ecfdf5',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#059669',
+                        border: '1px solid #d1fae5',
+                      }}>
+                        <BarChart3 size={20} />
+                      </div>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#047857', background: '#ecfdf5', padding: '2px 8px', borderRadius: 6 }}>
+                        {isDe ? 'Monatlich aktiv' : 'Active'}
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '0.98rem', color: '#0f172a' }}>
+                      {isDe ? 'Finanzbuchhaltung' : 'Financial Accounting'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
+                      {isDe ? 'Rechnungen & Bankauszüge' : 'Invoices & Bank Statements'}
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: '0.8rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>{isDe ? 'Einreichen' : 'Submit'}</span>
+                    <ChevronRight size={14} />
+                  </div>
+                </div>
+
+                {/* Tile 2: Payroll */}
+                <div
+                  onClick={() => openModal('PAYROLL')}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: 14,
+                    padding: '18px 20px',
+                    border: '1.5px solid #e2e8f0',
+                    cursor: 'pointer',
+                    transition: 'all 0.18s ease',
+                    boxShadow: '0 2px 6px rgba(15,23,42,0.02)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: 150,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 8px 18px -2px rgba(124,58,237,0.12)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(15,23,42,0.02)';
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        background: '#f5f3ff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#7c3aed',
+                        border: '1px solid #ede9fe',
+                      }}>
+                        <Users size={20} />
+                      </div>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#6d28d9', background: '#f5f3ff', padding: '2px 8px', borderRadius: 6 }}>
+                        {isDe ? 'Frist: 25. Nov' : 'Due: 25th'}
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '0.98rem', color: '#0f172a' }}>
+                      {isDe ? 'Lohn & Personal' : 'Payroll & Team'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
+                      {isDe ? 'Stundenzettel & Gehälter' : 'Timesheets & Payslips'}
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: '0.8rem', fontWeight: 700, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>{isDe ? 'Erfassen' : 'Submit'}</span>
+                    <ChevronRight size={14} />
+                  </div>
+                </div>
+
+                {/* Tile 3: Correspondence */}
+                <div
+                  onClick={() => openModal('CORRESPONDENCE')}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: 14,
+                    padding: '18px 20px',
+                    border: '1.5px solid #e2e8f0',
+                    cursor: 'pointer',
+                    transition: 'all 0.18s ease',
+                    boxShadow: '0 2px 6px rgba(15,23,42,0.02)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: 150,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#d97706';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 8px 18px -2px rgba(217,119,6,0.12)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(15,23,42,0.02)';
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        background: '#fffbeb',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#d97706',
+                        border: '1px solid #fef3c7',
+                      }}>
+                        <Mail size={20} />
+                      </div>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#b45309', background: '#fffbeb', padding: '2px 8px', borderRadius: 6 }}>
+                        {isDe ? 'Finanzamt Post' : 'Tax Notices'}
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '0.98rem', color: '#0f172a' }}>
+                      {isDe ? 'Schriftverkehr' : 'Correspondence'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
+                      {isDe ? 'Behördenbriefe & Fristsachen' : 'Tax Letters & Deadlines'}
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: '0.8rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>{isDe ? 'Hochladen' : 'Upload'}</span>
+                    <ChevronRight size={14} />
+                  </div>
+                </div>
+
+                {/* Tile 4: Formation */}
+                <div
+                  onClick={() => {
+                    setActiveInternalTab('FORMATION');
+                    if (onTabChange) onTabChange('FORMATION');
+                  }}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: 14,
+                    padding: '18px 20px',
+                    border: '1.5px solid #e2e8f0',
+                    cursor: 'pointer',
+                    transition: 'all 0.18s ease',
+                    boxShadow: '0 2px 6px rgba(15,23,42,0.02)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: 150,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#4f46e5';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 8px 18px -2px rgba(79,70,229,0.12)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(15,23,42,0.02)';
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        background: '#eef2ff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#4f46e5',
+                        border: '1px solid #e0e7ff',
+                      }}>
+                        <Building2 size={20} />
+                      </div>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#4338ca', background: '#eef2ff', padding: '2px 8px', borderRadius: 6 }}>
+                        {allFormationDocs.length} {isDe ? 'erfasst' : 'saved'}
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '0.98rem', color: '#0f172a' }}>
+                      {isDe ? 'Gründungsdaten' : 'Master Records'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
+                      {isDe ? 'Gewerbe, Notar & Verträge' : 'Register, Gewerbe & Bylaws'}
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: '0.8rem', fontWeight: 700, color: '#4f46e5', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>{isDe ? 'Verwalten' : 'Manage'}</span>
+                    <ChevronRight size={14} />
+                  </div>
+                </div>
+              </div>
             </div>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', fontWeight: 700, color: '#0b1a30' }}>
-              {isDe ? 'Lohnunterlagen' : 'Payroll documents'}
-            </h3>
-            <p style={{ margin: 0, fontSize: '0.92rem', color: '#64748b' }}>
-              {isDe ? 'Monatlich einreichen' : 'Submit monthly'}
-            </p>
-          </div>
-
-          {/* CARD 3: FINANCIAL ACCOUNTING */}
-          <div
-            onClick={() => openModal('ACCOUNTING')}
-            style={{
-              background: '#ffffff',
-              borderRadius: 14,
-              padding: '24px 26px',
-              border: '1.5px solid #e5e7eb',
-              cursor: 'pointer',
-              transition: 'all 0.18s ease',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'flex-start',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#d4a359';
-              e.currentTarget.style.boxShadow = '0 8px 18px -4px rgba(11,26,48,0.08)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#e5e7eb';
-              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)';
-            }}
-          >
-            <div style={{ color: '#b4833e', marginBottom: 14 }}>
-              <BarChart3 size={26} strokeWidth={1.8} />
-            </div>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', fontWeight: 700, color: '#0b1a30' }}>
-              {isDe ? 'Finanzbuchhaltung' : 'Financial accounting'}
-            </h3>
-            <p style={{ margin: 0, fontSize: '0.92rem', color: '#64748b' }}>
-              {isDe ? 'Belege, Kontoauszüge, Rechnungen' : 'Receipts, bank statements, invoices'}
-            </p>
-          </div>
-
-          {/* CARD 4: CORRESPONDENCE */}
-          <div
-            onClick={() => openModal('CORRESPONDENCE')}
-            style={{
-              background: '#ffffff',
-              borderRadius: 14,
-              padding: '24px 26px',
-              border: '1.8px solid #d4a359',
-              cursor: 'pointer',
-              transition: 'all 0.18s ease',
-              boxShadow: '0 4px 12px rgba(212,163,89,0.12)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'flex-start',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 8px 24px -2px rgba(212,163,89,0.22)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(212,163,89,0.12)';
-            }}
-          >
-            <div style={{ color: '#b4833e', marginBottom: 14 }}>
-              <Send size={26} strokeWidth={1.8} />
-            </div>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', fontWeight: 700, color: '#0b1a30' }}>
-              {isDe ? 'Schriftverkehr' : 'Correspondence'}
-            </h3>
-            <p style={{ margin: 0, fontSize: '0.92rem', color: '#64748b' }}>
-              {isDe ? 'Neu, ersetzt "Sonstiges"' : 'New, replaces "Other"'}
-            </p>
-          </div>
-
-        </div>
-        </>
-      )}
+          </>
+        )}
 
         {/* ── 3. BOTTOM SECTION: TABS & SUBMISSIONS / VAULT / PAYROLL ── */}
         <div style={{
@@ -1351,7 +1629,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
           borderRadius: 18,
           border: '1px solid #e2e8f0',
           padding: '24px 28px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+          boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
         }}>
           {/* Sub Navigation Tabs */}
           <div style={{
@@ -1360,133 +1638,93 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
             justifyContent: 'space-between',
             borderBottom: '1px solid #f1f5f9',
             paddingBottom: 16,
-            marginBottom: 24,
+            marginBottom: 20,
             flexWrap: 'wrap',
             gap: 12,
           }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => setActiveInternalTab('SUBMISSIONS')}
-                style={{
-                  background: activeInternalTab === 'SUBMISSIONS' ? '#0b1a30' : '#f8fafc',
-                  color: activeInternalTab === 'SUBMISSIONS' ? '#ffffff' : '#475569',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '9px 18px',
-                  fontSize: '0.875rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <FileText size={16} />
-                {isDe ? 'Meine Einreichungen' : 'My Submissions & Status'} ({userDocs.length})
-              </button>
-
-              <button
-                onClick={() => setActiveInternalTab('FORMATION')}
-                style={{
-                  background: activeInternalTab === 'FORMATION' ? '#0b1a30' : '#f8fafc',
-                  color: activeInternalTab === 'FORMATION' ? '#ffffff' : '#475569',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '9px 18px',
-                  fontSize: '0.875rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <Building2 size={16} />
-                {isDe ? 'Gründungsunterlagen' : 'Formation Documents'} ({formationDocs.length})
-              </button>
-
-              <button
-                onClick={() => setActiveInternalTab('TASKS')}
-                style={{
-                  background: activeInternalTab === 'TASKS' ? '#0b1a30' : '#f8fafc',
-                  color: activeInternalTab === 'TASKS' ? '#ffffff' : '#475569',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '9px 18px',
-                  fontSize: '0.875rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <Calendar size={16} />
-                {isDe ? 'Monatliche Aufgaben' : 'Monthly Tasks'} ({tasks.filter((t) => !t.done).length})
-              </button>
-
-              <button
-                onClick={() => setActiveInternalTab('PAYROLL')}
-                style={{
-                  background: activeInternalTab === 'PAYROLL' ? '#0b1a30' : '#f8fafc',
-                  color: activeInternalTab === 'PAYROLL' ? '#ffffff' : '#475569',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '9px 18px',
-                  fontSize: '0.875rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <Users size={16} />
-                {isDe ? 'Lohn & Gehalt' : 'Payroll & Team'} ({submissions.length + payslips.length})
-              </button>
-
-              <button
-                onClick={() => setActiveInternalTab('VAULT')}
-                style={{
-                  background: activeInternalTab === 'VAULT' ? '#0b1a30' : '#f8fafc',
-                  color: activeInternalTab === 'VAULT' ? '#ffffff' : '#475569',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '9px 18px',
-                  fontSize: '0.875rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <FolderTree size={16} />
-                {isDe ? 'Kanzlei-Archiv (00-03)' : 'Folder Vault (00-03)'}
-              </button>
+            <div style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              background: '#f8fafc',
+              padding: 4,
+              borderRadius: 12,
+              border: '1px solid #e2e8f0',
+            }}>
+              {[
+                { key: 'SUBMISSIONS', icon: FileText, label: isDe ? 'Meine Einreichungen' : 'My Submissions & Status', count: userDocs.length },
+                { key: 'FORMATION', icon: Building2, label: isDe ? 'Gründungsunterlagen' : 'Formation Documents', count: formationDocs.length },
+                { key: 'TASKS', icon: Calendar, label: isDe ? 'Monatliche Aufgaben' : 'Monthly Tasks', count: tasks.filter((t) => !t.done).length },
+                { key: 'PAYROLL', icon: Users, label: isDe ? 'Lohn & Personal' : 'Payroll & Team', count: submissions.length + payslips.length },
+                { key: 'VAULT', icon: FolderTree, label: isDe ? 'Kanzlei-Archiv (00-03)' : 'Folder Vault (00-03)' },
+              ].map((tab) => {
+                const isActive = activeInternalTab === tab.key;
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveInternalTab(tab.key as any)}
+                    style={{
+                      background: isActive ? '#2563eb' : 'transparent',
+                      color: isActive ? '#ffffff' : '#64748b',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      fontSize: '0.84rem',
+                      fontWeight: isActive ? 700 : 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      transition: 'all 0.18s ease',
+                      boxShadow: isActive ? '0 2px 8px rgba(37,99,235,0.25)' : 'none',
+                    }}
+                  >
+                    <Icon size={15} />
+                    <span>{tab.label}</span>
+                    {tab.count !== undefined && (
+                      <span style={{
+                        background: isActive ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+                        color: isActive ? '#ffffff' : '#475569',
+                        padding: '1px 7px',
+                        borderRadius: 999,
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                      }}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Quick Upload action */}
+            {/* Quick Upload Action */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 onClick={() => openModal('ACCOUNTING')}
                 style={{
-                  background: '#2563eb',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                   color: '#ffffff',
                   border: 'none',
-                  borderRadius: 8,
-                  padding: '8px 16px',
-                  fontSize: '0.8125rem',
+                  borderRadius: 10,
+                  padding: '9px 18px',
+                  fontSize: '0.82rem',
                   fontWeight: 700,
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 6,
+                  gap: 8,
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,0.35)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(37,99,235,0.25)';
                 }}
               >
                 <UploadCloud size={16} />
@@ -1503,61 +1741,95 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                marginBottom: 18,
+                marginBottom: 16,
                 flexWrap: 'wrap',
                 gap: 12,
               }}>
                 {/* Search input */}
                 <div style={{
                   position: 'relative',
-                  width: 320,
+                  width: 340,
                   maxWidth: '100%',
                 }}>
-                  <Search size={16} style={{ position: 'absolute', left: 12, top: 11, color: '#94a3b8' }} />
+                  <Search size={16} style={{ position: 'absolute', left: 14, top: 11, color: '#94a3b8' }} />
                   <input
                     type="text"
-                    placeholder={isDe ? 'Belege durchsuchen (z.B. Dateiname, Lieferant)...' : 'Search documents by filename, vendor...'}
+                    placeholder={isDe ? 'Dokumente durchsuchen (z.B. Dateiname, Partner)...' : 'Search documents by filename, vendor...'}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '9px 12px 9px 36px',
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0',
+                      padding: '9px 14px 9px 38px',
+                      borderRadius: 10,
+                      border: '1.5px solid #e2e8f0',
+                      background: '#f8fafc',
                       fontSize: '0.85rem',
                       outline: 'none',
+                      color: '#0f172a',
+                      transition: 'border-color 0.15s ease',
                       boxSizing: 'border-box',
                     }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = '#2563eb'; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; }}
                   />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      style={{
+                        position: 'absolute',
+                        right: 10,
+                        top: 9,
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        padding: 2,
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
 
                 {/* Status Filter Buttons */}
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {(['ALL', 'ATTENTION', 'APPROVED'] as const).map((filter) => {
-                    const label =
-                      filter === 'ALL'
-                        ? (isDe ? 'Alle Belege' : 'All')
-                        : filter === 'ATTENTION'
-                        ? (isDe ? 'In Prüfung' : 'Needs Attention')
-                        : (isDe ? 'Freigegeben' : 'Approved');
-                    const isActive = statusFilter === filter;
+                <div style={{ display: 'flex', gap: 6, background: '#f1f5f9', padding: 3, borderRadius: 10 }}>
+                  {[
+                    { key: 'ALL', label: isDe ? 'Alle Belege' : 'All', count: userDocs.length },
+                    { key: 'ATTENTION', label: isDe ? 'In Prüfung' : 'Needs Attention', count: stats.needsReview, color: '#f59e0b' },
+                    { key: 'APPROVED', label: isDe ? 'Freigegeben' : 'Approved', count: stats.approved, color: '#10b981' },
+                  ].map((filter) => {
+                    const isActive = statusFilter === filter.key;
                     return (
                       <button
-                        key={filter}
-                        onClick={() => setStatusFilter(filter)}
+                        key={filter.key}
+                        onClick={() => setStatusFilter(filter.key as any)}
                         style={{
-                          background: isActive ? '#0b1a30' : '#f8fafc',
-                          color: isActive ? '#ffffff' : '#475569',
-                          border: '1px solid',
-                          borderColor: isActive ? '#0b1a30' : '#e2e8f0',
+                          background: isActive ? '#ffffff' : 'transparent',
+                          color: isActive ? '#0f172a' : '#64748b',
+                          border: 'none',
                           borderRadius: 8,
                           padding: '6px 14px',
                           fontSize: '0.8rem',
                           fontWeight: isActive ? 700 : 500,
                           cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          boxShadow: isActive ? '0 1px 3px rgba(15,23,42,0.06)' : 'none',
+                          transition: 'all 0.15s ease',
                         }}
                       >
-                        {label}
+                        {filter.color && (
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: filter.color }} />
+                        )}
+                        <span>{filter.label}</span>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          color: isActive ? '#2563eb' : '#94a3b8',
+                          fontWeight: 700,
+                        }}>
+                          ({filter.count})
+                        </span>
                       </button>
                     );
                   })}
@@ -1565,245 +1837,308 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               </div>
 
               {filteredDocuments.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '48px 20px', color: '#64748b' }}>
+                <div style={{ textAlign: 'center', padding: '56px 20px', color: '#64748b', background: '#f8fafc', borderRadius: 14, border: '1px dashed #cbd5e1' }}>
                   <div style={{
                     width: 56,
                     height: 56,
                     borderRadius: 16,
-                    background: '#f1f5f9',
+                    background: '#eef2ff',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: '#94a3b8',
-                    marginBottom: 12,
+                    color: '#4f46e5',
+                    marginBottom: 14,
                   }}>
-                    <FileText size={28} />
+                    <FileText size={26} />
                   </div>
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', color: '#0f172a' }}>
+                  <h3 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', color: '#0f172a', fontWeight: 700 }}>
                     {isDe ? 'Keine Dokumente gefunden' : 'No documents found'}
                   </h3>
-                  <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                    {isDe ? 'Klicken Sie auf eine der 4 Kacheln oben, um Dokumente einzureichen.' : 'Click any of the 4 cards above to submit your documents.'}
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
+                    {searchQuery
+                      ? (isDe ? 'Kein Treffer für diese Suchanfrage. Versuchen Sie einen anderen Begriff.' : 'No match found for this search. Try a different query.')
+                      : (isDe ? 'Klicken Sie auf eine der Kacheln oben oder auf „Datei hochladen“, um Belege einzureichen.' : 'Click any of the cards above or "Upload Document" to submit files.')}
                   </p>
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
-                    <thead>
-                      <tr style={{
-                        borderBottom: '1.5px solid #e2e8f0',
-                        color: '#64748b',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}>
-                        <th style={{ padding: '12px 14px' }}>{isDe ? 'Dokument' : 'Document'}</th>
-                        <th style={{ padding: '12px 14px' }}>{isDe ? 'Bereich / Ordner' : 'Category'}</th>
-                        <th style={{ padding: '12px 14px' }}>{isDe ? 'Lieferant / Partner' : 'Supplier'}</th>
-                        <th style={{ padding: '12px 14px' }}>{isDe ? 'Datum' : 'Date'}</th>
-                        <th style={{ padding: '12px 14px' }}>{isDe ? 'Betrag' : 'Amount'}</th>
-                        <th style={{ padding: '12px 14px' }}>{isDe ? 'Status' : 'AI Status'}</th>
-                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>{isDe ? 'Aktionen' : 'Actions'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredDocuments.map((doc) => {
-                        const isApproved = doc.status === 'APPROVED' || doc.status === 'EXPORTED';
-                        const isAttention = doc.status === 'NEEDS_ATTENTION' || doc.status === 'READY_FOR_REVIEW';
-                        return (
-                          <tr key={doc.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.1s' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                            <td style={{ padding: '12px 14px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 8,
-                                  background: '#f1f5f9',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  color: '#0284c7',
-                                }}>
-                                  <FileText size={16} />
-                                </div>
-                                <div>
-                                  <div style={{ fontWeight: 700, color: '#0f172a' }}>
-                                    {doc.original_filename}
-                                  </div>
-                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                                    {(doc.size_bytes / 1024).toFixed(1)} KB
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {filteredDocuments.map((doc) => {
+                    const isApproved = doc.status === 'APPROVED' || doc.status === 'EXPORTED';
+                    const isAttention = doc.status === 'NEEDS_ATTENTION' || doc.status === 'READY_FOR_REVIEW';
+                    const isPdf = (doc.mime_type || '').includes('pdf') || doc.original_filename.toLowerCase().endsWith('.pdf');
+                    const cleanSupplier = cleanSupplierName(doc.extracted_data?.supplier_name);
+                    const folderBadge = getFolderBadgeLabel(doc);
+                    const bookingsCount = doc.extracted_data?.bookings?.length || 1;
+                    const skrCode = doc.extracted_data?.skr03_account_code;
 
-                            <td style={{ padding: '12px 14px' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                                <span style={{
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  background: '#f1f5f9',
-                                  color: '#475569',
-                                  padding: '3px 8px',
-                                  borderRadius: 6,
-                                }}>
-                                  {doc.category || '01_FiBu'}
+                    return (
+                      <div
+                        key={doc.id}
+                        style={{
+                          background: '#ffffff',
+                          borderRadius: 12,
+                          border: '1px solid #e2e8f0',
+                          padding: '14px 18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 16,
+                          transition: 'all 0.15s ease',
+                          boxShadow: '0 1px 2px rgba(15,23,42,0.02)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#cbd5e1';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.05)';
+                          e.currentTarget.style.background = '#fafbfc';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = '#e2e8f0';
+                          e.currentTarget.style.boxShadow = '0 1px 2px rgba(15,23,42,0.02)';
+                          e.currentTarget.style.background = '#ffffff';
+                        }}
+                      >
+                        {/* 1. DOCUMENT INFO & CLEAN PARTNER */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: '1 1 320px' }}>
+                          <div
+                            style={{
+                              width: 42,
+                              height: 42,
+                              borderRadius: 10,
+                              background: isPdf ? '#fee2e2' : '#e0f2fe',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: isPdf ? '#dc2626' : '#0284c7',
+                              flexShrink: 0,
+                              border: `1px solid ${isPdf ? '#fecdd3' : '#bae6fd'}`,
+                            }}
+                          >
+                            <FileText size={20} />
+                          </div>
+
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            {/* Primary Document Filename */}
+                            <div
+                              title={doc.original_filename}
+                              style={{
+                                fontWeight: 700,
+                                color: '#0f172a',
+                                fontSize: '0.9rem',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {doc.original_filename}
+                            </div>
+
+                            {/* Clean Partner / Bank Line */}
+                            <div
+                              style={{
+                                fontSize: '0.8rem',
+                                color: '#475569',
+                                fontWeight: 600,
+                                marginTop: 2,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              <span>{cleanSupplier}</span>
+                              {doc.extracted_data?.invoice_number && (
+                                <span style={{ color: '#94a3b8', fontSize: '0.74rem', fontWeight: 500 }}>
+                                  (Ref: {doc.extracted_data.invoice_number})
                                 </span>
-                                {(doc.extracted_data?.target_folder || doc.extracted_data?.invoice_date) && (doc.category === '01_FiBu' || !doc.category) && (
-                                  <span style={{
-                                    fontSize: '0.7rem',
-                                    fontWeight: 700,
-                                    color: '#0369a1',
-                                    background: '#e0f2fe',
-                                    padding: '2px 7px',
-                                    borderRadius: 5,
-                                  }}>
-                                    📁 {doc.extracted_data?.target_folder || (() => {
-                                      const [y, m] = (doc.extracted_data?.invoice_date || '').split('-');
-                                      const mNames = ['01_January','02_February','03_March','04_April','05_May','06_June','07_July','08_August','09_September','10_October','11_November','12_December'];
-                                      const mFolder = mNames[(parseInt(m, 10) || 1) - 1] || '01_January';
-                                      return `Financial Accounting/${y || '2026'}/${mFolder}`;
-                                    })()}
-                                  </span>
-                                )}
-                                {doc.extracted_data?.skr03_account_code && (
-                                  <span style={{
-                                    fontSize: '0.7rem',
-                                    fontWeight: 700,
-                                    color: '#15803d',
-                                    background: '#dcfce7',
-                                    border: '1px solid #bbf7d0',
-                                    padding: '2px 7px',
-                                    borderRadius: 5,
-                                  }}>
-                                    ✓ SKR03: {doc.extracted_data.skr03_account_code} • {doc.extracted_data.bookings?.length || 1} {isDe ? 'Buchung(en)' : 'Booking(s)'}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-
-                            <td style={{ padding: '12px 14px', color: '#334155', fontWeight: 500 }}>
-                              {doc.extracted_data?.supplier_name || '—'}
-                            </td>
-
-                            <td style={{ padding: '12px 14px', color: '#64748b' }}>
-                              {doc.extracted_data?.invoice_date ? (
-                                <div>
-                                  <div style={{ fontWeight: 700, color: '#0f172a' }}>
-                                    {doc.extracted_data.invoice_date.split('-').reverse().join('.')}
-                                  </div>
-                                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                                    {isDe ? 'Belegdatum (KI)' : 'Doc Date (AI)'}
-                                  </div>
-                                </div>
-                              ) : (
-                                doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString() : 'Today'
                               )}
-                            </td>
+                            </div>
 
-                            <td style={{ padding: '12px 14px', fontWeight: 700, color: '#0f172a' }}>
-                              {doc.extracted_data?.total_amount ? `${doc.extracted_data.total_amount.toFixed(2)} €` : '—'}
-                            </td>
+                            {/* Meta subtitle: Size & Date */}
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span>{formatFileSize(doc.size_bytes)}</span>
+                              <span>•</span>
+                              <span>
+                                {doc.extracted_data?.invoice_date
+                                  ? `${isDe ? 'Belegdatum' : 'Doc Date'}: ${formatGermanDate(doc.extracted_data.invoice_date)}`
+                                  : (doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString('de-DE') : 'Heute')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
 
-                            <td style={{ padding: '12px 14px' }}>
-                              <span style={{
-                                padding: '3px 10px',
+                        {/* 2. VAULT & SKR03 PILLS (NO WRAP) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              color: '#0369a1',
+                              background: '#f0f9ff',
+                              border: '1px solid #bae6fd',
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            📁 {folderBadge}
+                          </span>
+
+                          {skrCode && (
+                            <span
+                              style={{
+                                fontSize: '0.74rem',
+                                fontWeight: 600,
+                                color: '#15803d',
+                                background: '#f0fdf4',
+                                border: '1px solid #bbf7d0',
+                                padding: '4px 10px',
+                                borderRadius: 6,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              ✓ SKR03: {skrCode} • {bookingsCount} {isDe ? 'Buchungen' : 'Bookings'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* 3. AMOUNT & STATUS PILL */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 140, flexShrink: 0 }}>
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              color: '#0f172a',
+                              fontSize: '1rem',
+                              fontVariantNumeric: 'tabular-nums',
+                              letterSpacing: '-0.01em',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {doc.extracted_data?.total_amount ? formatEuro(doc.extracted_data.total_amount) : '—'}
+                          </div>
+                          <div style={{ marginTop: 4 }}>
+                            <span
+                              style={{
+                                padding: '3px 9px',
                                 borderRadius: 999,
-                                fontSize: '0.75rem',
+                                fontSize: '0.72rem',
                                 fontWeight: 700,
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: 4,
-                                background: isApproved ? '#dcfce7' : isAttention ? '#fef3c7' : '#eff6ff',
-                                color: isApproved ? '#15803d' : isAttention ? '#b45309' : '#1d4ed8',
-                              }}>
-                                {isApproved && <CheckCircle2 size={12} />}
-                                {isAttention && <AlertCircle size={12} />}
-                                {!isApproved && !isAttention && <Clock size={12} />}
+                                gap: 5,
+                                background: isApproved ? '#ecfdf5' : isAttention ? '#fffbeb' : '#eff6ff',
+                                color: isApproved ? '#047857' : isAttention ? '#b45309' : '#1d4ed8',
+                                border: `1px solid ${isApproved ? '#a7f3d0' : isAttention ? '#fde68a' : '#bfdbfe'}`,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {isApproved && <CheckCircle2 size={12} color="#059669" />}
+                              {isAttention && <Clock size={12} color="#d97706" />}
+                              {!isApproved && !isAttention && <Clock size={12} color="#2563eb" />}
+                              <span>
                                 {isApproved
                                   ? (isDe ? 'Freigegeben' : 'Approved')
                                   : isAttention
-                                  ? (isDe ? 'In Prüfung' : 'Needs Attention')
+                                  ? (isDe ? 'In Prüfung' : 'Needs Review')
                                   : (isDe ? 'Verarbeitet' : 'Processing')}
                               </span>
-                            </td>
+                            </span>
+                          </div>
+                        </div>
 
-                            <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                {(doc.category === '01_FiBu' || doc.extracted_data?.skr03_account_code) && (
-                                  <>
-                                    <a
-                                      href={`${API_BASE}/documents/${doc.id}/skr03-xlsx`}
-                                      download
-                                      title={isDe ? 'Konvertierte SKR03 Excel herunterladen' : 'Download converted SKR03 Excel (.xlsx)'}
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 4,
-                                        color: '#166534',
-                                        textDecoration: 'none',
-                                        fontWeight: 700,
-                                        fontSize: '0.78rem',
-                                        background: '#dcfce7',
-                                        padding: '5px 10px',
-                                        borderRadius: 6,
-                                        border: '1px solid #86efac',
-                                      }}
-                                    >
-                                      <span>📊 SKR03 Excel</span>
-                                    </a>
-                                    <a
-                                      href={`${API_BASE}/documents/${doc.id}/skr03-csv`}
-                                      download
-                                      title={isDe ? 'Konvertierte SKR03 CSV herunterladen' : 'Download converted SKR03 CSV'}
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 4,
-                                        color: '#15803d',
-                                        textDecoration: 'none',
-                                        fontWeight: 700,
-                                        fontSize: '0.78rem',
-                                        background: '#f0fdf4',
-                                        padding: '5px 10px',
-                                        borderRadius: 6,
-                                        border: '1px solid #bbf7d0',
-                                      }}
-                                    >
-                                      <span>SKR03 CSV</span>
-                                    </a>
-                                  </>
-                                )}
-                                <a
-                                  href={`${API_BASE}/documents/${doc.id}/file`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  title={isDe ? 'Originaldokument ansehen' : 'View original file'}
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                    color: '#0284c7',
-                                    textDecoration: 'none',
-                                    fontWeight: 600,
-                                    fontSize: '0.8rem',
-                                    background: '#f0f9ff',
-                                    padding: '5px 10px',
-                                    borderRadius: 6,
-                                    border: '1px solid #bae6fd',
-                                  }}
-                                >
-                                  <ExternalLink size={13} />
-                                  <span>{isDe ? 'Öffnen' : 'View'}</span>
-                                </a>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        {/* 4. ACTIONS (EXCEL / CSV / VIEW) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          {(doc.category === '01_FiBu' || doc.extracted_data?.skr03_account_code) && (
+                            <>
+                              <a
+                                href={`${API_BASE}/documents/${doc.id}/skr03-xlsx`}
+                                download
+                                title={isDe ? 'Konvertierte SKR03 Excel herunterladen' : 'Download converted SKR03 Excel (.xlsx)'}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  color: '#15803d',
+                                  textDecoration: 'none',
+                                  fontWeight: 600,
+                                  fontSize: '0.75rem',
+                                  background: '#f0fdf4',
+                                  padding: '7px 11px',
+                                  borderRadius: 8,
+                                  border: '1px solid #bbf7d0',
+                                  transition: 'all 0.15s ease',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = '#dcfce7'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = '#f0fdf4'; }}
+                              >
+                                <FileSpreadsheet size={13} />
+                                <span>Excel</span>
+                              </a>
+                              <a
+                                href={`${API_BASE}/documents/${doc.id}/skr03-csv`}
+                                download
+                                title={isDe ? 'Konvertierte SKR03 CSV herunterladen' : 'Download converted SKR03 CSV'}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  color: '#047857',
+                                  textDecoration: 'none',
+                                  fontWeight: 600,
+                                  fontSize: '0.75rem',
+                                  background: '#ecfdf5',
+                                  padding: '7px 11px',
+                                  borderRadius: 8,
+                                  border: '1px solid #a7f3d0',
+                                  transition: 'all 0.15s ease',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = '#d1fae5'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = '#ecfdf5'; }}
+                              >
+                                <Download size={13} />
+                                <span>CSV</span>
+                              </a>
+                            </>
+                          )}
+                          <a
+                            href={`${API_BASE}/documents/${doc.id}/file`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={isDe ? 'Originaldokument ansehen' : 'View original file'}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              color: '#2563eb',
+                              textDecoration: 'none',
+                              fontWeight: 600,
+                              fontSize: '0.75rem',
+                              background: '#eff6ff',
+                              padding: '7px 12px',
+                              borderRadius: 8,
+                              border: '1px solid #bfdbfe',
+                              transition: 'all 0.15s ease',
+                              whiteSpace: 'nowrap',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = '#dbeafe'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = '#eff6ff'; }}
+                          >
+                            <Eye size={13} />
+                            <span>{isDe ? 'Ansehen' : 'View'}</span>
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

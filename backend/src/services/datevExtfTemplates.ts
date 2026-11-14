@@ -292,7 +292,7 @@ export function buildPersonenkontoRow(entry: PersonenkontoEntry): string {
     fields[6] = '"1"';
   }
   fields[7] = `"${shortName}"`;
-  fields[14] = '"STR"';
+  // Only set Adressart "STR" if street/address fields are actually populated
   fields[96] = '"Sehr geehrte Damen und Herren,"';
   fields[100] = '1';
   if (entry.faelligkeitTage !== undefined) {
@@ -340,81 +340,53 @@ export function generatePersonenkontenCsvContent(
     });
   }
 
-  let nextDebitor = 11000 + (hasDbService ? 1 : 0);
-  let nextKreditor = 70000;
-
-  // Generic descriptions that are NOT business partner names
+  // Generic descriptions and cash/bank terms that are NEVER business partners (Debitor/Kreditor)
   const genericTerms = new Set([
-    'beleg', 'einzahlung', 'bankgebühr', 'bankgebühren', 'löhne', 'gehälter',
-    'ges. soz. aufwendungen', 'verbindl. lohn/gehalt', 'verbindl. lst/kist',
-    'verbindl. sv', 'pauschsteuer (2 %)', 'insolvenzgeldumlage', 'tanken',
+    'beleg', 'einzahlung', 'auszahlung', 'auszahlung ga sparkasse', 'sparkasse', 'ga sparkasse',
+    'bankgebühr', 'bankgebühren', 'abrechnung kontoführung', 'kontoführung', 'zinsen',
+    'löhne', 'gehälter', 'ges. soz. aufwendungen', 'verbindl. lohn/gehalt', 'verbindl. lst/kist',
+    'verbindl. sv', 'pauschsteuer (2 %)', 'insolvenzgeldumlage', 'tanken', 'tank',
     'post', 'apotheke', 'haftpflichtversicherung', 'umsatzsteuer', 'gewerbesteuer',
-    'darlehen', 'miete', 'kassenbericht', 'kassenbelege', 'bankbelege',
+    'darlehen', 'miete', 'kassenbericht', 'kassenbelege', 'bankbelege', 'geldtransit',
+    'fintax', 'fintax consulting', 'überweisung fintax consulting', 'kartenterminal',
+    'händlerg. girocard bscard', 'payone zahlungseingang', 'sumup',
   ]);
 
-  // 1. Extract from bookings with invoice numbers or company indicators
+  // 1. Extract Personenkonten ONLY when a booking actually references a 5-digit Debitor/Kreditor account (10000-99999)
   for (const b of bookings) {
+    const personAcc = [b.konto, b.gegenkonto].find((acc) => /^\d{5}$/.test((acc || '').trim()));
+    if (!personAcc) continue;
+
+    const cleanAcc = personAcc.trim();
     const rawText = (b.buchungstext || '').trim();
-    if (!rawText) continue;
     const cleanText = rawText.replace(/\s+skonto.*$/i, '').trim();
     const lower = cleanText.toLowerCase();
 
-    if (genericTerms.has(lower) || lower.startsWith('te ') || lower.startsWith('1010 ') || lower.startsWith('1020 ')) {
+    if (
+      !cleanText ||
+      genericTerms.has(lower) ||
+      lower.startsWith('kassenbericht') ||
+      lower.startsWith('te ') ||
+      lower.startsWith('1010 ') ||
+      lower.startsWith('1020 ') ||
+      lower.includes('kontoauszug')
+    ) {
       continue;
     }
 
-    const isCompany = /\b(gmbh|ag|se|kg|ohg|e\.k\.|ug|inc|ltd|consulting|telecom|telekom|energie|bank|sparkasse)\b/i.test(cleanText);
-    const hasInvoiceRef = Boolean(b.belegfeld1 && /^[a-zA-Z0-9/_-]+$/.test(b.belegfeld1) && !/^\d{6}$/.test(b.belegfeld1));
-
-    if (isCompany || (hasInvoiceRef && b.sh === 'S' && ['8400', '8300'].includes(b.gegenkonto))) {
-      const key = lower.replace(/gmbh/i, 'gmbh');
-      if (!entriesMap.has(key)) {
-        const isCustomer = b.sh === 'S' && ['8400', '8300', '8200', '8100'].includes(b.gegenkonto);
-        const konto = isCustomer ? String(nextDebitor++) : String(nextKreditor++);
-        const normalizedName = cleanText.replace(/\bGmbh\b/g, 'GmbH');
-        entriesMap.set(key, {
-          konto,
-          name: normalizedName,
-          isCompany: true,
-          faelligkeitTage: isCustomer ? 7 : 14,
-          skontoProzent: rawText.toLowerCase().includes('skonto 3%') ? 3 : (isCustomer ? 3 : undefined),
-          mahnung: isCustomer ? 9 : undefined,
-        });
-      }
+    if (!entriesMap.has(cleanAcc)) {
+      const isCompany = /\b(gmbh|mbh|ag|se|kg|ohg|e\.k\.|e\.v\.|eg|ug|inc|ltd|consulting|telecom|telekom|energie|bank|sparkasse)\b/i.test(cleanText);
+      const rawPartnerName = cleanText.split(/\s*[-–]\s*(?:Rechnungs?-?nummer|Rechnung|Kauf|Anzahlung|Restzahlung|Auftrag|IBAN|SecureGo|Miete)/i)[0].trim();
+      const normalizedName = (rawPartnerName || cleanText).replace(/\bGmbh\b/g, 'GmbH');
+      entriesMap.set(cleanAcc, {
+        konto: cleanAcc,
+        name: normalizedName,
+        isCompany,
+        faelligkeitTage: undefined,
+        skontoProzent: rawText.toLowerCase().includes('skonto 3%') ? 3 : undefined,
+        mahnung: undefined,
+      });
     }
-  }
-
-  // 2. Also check document-level supplier_name if entriesMap is still empty
-  if (entriesMap.size === 0) {
-    for (const d of docs) {
-      const sup = (d.extracted_data?.supplier_name || '').trim();
-      if (!sup || genericTerms.has(sup.toLowerCase())) continue;
-      const key = sup.toLowerCase();
-      if (!entriesMap.has(key)) {
-        const isSales = d.extracted_data?.document_type === 'SALES_INVOICE';
-        const isComp = /\b(gmbh|ag|se|kg|e\.k\.|ug|consulting|haus|food|markt)\b/i.test(sup);
-        entriesMap.set(key, {
-          konto: isSales ? String(nextDebitor++) : String(nextKreditor++),
-          name: sup,
-          isCompany: isComp,
-          faelligkeitTage: 7,
-          skontoProzent: 3,
-          mahnung: 9,
-        });
-      }
-    }
-  }
-
-  // Ensure at least 1 default entry if no specific partner was found
-  if (entriesMap.size === 0) {
-    entriesMap.set('db service gmbh', {
-      konto: '11000',
-      name: 'DB Service GmbH',
-      isCompany: true,
-      faelligkeitTage: 7,
-      skontoProzent: 3,
-      mahnung: 9,
-    });
   }
 
   const rows = Array.from(entriesMap.values()).map((entry) => buildPersonenkontoRow(entry));
@@ -943,28 +915,57 @@ export function generateSachkontenCsvContent(
   const line1 = `"EXTF";700;20;"Kontenbeschriftungen";2;${timestamp17};;"AG";"${beraterName}";;1;${mandantenNr};${yearNum}0101;4;;;;;;;;;;;;;;;`;
   const line2 = `"Konto";"Kontobeschriftung";"SprachId";"Kontenbeschriftung lang"`;
 
-  const accountMap = new Map<string, string>();
+  const catalogMap = new Map<string, string>();
   for (const [code, label] of loadReferenceSachkonten()) {
-    accountMap.set(code, label);
+    catalogMap.set(code, label);
   }
   for (const [code, label] of OFFICIAL_SKR03_SACHKONTEN) {
-    if (!accountMap.has(code)) {
-      accountMap.set(code, label);
+    if (!catalogMap.has(code)) {
+      catalogMap.set(code, label);
     }
   }
 
-  // Ensure every account referenced in the bookings is present in Sachkonten
+  const customAgendaAccounts: Array<[string, string]> = [
+    ['0730', 'Verrechnungskonto Gesellschafter'],
+    ['0800', 'Gezeichnetes Kapital (Stammkapital)'],
+    ['1360', 'Geldtransit'],
+    ['1361', 'Geldtransit (Online / PAYONE)'],
+    ['1576', 'Abziehbare Vorsteuer 19 %'],
+    ['1850', 'Sonstige Verrechnungskonten (Apotheke / Auslagen)'],
+    ['3200', 'Wareneingang steuerfrei (§ 25a UStG)'],
+    ['4390', 'Sonstige Abgaben'],
+    ['4510', 'Kfz-Steuern'],
+    ['4520', 'Kfz-Versicherungen'],
+    ['4530', 'Laufende Kfz-Betriebskosten'],
+    ['4540', 'Kfz-Reparaturen'],
+    ['4673', 'Reisekosten Arbeitnehmer Fahrtkosten'],
+    ['4910', 'Porto, Telefon und Internet'],
+    ['4950', 'Rechts- und Beratungskosten'],
+    ['8125', 'Steuerfreie innergemeinschaftliche Lieferungen (§ 4 Nr. 1b UStG)'],
+    ['8193', 'Erlöse Differenzbesteuerung (§ 25a UStG)'],
+  ];
+  for (const [code, label] of customAgendaAccounts) {
+    catalogMap.set(code, label);
+  }
+
+  // Export ONLY the Sachkonten (up to 4-digit general ledger accounts) actually used in the bookings
+  const activeAccountMap = new Map<string, string>();
   for (const b of bookings) {
-    if (b.konto && !accountMap.has(b.konto)) {
-      accountMap.set(b.konto, getAccountDescription(b.konto));
-    }
-    if (b.gegenkonto && !accountMap.has(b.gegenkonto)) {
-      accountMap.set(b.gegenkonto, getAccountDescription(b.gegenkonto));
+    for (const acc of [b.konto, b.gegenkonto]) {
+      const cleanAcc = (acc || '').trim();
+      if (cleanAcc && cleanAcc.length <= 4) {
+        const label = catalogMap.get(cleanAcc) || getAccountDescription(cleanAcc);
+        activeAccountMap.set(cleanAcc, label);
+      }
     }
   }
+
+  const sortedEntries = Array.from(activeAccountMap.entries()).sort(
+    (a, b) => parseInt(a[0], 10) - parseInt(b[0], 10)
+  );
 
   const rows: string[] = [];
-  for (const [konto, label] of accountMap.entries()) {
+  for (const [konto, label] of sortedEntries) {
     const cleanLabel = label.replace(/[;"\r\n]/g, '').trim().substring(0, 40);
     rows.push(`${konto};"${cleanLabel}";"de-DE";""`);
   }

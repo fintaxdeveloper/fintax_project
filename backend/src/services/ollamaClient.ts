@@ -6,6 +6,7 @@ export interface OllamaVisionRequest {
   images?: string[]; // base64 encoded
   system?: string;
   format?: 'json' | string;
+  model?: string;
 }
 
 export const ollamaClient = {
@@ -13,8 +14,16 @@ export const ollamaClient = {
     return process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
   },
 
-  getModel(): string {
+  getVisionModel(): string {
     return process.env.OLLAMA_VISION_MODEL || 'minicpm-v';
+  },
+
+  getTextModel(): string {
+    return process.env.OLLAMA_TEXT_MODEL || process.env.OLLAMA_MODEL || 'qwen3.5:9b';
+  },
+
+  getModel(hasImages = false): string {
+    return hasImages ? this.getVisionModel() : this.getTextModel();
   },
 
   async isAvailable(): Promise<boolean> {
@@ -27,15 +36,17 @@ export const ollamaClient = {
   },
 
   async generate(options: OllamaVisionRequest): Promise<string> {
-    const model = this.getModel();
+    const hasImages = Boolean(options.images && options.images.length > 0);
+    const model = options.model || this.getModel(hasImages);
     const url = `${this.getBaseUrl()}/api/generate`;
 
     const body: Record<string, any> = {
       model,
       prompt: options.prompt,
       stream: false,
+      keep_alive: '10m',
       options: {
-        num_predict: 4096,
+        num_predict: 1536,
         temperature: 0.1,
       },
     };

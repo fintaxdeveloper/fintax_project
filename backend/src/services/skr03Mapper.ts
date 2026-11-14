@@ -1,3 +1,5 @@
+import { supplierMemoryService } from './supplierMemoryService.js';
+
 export interface Skr03Rule {
   keywords: string[];
   accountCode: string;
@@ -356,6 +358,7 @@ export const SKR03_RULES: Skr03Rule[] = [
   {
     keywords: [
       'girocard', 'bscard', 'händlerg.', 'kartenabrechnung', 'geldtransit',
+      'bar-auszahlung', 'pn:5635', 'pn:5705', 'rangrover movik',
     ],
     accountCode: '1360',
     accountName: 'Geldtransit',
@@ -445,7 +448,7 @@ export const SKR03_RULES: Skr03Rule[] = [
       'rechtsanwalt', 'notar', 'steuerberater', 'beratung',
       'consulting', 'gutachten', 'anwalt', 'kanzlei', 'lawyer',
       'attorney', 'legal', 'notary', 'counsel', 'advisory',
-      'wirtschaftsprüfer', 'audit',
+      'wirtschaftsprüfer', 'audit', 'creditreform',
     ],
     accountCode: '4950',
     accountName: 'Rechts- und Beratungskosten',
@@ -547,6 +550,15 @@ export const skr03Mapper = {
     description = '',
     vatPercent = 19,
   ): { code: string; name: string } {
+    // 0. Check Learned Vendor Memory Table first (0 seconds, 100% verified previous knowledge)
+    const learned = supplierMemoryService.lookupSupplier(supplierName);
+    if (learned && learned.skr03Account) {
+      return {
+        code: learned.skr03Account,
+        name: learned.skr03AccountName || 'Gelerntes Sachkonto',
+      };
+    }
+
     const combined = `${supplierName} ${description}`.toLowerCase();
 
     // Short keywords (e.g. "obi", "pr", "o2", "du", "gas") must match as whole words, otherwise

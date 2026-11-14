@@ -1,0 +1,372 @@
+[
+  {
+    "supplierNormalized": "frankfurtervolksbank",
+    "originalName": "Frankfurter Volksbank",
+    "skr03Account": "3300",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-12T18:25:06.312Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "willikaiserinhaberolafkaiserek",
+    "originalName": "Willi Kaiser Inhaber Olaf Kaiser e.K.",
+    "skr03Account": "3300",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-12T18:25:24.778Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "denogmbh",
+    "originalName": "DENO GmbH",
+    "skr03Account": "3300",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T11:00:10.438Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "qa24gmbh",
+    "originalName": "QA24 GmbH",
+    "skr03Account": "3400",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-14T07:22:35.069Z",
+    "usageCount": 49
+  },
+  {
+    "supplierNormalized": "airknergerichtsvolzliefererin",
+    "originalName": "airkner Gerichtsvolzliefererin",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T11:23:09.843Z",
+    "usageCount": 2
+  },
+  {
+    "supplierNormalized": "araltankstelle",
+    "originalName": "Aral Tankstelle",
+    "skr03Account": "4530",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T18:17:47.641Z",
+    "usageCount": 7
+  },
+  {
+    "supplierNormalized": "dendgmbh",
+    "originalName": "DEND GmbH",
+    "skr03Account": "3300",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T11:22:19.411Z",
+    "usageCount": 2
+  },
+  {
+    "supplierNormalized": "airknergerichtsvolzölerein",
+    "originalName": "airkner Gerichtsvolzölerein",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T11:19:44.349Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "villmarpflugohg",
+    "originalName": "VILLMAR & PFLUG OHG",
+    "skr03Account": "3400",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-14T07:22:35.070Z",
+    "usageCount": 4
+  },
+  {
+    "supplierNormalized": "lidl",
+    "originalName": "LIDL",
+    "skr03Account": "3300",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-14T07:22:35.065Z",
+    "usageCount": 2
+  },
+  {
+    "supplierNormalized": "fspgmbhcokg",
+    "originalName": "FSP GmbH & Co KG",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-14T07:22:35.067Z",
+    "usageCount": 2
+  },
+  {
+    "supplierNormalized": "slwbetriebsgmbh",
+    "originalName": "SLW Betriebs GmbH",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T11:28:02.791Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "qa24automobiltechnik",
+    "originalName": "QA24 Automobiltechnik",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T11:28:02.795Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "koyunfoodek",
+    "originalName": "Koyun Food e.K.",
+    "skr03Account": "3300",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-14T07:19:48.953Z",
+    "usageCount": 5
+  },
+  {
+    "supplierNormalized": "flattransferde",
+    "originalName": "FlatTransfer.de",
+    "skr03Account": "3400",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T12:31:04.442Z",
+    "usageCount": 4
+  },
+  {
+    "supplierNormalized": "florian21205",
+    "originalName": "Florian, 21205",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T12:31:04.435Z",
+    "usageCount": 2
+  },
+  {
+    "supplierNormalized": "qa24automotivede",
+    "originalName": "QA24Automotive.de",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T12:31:04.437Z",
+    "usageCount": 2
+  },
+  {
+    "supplierNormalized": "qa24automobilve",
+    "originalName": "QA24 Automobilve",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T11:52:18.291Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "qa24automobilteilegmbh",
+    "originalName": "QA24 Automobilteile GmbH",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T12:31:04.440Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "aralag",
+    "originalName": "ARAL AG",
+    "skr03Account": "3300",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T18:15:33.543Z",
+    "usageCount": 8
+  },
+  {
+    "supplierNormalized": "shellstationdinugmbh",
+    "originalName": "SHELL STATION DI NU GmbH",
+    "skr03Account": "4530",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T18:17:47.638Z",
+    "usageCount": 4
+  },
+  {
+    "supplierNormalized": "smarttarif24gmbh",
+    "originalName": "Smarttarif24 GmbH",
+    "skr03Account": "70001",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T18:17:47.639Z",
+    "usageCount": 3
+  },
+  {
+    "supplierNormalized": "rasthofaurachnord",
+    "originalName": "Rasthof Aurach Nord",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T18:17:47.642Z",
+    "usageCount": 4
+  },
+  {
+    "supplierNormalized": "dbfernverkehrgmbh",
+    "originalName": "DB Fernverkehr GmbH",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T14:19:23.203Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "freietankstellewolfgangseifertrodenbergbergerallee19",
+    "originalName": "Freie Tankstelle Wolfgang Seifert Rodenbergberger Allee 19",
+    "skr03Account": "4530",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T14:19:23.204Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "shellgmbh",
+    "originalName": "Shell GmbH",
+    "skr03Account": "4530",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T14:19:23.205Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "öhlschelderenby",
+    "originalName": "ÖHLSCHELDER ENBY",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T15:35:02.850Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "deutschepostag",
+    "originalName": "Deutsche Post AG",
+    "skr03Account": "4910",
+    "skr03AccountName": "",
+    "vatRatePercent": 0,
+    "buSchluessel": "",
+    "lastUsedAt": "2026-11-13T15:35:02.852Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "shellstation",
+    "originalName": "Shell Station",
+    "skr03Account": "4530",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T15:35:02.853Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "dbfernverkehr",
+    "originalName": "DB Fernverkehr",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T15:35:02.853Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "acstradegmbh",
+    "originalName": "ACS Trade GmbH",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T15:35:02.854Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "transgourmentdeutschlandgmbhcoohg",
+    "originalName": "Transgourment Deutschland GmbH & Co.OHG",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T16:21:17.590Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "emilfreyavalonpremiumcars",
+    "originalName": "Emil Frey Avalon Premium Cars",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T16:21:17.595Z",
+    "usageCount": 2
+  },
+  {
+    "supplierNormalized": "jetlankstelle",
+    "originalName": "JET lankstelle",
+    "skr03Account": "4530",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T16:21:17.597Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "ebaygmbh",
+    "originalName": "eBay GmbH",
+    "skr03Account": "4900",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T16:21:17.603Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "vattenfalleuropesalesgmbh",
+    "originalName": "Vattenfall Europe Sales GmbH",
+    "skr03Account": "4240",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-13T16:21:17.605Z",
+    "usageCount": 1
+  },
+  {
+    "supplierNormalized": "qa24",
+    "originalName": "QA24",
+    "skr03Account": "3400",
+    "skr03AccountName": "",
+    "vatRatePercent": 19,
+    "buSchluessel": "9",
+    "lastUsedAt": "2026-11-14T07:22:35.070Z",
+    "usageCount": 1
+  }
+]

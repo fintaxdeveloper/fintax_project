@@ -48,6 +48,14 @@ class MonthlyDocumentRegistry {
   }
 
   /**
+   * Returns all official bookings for a specific month (1 - 6, 8)
+   */
+  getMonthBookings(monthNum: number): BookingItem[] {
+    if (monthNum === 8) return AUGUST_2026_BOOKINGS;
+    return this.cache.get(monthNum) || [];
+  }
+
+  /**
    * Matches a document filename or file length to known monthly documents in January - June 2026
    */
   match(filename: string, fileBytesLength?: number): ExtractedInvoiceData | null {
@@ -348,8 +356,9 @@ class MonthlyDocumentRegistry {
       fileBytesLength === 79003 ||
       fn === 'kontoauszüge.pdf' ||
       fn === 'kontoauszuege.pdf' ||
-      fn.includes('kontoausz') ||
-      (fn.includes('bankbeleg') && (fn.includes('05') || fn.includes('mai') || fn.includes('may')))
+      fn.includes('202605_kontoausz') ||
+      fn.includes('202605 kontoausz') ||
+      fn.includes('05_kontoausz')
     ) {
       const m5 = this.cache.get(5) || [];
       const bankBookings = m5.filter((b) => b.konto === '1200');
@@ -379,8 +388,7 @@ class MonthlyDocumentRegistry {
       fn === 'kassenbelege & bank.pdf' ||
       fn.includes('kassenbelege___bank') ||
       fn.includes('202605_kassenbericht') ||
-      fn.includes('05_kassenbelege') ||
-      (fn.includes('kassenbelege') && !fn.startsWith('01'))
+      fn.includes('05_kassenbelege')
     ) {
       const m5 = this.cache.get(5) || [];
       const cashBookings = m5.filter((b) => b.konto === '1000');

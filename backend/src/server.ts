@@ -490,20 +490,20 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
         });
       }
 
-      // If document is classified as a Bank Statement, also register it in bankStatementService
+      // Step 3: OCR & Step 4: Fast Deterministic + Ollama Data Extraction
+      console.log(`[Step 3/6 - OCR] Reading text & layout from ${originalname}...`);
+      console.log(`[Step 4/6 - Ollama Extraction] Extracting invoice date, supplier, amounts & line items...`);
+      const extracted = await aiService.processInvoice(storedPath, mimetype);
+
+      // Only run fallback bankStatementService Ollama extraction if deterministic parser returned <= 1 booking
       let bankStmtResult: any = null;
-      if (classification.category === 'BANK_STATEMENT') {
+      if (classification.category === 'BANK_STATEMENT' && (!extracted.bookings || extracted.bookings.length <= 1)) {
         try {
           bankStmtResult = await bankStatementService.processBankStatement(storedPath, mimetype, docId);
         } catch (bsErr) {
           console.warn('[Upload] Bank statement reconciliation check notice:', bsErr);
         }
       }
-
-      // Step 3: OCR & Step 4: Ollama Data Extraction
-      console.log(`[Step 3/6 - OCR] Reading text & layout from ${originalname}...`);
-      console.log(`[Step 4/6 - Ollama Extraction] Extracting invoice date, supplier, amounts & line items...`);
-      const extracted = await aiService.processInvoice(storedPath, mimetype);
 
       // If bankStatementService extracted multiple transactions and processInvoice only had a single fallback booking, enrich extracted with bank statement SKR03 bookings
       if (
@@ -745,98 +745,61 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
 
       console.log(`=============================================================\n`);
 
-      // ---------- A) MULTI-BILL UPLOAD: split into one record per bill ----------
+      // ---------- A) MULTI-BILL UPLOAD: keep ONE original PDF record, merge all bills into bookings[] ----------
       if (splitBills.length >= 2) {
         const total = splitBills.length;
-        const ext = path.extname(originalname);
-        const base = path.basename(originalname, ext);
-        const groupId = docId;
-
-        // Pre-create all records so the monthly batch CSV of each month sees its sibling bills
-        const records: DocumentRecord[] = splitBills.map((bill, i) => {
-          const safeSupplier = String(bill.supplier_name || 'Beleg').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 30) || 'Beleg';
-          const splitName = `${base} - Beleg ${i + 1} von ${total} - ${safeSupplier} ${bill.invoice_date}${ext}`;
-          const rec: DocumentRecord = {
-            ...newDoc,
-            id: i === 0 ? docId : uuidv4(),
-            original_filename: splitName,
-            parent_document_id: i === 0 ? undefined : docId,
-            split_group_id: groupId,
-            split_index: i + 1,
-            split_total: total,
-            extracted_data: bill,
-            status: 'PROCESSING',
-          };
-          if (i === 0) {
-            dbService.update(docId, {
-              original_filename: splitName,
-              split_group_id: groupId,
-              split_index: 1,
-              split_total: total,
-              extracted_data: bill,
-            });
-          } else {
-            dbService.create(rec);
+        const mergedBookings = splitBills.flatMap((bill) => {
+          if (Array.isArray(bill.bookings) && bill.bookings.length > 0) {
+            return bill.bookings;
           }
-          return rec;
+          const amt = Number(bill.total_amount) || 0;
+          if (amt <= 0) return [];
+          return [{
+            amount: amt,
+            sh: (bill.document_type === 'SALES_INVOICE' ? 'S' : 'H') as 'S' | 'H',
+            konto: bill.payment_method === 'bank_transfer' ? '1200' : (bill.payment_method === 'cash' || /kasse/i.test(originalname) ? '1000' : '1200'),
+            gegenkonto: bill.skr03_account_code || '4900',
+            buCode: bill.vat_rate_percent === 19 ? '9' : bill.vat_rate_percent === 7 ? '8' : '',
+            belegdatum: exportService.parseBelegdatum(bill.invoice_date),
+            belegfeld1: bill.invoice_number || '',
+            buchungstext: bill.supplier_name || originalname,
+            currency: bill.currency || 'EUR',
+          }];
         });
 
-        const siblingIds = records.map((r) => r.id);
-        const results = records.map((rec, i) =>
-          routeFinancialDocument(
-            rec.id,
-            rec,
-            splitBills[i],
-            siblingIds,
-            i === 0 ? checksum : undefined // exact-file duplicate check only once per upload
-          )
-        );
+        // Pick majority valid year-month across bills (ignore OCR outlier years < 2020)
+        const ymCounts = new Map<string, { count: number; date: string }>();
+        for (const bill of splitBills) {
+          const dStr = String(bill.invoice_date || '');
+          const m = dStr.match(/^(20[2-3]\d)-(\d{2})-/);
+          if (m) {
+            const key = `${m[1]}-${m[2]}`;
+            const cur = ymCounts.get(key) || { count: 0, date: dStr };
+            cur.count += 1;
+            ymCounts.set(key, cur);
+          }
+        }
+        let bestDate = extracted.invoice_date;
+        let bestCount = -1;
+        for (const entry of ymCounts.values()) {
+          if (entry.count > bestCount) {
+            bestCount = entry.count;
+            bestDate = entry.date;
+          }
+        }
 
-        const folders = Array.from(new Set(results.map((r) => `${r.year}/${r.monthFolder}`)));
-        const anyDuplicate = results.some((r) => r.isDuplicate);
-        console.log(`[Multi-Bill AI] "${originalname}" split into ${total} bills -> folders: ${folders.join(', ')}`);
+        const totalSum = parseFloat(splitBills.reduce((s, b) => s + (Number(b.total_amount) || 0), 0).toFixed(2));
+        const netSum = parseFloat(splitBills.reduce((s, b) => s + (Number(b.net_amount) || 0), 0).toFixed(2));
+        const vatSum = parseFloat((totalSum - netSum).toFixed(2));
 
-        return res.status(201).json({
-          message: `${total} Belege in einer Datei erkannt -> ${folders.length} Monatsordner: ${folders.join(', ')}`,
-          document: results[0].updated,
-          documents: results.map((r) => r.updated),
-          split_count: total,
-          is_duplicate: anyDuplicate,
-          relative_folder: results[0].finalRelativeFolder,
-          pipeline_summary: {
-            step1_upload: originalname,
-            step2_document_type: 'MULTIPLE_BILLS',
-            step3_ocr: 'Completed',
-            step4_ollama_extraction: {
-              supplier_name: `${total} bills`,
-              invoice_number: '',
-              invoice_date: results.map((r) => r.ext.invoice_date).join(', '),
-              total_amount: parseFloat(results.reduce((s, r) => s + (Number(r.ext.total_amount) || 0), 0).toFixed(2)),
-              currency: results[0].ext.currency,
-            },
-            step5_transaction_identified: {
-              bookings_count: results.reduce((s, r) => s + (r.ext.bookings?.length || 1), 0),
-              payment_method: results[0].ext.payment_method,
-            },
-            step6_skr03_and_csv: {
-              skr03_account_code: Array.from(new Set(results.map((r) => r.ext.skr03_account_code))).join(', '),
-              target_year: Array.from(new Set(results.map((r) => r.year))).join(', '),
-              target_month: Array.from(new Set(results.map((r) => r.monthFolder))).join(', '),
-              target_folder: folders.map((f) => `${clientName}/Financial Accounting/${f}`).join(' | '),
-              skr03_csv_file: results.map((r) => r.generatedCsvFileName).join(', '),
-              monthly_batch_csv_file: Array.from(new Set(results.map((r) => r.monthlyCsvFileName))).join(', '),
-            },
-            split_bills: results.map((r) => ({
-              id: r.updated.id,
-              supplier_name: r.ext.supplier_name,
-              invoice_date: r.ext.invoice_date,
-              total_amount: r.ext.total_amount,
-              currency: r.ext.currency,
-              skr03_account_code: r.ext.skr03_account_code,
-              target_folder: `Financial Accounting/${r.year}/${r.monthFolder}`,
-            })),
-          },
-        });
+        extracted.bookings = mergedBookings;
+        extracted.total_amount = totalSum || extracted.total_amount;
+        extracted.net_amount = netSum || extracted.net_amount;
+        extracted.vat_amount = vatSum >= 0 ? vatSum : extracted.vat_amount;
+        if (bestDate) extracted.invoice_date = bestDate;
+        extracted.supplier_name = extracted.supplier_name || `${splitBills[0]?.supplier_name || originalname} (+${total - 1} weitere)`;
+        extracted.line_items_summary = `${total} Belege in "${originalname}" (${mergedBookings.length} Buchungen)`;
+        console.log(`[Multi-Bill AI] "${originalname}" -> ${total} bills merged into 1 document (${bestDate}), ${mergedBookings.length} bookings`);
       }
 
       // ---------- B) SINGLE-BILL UPLOAD (normal flow) ----------

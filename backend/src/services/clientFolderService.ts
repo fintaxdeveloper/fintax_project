@@ -401,8 +401,9 @@ export const clientFolderService = {
     const clientBase = this.ensureClientFolderTree(clientFolderName, Number(params.year) || new Date().getFullYear());
 
     // Normalize monthFolder to 2-digit number ("01" .. "12")
-    const normalizedMonth = params.monthFolder.match(/^(0?[1-9]|1[0-2])/)
-      ? String(parseInt(params.monthFolder.match(/^(0?[1-9]|1[0-2])/)![1], 10)).padStart(2, '0')
+    const mMatch = params.monthFolder.match(/^(1[0-2]|0?[1-9])(?:$|[^0-9])/);
+    const normalizedMonth = mMatch
+      ? String(parseInt(mMatch[1], 10)).padStart(2, '0')
       : params.monthFolder;
 
     // 1. 01_Financial Accounting – FiBu / <Year> / <MM>
@@ -422,6 +423,27 @@ export const clientFolderService = {
     if (fs.existsSync(params.currentStoredPath)) {
       if (path.resolve(params.currentStoredPath) !== path.resolve(targetDocPath)) {
         fs.copyFileSync(params.currentStoredPath, targetDocPath);
+        // If currentStoredPath was inside a temporary 01_Financial Accounting – FiBu/<oldYear>/<oldMonth> folder,
+        // remove the misplaced copy and clean up empty directories so wrong year/month folders don't linger
+        if (params.currentStoredPath.includes(CLIENT_FOLDER_FIBU)) {
+          try {
+            fs.unlinkSync(params.currentStoredPath);
+            const oldMonthDir = path.dirname(params.currentStoredPath);
+            const oldCsvDir = path.join(oldMonthDir, MONTH_FOLDER_CSV);
+            if (fs.existsSync(oldCsvDir) && fs.readdirSync(oldCsvDir).length === 0) {
+              fs.rmdirSync(oldCsvDir);
+            }
+            if (fs.existsSync(oldMonthDir) && fs.readdirSync(oldMonthDir).length === 0) {
+              fs.rmdirSync(oldMonthDir);
+            }
+            const oldYearDir = path.dirname(oldMonthDir);
+            if (fs.existsSync(oldYearDir) && fs.readdirSync(oldYearDir).length === 0) {
+              fs.rmdirSync(oldYearDir);
+            }
+          } catch {
+            // ignore cleanup errors
+          }
+        }
       }
     }
 
