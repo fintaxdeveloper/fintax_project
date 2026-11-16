@@ -8,5 +8,14 @@
       "resolved_at": "2026-11-16T10:46:07.960Z",
       "note": "Kassenbelege S. 8: Rechnung 05/2024 C63 AMG (42.600 € brutto, 30.000 € Anzahlung 14.03.) - Verkauf nach §25a UStG"
     }
+  },
+  "user_1794702134824_vnbi|2024-03": {
+    "2803|11900.00|S|1000|willikaiserinhaberolafkaiser#1": {
+      "action": "EXCLUDE",
+      "gegenkonto": "8400",
+      "buCode": "",
+      "resolved_by": "User/Accountant",
+      "resolved_at": "2026-11-16T18:18:02.357Z"
+    }
   }
 }
