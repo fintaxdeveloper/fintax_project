@@ -5,8 +5,9 @@ export interface OllamaVisionRequest {
   prompt: string;
   images?: string[]; // base64 encoded
   system?: string;
-  format?: 'json' | string;
+  format?: 'json' | string | Record<string, any>;
   model?: string;
+  temperature?: number;
 }
 
 export const ollamaClient = {
@@ -47,7 +48,7 @@ export const ollamaClient = {
       keep_alive: '10m',
       options: {
         num_predict: 1536,
-        temperature: 0.1,
+        temperature: typeof options.temperature === 'number' ? options.temperature : 0.1,
       },
     };
 
@@ -80,7 +81,7 @@ export const ollamaClient = {
   },
 
   async generateJson<T = any>(options: OllamaVisionRequest): Promise<T> {
-    const raw = await this.generate({ ...options, format: 'json' });
+    const raw = await this.generate({ ...options, format: options.format || 'json' });
     let cleaned = raw
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')

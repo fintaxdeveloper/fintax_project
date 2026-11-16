@@ -25,6 +25,7 @@ import { deletionApprovalService } from './services/deletionApprovalService.js';
 import { backupService } from './services/backupService.js';
 import { maskingService } from './services/maskingService.js';
 import { monthlyDocumentRegistry } from './services/monthlyDocumentRegistry.js';
+import { reviewService, ReviewReport, ReviewAction } from './services/reviewService.js';
 import { skr03Mapper } from './services/skr03Mapper.js';
 import { DocumentRecord, ExtractedInvoiceData } from './types/document.js';
 
@@ -639,6 +640,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
 
         let generatedCsvFileName = '';
         let monthlyCsvFileName = '';
+        let reviewReport: ReviewReport | null = null;
         const driveTargetFolder = `01_Financial Accounting – FiBu/${year}/${monthFolder}`;
         let finalStoredPath = baseRecord.file_path;
         let finalRelativeFolder = baseRecord.relative_path;
@@ -647,8 +649,13 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
           const others = existingDocs.filter((d) => d.id !== targetDocId);
           const allDocsWithCurrent = [...others, docWithExtracted];
           const csvData = exportService.generateDocumentAndMonthlySKR03Csv(docWithExtracted, allDocsWithCurrent, year, monthNum);
+          reviewReport = csvData.reviewReport;
+          ext.review_blocked = reviewReport.blocked;
+          ext.review_open_issues = reviewReport.open_critical + reviewReport.open_warnings;
           generatedCsvFileName = csvData.buchungenCsvFileName;
-          monthlyCsvFileName = `${csvData.buchungenCsvFileName}, ${csvData.personenkontenCsvFileName}, ${csvData.sachkontenCsvFileName}`;
+          monthlyCsvFileName = reviewReport.blocked
+            ? ''
+            : `${csvData.buchungenCsvFileName}, ${csvData.personenkontenCsvFileName}, ${csvData.sachkontenCsvFileName}`;
 
           ext.skr03_csv_file = csvData.buchungenCsvFileName;
           ext.monthly_csv_file = monthlyCsvFileName;
@@ -710,12 +717,16 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
           baseRecord.split_total && baseRecord.split_total > 1
             ? `Beleg ${baseRecord.split_index}/${baseRecord.split_total} aus Sammelupload "${originalname}" • `
             : '';
-        const skr03Note = `${splitInfo}SKR03 [${ext.skr03_account_code || '4900'}] • ${ext.bookings?.length || 1} Buchung(en) • Gespeichert in 01_Financial Accounting – FiBu/${year}/${monthFolder}${generatedCsvFileName ? ` (+ 00_CSV/${generatedCsvFileName})` : ''}`;
+        const reviewInfo = reviewReport?.blocked
+          ? ` • ⚠️ DATEV-Export gesperrt: ${reviewReport.block_reasons.join('; ')}`
+          : '';
+        const skr03Note = `${splitInfo}SKR03 [${ext.skr03_account_code || '4900'}] • ${ext.bookings?.length || 1} Buchung(en) • Gespeichert in 01_Financial Accounting – FiBu/${year}/${monthFolder}${generatedCsvFileName ? ` (+ 00_CSV/${generatedCsvFileName})` : ''}${reviewInfo}`;
         const combinedNotes = notes ? `${notes} | ${skr03Note}` : skr03Note;
+        const statusAfterReview = reviewReport?.blocked && finalStatus !== 'NEEDS_ATTENTION' ? 'NEEDS_ATTENTION' : finalStatus;
 
         const updated =
           dbService.update(targetDocId, {
-            status: finalStatus,
+            status: statusAfterReview,
             extracted_data: ext,
             validation_issues: allIssues,
             is_duplicate: isDuplicate,
@@ -740,6 +751,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
           generatedCsvFileName,
           monthlyCsvFileName,
           ext,
+          reviewReport,
         };
       };
 
@@ -804,15 +816,23 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
 
       // ---------- B) SINGLE-BILL UPLOAD (normal flow) ----------
       const single = routeFinancialDocument(docId, newDoc, extracted, [docId], checksum);
-      const { updated, isDuplicate, year, monthFolder, driveTargetFolder, finalRelativeFolder, generatedCsvFileName, monthlyCsvFileName } = single;
+      const { updated, isDuplicate, year, monthFolder, driveTargetFolder, finalRelativeFolder, generatedCsvFileName, monthlyCsvFileName, reviewReport } = single;
+
+      // Qwen explains the open doubts in the background (suggestions only — never auto-applied)
+      if (reviewReport && reviewReport.issues.some((i) => !i.resolved)) {
+        reviewService.generateAiAdvice(reviewReport).catch(() => undefined);
+      }
 
       return res.status(201).json({
         message: isDuplicate
           ? 'Dokument verarbeitet — ACHTUNG: Möglicher Belegdoppelgänger erkannt!'
-          : `Document processed via OCR & AI -> SKR03 CSV saved in ${driveTargetFolder}`,
+          : reviewReport?.blocked
+            ? `Document processed — DATEV CSV blocked until ${reviewReport.open_critical} review item(s) are confirmed`
+            : `Document processed via OCR & AI -> SKR03 CSV saved in ${driveTargetFolder}`,
         document: updated,
         is_duplicate: isDuplicate,
         relative_folder: finalRelativeFolder,
+        review_report: reviewReport,
         pipeline_summary: {
           step1_upload: originalname,
           step2_document_type: extracted.document_type || classification.category,
@@ -973,6 +993,14 @@ app.get('/api/documents/:id/skr03-csv', (req, res) => {
     const allDocs = dbService.getAll();
     const csvData = exportService.generateDocumentAndMonthlySKR03Csv(doc, allDocs, year, monthNum);
 
+    if (csvData.reviewReport.blocked) {
+      return res.status(409).json({
+        error: `DATEV export blocked: ${csvData.reviewReport.block_reasons.join(' • ')}`,
+        blocked: true,
+        review_report: csvData.reviewReport,
+      });
+    }
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${csvData.singleCsvFileName}"`);
     return res.send(csvData.singleCsvContent);
@@ -1001,6 +1029,14 @@ app.get('/api/documents/:id/skr03-xlsx', (req, res) => {
     const allDocs = dbService.getAll();
     const data = exportService.generateDocumentAndMonthlySKR03Csv(doc, allDocs, year, monthNum);
 
+    if (data.reviewReport.blocked) {
+      return res.status(409).json({
+        error: `DATEV export blocked: ${data.reviewReport.block_reasons.join(' • ')}`,
+        blocked: true,
+        review_report: data.reviewReport,
+      });
+    }
+
     if (!data.singleXlsxContent) {
       return res.status(500).json({ error: 'Excel-Datei konnte nicht erstellt werden.' });
     }
@@ -1010,6 +1046,268 @@ app.get('/api/documents/:id/skr03-xlsx', (req, res) => {
     return res.send(data.singleXlsxContent);
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Fehler beim Generieren der SKR03 Excel-Datei.' });
+  }
+});
+
+// --- REVIEW GATE ENDPOINTS (Hard Export Blocker & Doubt Confirmation) ---
+const buildReviewReportForScope = (clientId: string, year: number, monthNum: number) => {
+  const allDocs = dbService.getAll();
+  let monthDoc = allDocs.find((d) => {
+    if (d.client_id && d.client_id !== clientId) return false;
+    const res = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+    return Number(res.year) === year && res.monthNum === monthNum;
+  });
+
+  if (!monthDoc) {
+    // Dummy document placeholder to trigger monthly aggregation across available documents
+    monthDoc = {
+      id: `scope_${clientId}_${year}_${monthNum}`,
+      client_id: clientId,
+      original_filename: `Month_${year}_${monthNum}`,
+      stored_filename: `Month_${year}_${monthNum}`,
+      file_path: '',
+      mime_type: 'application/pdf',
+      size_bytes: 0,
+      uploaded_at: new Date().toISOString(),
+      status: 'PROCESSING',
+      extracted_data: {
+        document_type: 'BANK_STATEMENT',
+        supplier_name: 'Monatsübersicht',
+        invoice_number: `STAPEL-${year}-${String(monthNum).padStart(2, '0')}`,
+        invoice_date: `${year}-${String(monthNum).padStart(2, '0')}-01`,
+        currency: 'EUR',
+        net_amount: 0,
+        vat_rate_percent: 0,
+        vat_amount: 0,
+        total_amount: 0,
+        confidence_score: 1,
+        bookings: [],
+      },
+    };
+  }
+
+  return exportService.generateDocumentAndMonthlySKR03Csv(monthDoc, allDocs, year, monthNum, {
+    allowBlocked: true,
+    writeFiles: false,
+  });
+};
+
+// 4d. Get Review Report for a specific document (or its month)
+app.get('/api/documents/:id/review-report', (req, res) => {
+  try {
+    const doc = dbService.getById(req.params.id);
+    if (!doc) {
+      return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+    }
+    const { year, monthNum } = googleDriveService.resolveYearAndMonth(
+      doc.extracted_data?.invoice_date,
+      doc.original_filename
+    );
+    const clientId = doc.client_id || 'user_client_1';
+    const csvData = buildReviewReportForScope(clientId, Number(year), monthNum);
+    return res.json({
+      scope: csvData.reviewReport.scope,
+      document_id: doc.id,
+      year: Number(year),
+      month: monthNum,
+      report: csvData.reviewReport,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Laden des Prüfberichts.' });
+  }
+});
+
+// 4e. Query Review Report by Year / Month / Client
+app.get('/api/review-report', (req, res) => {
+  try {
+    const clientId = String(req.query.client_id || 'user_client_1');
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const csvData = buildReviewReportForScope(clientId, year, month);
+    return res.json({
+      scope: csvData.reviewReport.scope,
+      year,
+      month,
+      report: csvData.reviewReport,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Laden des Prüfberichts.' });
+  }
+});
+
+// 4f. Resolve a doubt on the Review List (set account, accept, or exclude)
+app.post('/api/review/resolve', async (req, res) => {
+  try {
+    const {
+      scope,
+      lineKey,
+      action,
+      gegenkonto,
+      buCode,
+      note,
+      remember_vendor,
+      vendor_text,
+      document_id,
+    } = req.body || {};
+
+    if (!scope || !lineKey || !action) {
+      return res.status(400).json({ error: 'scope, lineKey und action sind erforderlich.' });
+    }
+
+    const resolution: any = {
+      action,
+      gegenkonto: gegenkonto ? String(gegenkonto).trim() : undefined,
+      buCode: buCode !== undefined ? String(buCode).trim() : '',
+      note: note ? String(note).trim() : undefined,
+      resolved_by: (req as any).user?.email || 'User/Accountant',
+      resolved_at: new Date().toISOString(),
+    };
+
+    reviewService.saveResolution(scope, lineKey, resolution);
+
+    if (remember_vendor && vendor_text && resolution.gegenkonto) {
+      reviewService.saveVendorRule(vendor_text, resolution.gegenkonto, resolution.buCode || '');
+    }
+
+    // Parse scope (e.g. "user_client_1|2024-08")
+    const parts = scope.split('|');
+    const clientId = parts[0] || 'user_client_1';
+    const ym = (parts[1] || '').split('-');
+    const year = Number(ym[0]) || new Date().getFullYear();
+    const month = Number(ym[1]) || 1;
+
+    // Re-evaluate monthly state and attempt to generate & unlock CSV if all critical issues are resolved
+    const allDocs = dbService.getAll();
+    let monthDoc = allDocs.find((d) => {
+      if (document_id && d.id === document_id) return true;
+      if (d.client_id && d.client_id !== clientId) return false;
+      const r = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+      return Number(r.year) === year && r.monthNum === month;
+    });
+
+    if (!monthDoc) {
+      monthDoc = {
+        id: `scope_${clientId}_${year}_${month}`,
+        client_id: clientId,
+        original_filename: `Month_${year}_${month}`,
+        stored_filename: `Month_${year}_${month}`,
+        file_path: '',
+        mime_type: 'application/pdf',
+        size_bytes: 0,
+        uploaded_at: new Date().toISOString(),
+        status: 'PROCESSING',
+      };
+    }
+
+    const reRunData = exportService.generateDocumentAndMonthlySKR03Csv(monthDoc, allDocs, year, month, {
+      allowBlocked: false,
+      writeFiles: true,
+    });
+
+    // If unblocked now, sync to Google Drive and Vault!
+    if (!reRunData.reviewReport.blocked && reRunData.buchungenCsvContent) {
+      try {
+        const clientFolder = clientFolderService.resolveClientFolderName(clientId);
+        clientFolderService.storeFinancialAccountingByYearMonth({
+          clientId,
+          clientName: clientFolder,
+          currentStoredPath: monthDoc.file_path || '',
+          originalFilename: monthDoc.original_filename || `Batch_${year}_${month}`,
+          year: String(year),
+          monthFolder: String(month).padStart(2, '0'),
+          buchungenCsvContent: reRunData.buchungenCsvContent,
+          buchungenCsvFileName: reRunData.buchungenCsvFileName,
+          personenkontenCsvContent: reRunData.personenkontenCsvContent,
+          personenkontenCsvFileName: reRunData.personenkontenCsvFileName,
+          sachkontenCsvContent: reRunData.sachkontenCsvContent,
+          sachkontenCsvFileName: reRunData.sachkontenCsvFileName,
+          singleCsvContent: reRunData.singleCsvContent,
+          singleCsvFileName: reRunData.singleCsvFileName,
+          monthlyCsvContent: reRunData.monthlyCsvContent,
+          monthlyCsvFileName: reRunData.monthlyCsvFileName,
+        });
+
+        googleDriveService.syncFinancialAccountingWithCsv({
+          sourceFilePath: monthDoc.file_path || '',
+          originalFilename: monthDoc.original_filename || `Batch_${year}_${month}`,
+          clientName: clientFolder,
+          year: String(year),
+          monthFolder: String(month).padStart(2, '0'),
+          buchungenCsvContent: reRunData.buchungenCsvContent,
+          buchungenCsvFileName: reRunData.buchungenCsvFileName,
+          personenkontenCsvContent: reRunData.personenkontenCsvContent,
+          personenkontenCsvFileName: reRunData.personenkontenCsvFileName,
+          sachkontenCsvContent: reRunData.sachkontenCsvContent,
+          sachkontenCsvFileName: reRunData.sachkontenCsvFileName,
+          singleCsvContent: reRunData.singleCsvContent,
+          singleCsvFileName: reRunData.singleCsvFileName,
+          monthlyCsvContent: reRunData.monthlyCsvContent,
+          monthlyCsvFileName: reRunData.monthlyCsvFileName,
+        });
+      } catch (syncErr) {
+        console.warn('[Review Resolve] Sync error:', syncErr);
+      }
+
+      // If document was waiting for review, update its status to READY_FOR_REVIEW
+      if (document_id) {
+        const docRecord = dbService.getById(document_id);
+        if (docRecord && docRecord.status === 'NEEDS_ATTENTION') {
+          dbService.update(document_id, { status: 'READY_FOR_REVIEW' });
+        }
+      }
+    }
+
+    return res.json({
+      message: reRunData.reviewReport.blocked
+        ? `Entscheidung gespeichert. Noch ${reRunData.reviewReport.open_critical} kritische Position(en) offen.`
+        : 'Alle Positionen bestätigt! DATEV EXTF CSV wurde freigeschaltet und exportiert ✅',
+      blocked: reRunData.reviewReport.blocked,
+      report: reRunData.reviewReport,
+      csv_ready: !reRunData.reviewReport.blocked,
+      csv_filename: reRunData.buchungenCsvFileName,
+    });
+  } catch (err: any) {
+    console.error('[Review Resolve Error]', err);
+    return res.status(500).json({ error: err?.message || 'Fehler beim Speichern der Überprüfung.' });
+  }
+});
+
+// 4g. Reset a single doubt resolution or all resolutions for a scope
+app.post('/api/review/reset', (req, res) => {
+  try {
+    const { scope, lineKey } = req.body || {};
+    if (!scope) return res.status(400).json({ error: 'scope ist erforderlich.' });
+    if (lineKey) {
+      reviewService.removeResolution(scope, lineKey);
+    } else {
+      reviewService.clearScope(scope);
+    }
+    return res.json({ message: 'Zurückgesetzt.', scope });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Zurücksetzen.' });
+  }
+});
+
+// 4h. Ask local Qwen AI for advice on remaining open doubts
+app.post('/api/review/ask-ai', async (req, res) => {
+  try {
+    const { scope } = req.body || {};
+    if (!scope) return res.status(400).json({ error: 'scope ist erforderlich.' });
+    const parts = scope.split('|');
+    const clientId = parts[0] || 'user_client_1';
+    const ym = (parts[1] || '').split('-');
+    const year = Number(ym[0]) || new Date().getFullYear();
+    const month = Number(ym[1]) || 1;
+
+    const csvData = buildReviewReportForScope(clientId, year, month);
+    const count = await reviewService.generateAiAdvice(csvData.reviewReport);
+    const updated = buildReviewReportForScope(clientId, year, month);
+    return res.json({
+      message: `KI (Qwen) hat ${count} Position(en) analysiert.`,
+      report: updated.reviewReport,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler bei der KI-Analyse.' });
   }
 });
 

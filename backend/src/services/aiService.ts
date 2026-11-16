@@ -1553,12 +1553,17 @@ Return strictly JSON:
     }
     if (unknownIndices.length === 0) return;
 
-    const batch = unknownIndices.slice(0, 20).map((idx) => ({
+    const batch = unknownIndices.slice(0, 40).map((idx) => ({
       id: idx,
       amount: bookings[idx].amount,
       direction: bookings[idx].sh === 'S' ? 'incoming' : 'outgoing',
       text: bookings[idx].buchungstext,
     }));
+
+    const CATEGORY_ENUM = [
+      'fuel', 'insurance', 'car_purchase', 'car_repair_parts', 'supermarket_travel',
+      'telecom', 'rent', 'legal_tax', 'office', 'refund', 'other',
+    ];
 
     const prompt = `You are a German SKR03 bookkeeper for a car dealership (QA24 GmbH).
 Classify each unknown bank statement transaction below into ONE category:
@@ -1571,15 +1576,43 @@ Classify each unknown bank statement transaction below into ONE category:
 - "rent": Rent, lease, utilities
 - "legal_tax": Lawyer, notary, tax advisor
 - "office": Office supplies, software, IT
+- "refund": Incoming refund / Rückerstattung / Gutschrift of an earlier expense
 - "other": Unclear / general expense
+
+For every transaction also return:
+- "confidence": number 0.0-1.0 (how sure you are). Use < 0.8 when the name is ambiguous or unknown.
+- "reason": ONE short sentence (max 15 words) explaining why.
+Never invent facts. If unsure, choose "other" with low confidence.
 
 Transactions:
 ${JSON.stringify(batch)}
 
-Return ONLY valid JSON: { "results": [ { "id": 0, "category": "..." } ] }`;
+Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence": 0.0, "reason": "..." } ] }`;
+
+    const schema = {
+      type: 'object',
+      properties: {
+        results: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              category: { type: 'string', enum: CATEGORY_ENUM },
+              confidence: { type: 'number' },
+              reason: { type: 'string' },
+            },
+            required: ['id', 'category', 'confidence', 'reason'],
+          },
+        },
+      },
+      required: ['results'],
+    };
 
     try {
-      const resp = await ollamaClient.generateJson<{ results?: Array<{ id: number; category: string }> }>({ prompt });
+      const resp = await ollamaClient.generateJson<{
+        results?: Array<{ id: number; category: string; confidence?: number; reason?: string }>;
+      }>({ prompt, format: schema, temperature: 0 });
       const results = Array.isArray(resp?.results) ? resp.results : [];
       const MAP: Record<string, { code: string; bu: string }> = {
         fuel: { code: '4530', bu: '9' },
@@ -1592,15 +1625,29 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "..." } ] }`;
         legal_tax: { code: '4955', bu: '9' },
         office: { code: '4930', bu: '9' },
       };
+      let applied = 0;
       for (const r of results) {
         const b = bookings[r.id];
-        const mapped = MAP[String(r.category || '').toLowerCase()];
-        if (b && mapped && b.gegenkonto === '4900') {
+        if (!b || b.gegenkonto !== '4900') continue;
+        const category = String(r.category || '').toLowerCase();
+        const confidence = Math.max(0, Math.min(1, Number(r.confidence) || 0));
+        const mapped = MAP[category];
+        b.ai_category = category;
+        b.ai_confidence = confidence;
+        b.ai_reason = String(r.reason || '').slice(0, 160);
+        if (mapped) {
+          b.ai_suggested_gegenkonto = mapped.code;
+          b.ai_suggested_bu = mapped.bu;
+        }
+        // Confidence gate: only auto-apply when Qwen is sure. Otherwise the line stays 4900
+        // and is routed to the Review List (never silently guessed into the DATEV CSV).
+        if (mapped && confidence >= 0.8) {
           b.gegenkonto = mapped.code;
           b.buCode = mapped.bu;
+          applied++;
         }
       }
-      console.log(`[AI Bank Fallback] Classified ${results.length}/${batch.length} unknown bank line(s) via Ollama.`);
+      console.log(`[AI Bank Fallback] Qwen classified ${results.length}/${batch.length} unknown line(s); auto-applied ${applied} (confidence >= 0.8), rest -> Review List.`);
     } catch (err: any) {
       console.warn('[AI Bank Fallback] Skipping Ollama enrichment (non-fatal):', err?.message || err);
     }
@@ -2110,6 +2157,24 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "..." } ] }`;
     const sumHaben = txs.filter((t) => t.bankSH === 'H').reduce((s, t) => s + t.amount, 0);
     const totalTurnover = parseFloat((sumSoll + sumHaben).toFixed(2));
 
+    // Opening / closing balance for bank reconciliation check (Volksbank/Sparkasse: "alter/neuer Kontostand ... 142.231,29 H")
+    const parseBalanceNear = (label: RegExp): number | undefined => {
+      const rawLines = extractedText.split(/\r?\n/);
+      for (let i = 0; i < rawLines.length; i++) {
+        if (!label.test(rawLines[i])) continue;
+        for (let j = i; j < Math.min(rawLines.length, i + 5); j++) {
+          const m = rawLines[j].match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s*([SH])\b/);
+          if (m) {
+            const val = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+            if (!isNaN(val)) return m[2] === 'S' ? -val : val;
+          }
+        }
+      }
+      return undefined;
+    };
+    const openingBalance = parseBalanceNear(/alter\s+Kontostand/i);
+    const closingBalance = parseBalanceNear(/neuer\s+Kontostand/i);
+
     return {
       document_type: 'BANK_STATEMENT',
       supplier_name: `${bankName} Kontoauszug ${monthPadded}/${statementYear} (${monthLabel})`,
@@ -2126,6 +2191,8 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "..." } ] }`;
       payment_method: 'bank_transfer',
       line_items_summary: `${bankName} (${monthPadded}/${statementYear}): ${bookings.length} Buchungen | Ausgänge (S): ${sumSoll.toFixed(2)} € | Eingänge (H): ${sumHaben.toFixed(2)} €`,
       bookings,
+      opening_balance: openingBalance,
+      closing_balance: closingBalance,
     };
   },
 };

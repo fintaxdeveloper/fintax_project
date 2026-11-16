@@ -1,0 +1,788 @@
+import React, { useState } from 'react';
+
+export interface ReviewOption {
+  gegenkonto: string;
+  buCode: string;
+  label: string;
+  action?: 'SET_ACCOUNT' | 'ACCEPT' | 'EXCLUDE';
+  recommended?: boolean;
+}
+
+export interface ReviewIssue {
+  id: string;
+  lineKey: string;
+  type: string;
+  severity: 'CRITICAL' | 'WARNING';
+  title: string;
+  question: string;
+  details: string;
+  booking: {
+    lineKey: string;
+    date: string;
+    amount: number;
+    sh: 'S' | 'H';
+    konto: string;
+    gegenkonto: string;
+    buCode: string;
+    text: string;
+    belegfeld1?: string;
+  };
+  options: ReviewOption[];
+  ai?: {
+    category?: string;
+    confidence?: number;
+    reason?: string;
+    suggested_gegenkonto?: string;
+    suggested_bu?: string;
+  };
+  suggest_upload?: string;
+  resolved: boolean;
+  resolution?: {
+    action: string;
+    gegenkonto?: string;
+    buCode?: string;
+    note?: string;
+    resolved_by?: string;
+    resolved_at: string;
+  };
+}
+
+export interface ControlCheck {
+  id: string;
+  label: string;
+  status: 'PASS' | 'FAIL' | 'WARN';
+  critical: boolean;
+  value: string;
+  expected: string;
+  hint?: string;
+}
+
+export interface ReviewReport {
+  scope: string;
+  client_id: string;
+  year: number;
+  month: number;
+  generated_at: string;
+  total_bookings: number;
+  auto_booked: number;
+  excluded_count: number;
+  issues: ReviewIssue[];
+  open_critical: number;
+  open_warnings: number;
+  resolved_count: number;
+  checks: ControlCheck[];
+  blocked: boolean;
+  block_reasons: string[];
+  totals: { bank_net: number; kasse_net: number; transit_net: number; bank_rows: number };
+  bookings: Array<any>;
+  csv_ready: boolean;
+}
+
+interface ReviewGateModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  report: ReviewReport | null;
+  onRefresh: () => Promise<void>;
+  isDe?: boolean;
+  apiBase?: string;
+  clientId?: string;
+  documentId?: string;
+}
+
+export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
+  isOpen,
+  onClose,
+  report,
+  onRefresh,
+  isDe = true,
+  apiBase = 'http://localhost:5000/api',
+  clientId = 'user_client_1',
+  documentId,
+}) => {
+  const [resolvingKey, setResolvingKey] = useState<string | null>(null);
+  const [rememberVendorMap, setRememberVendorMap] = useState<Record<string, boolean>>({});
+  const [isAskingAi, setIsAskingAi] = useState(false);
+  const [uploadingForIssue, setUploadingForIssue] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  if (!isOpen || !report) return null;
+
+  const handleResolve = async (
+    issue: ReviewIssue,
+    option: ReviewOption,
+    customAcc?: string
+  ) => {
+    setResolvingKey(issue.lineKey);
+    setStatusMessage(null);
+    try {
+      const targetAcc = customAcc || option.gegenkonto;
+      const targetBu = option.buCode || (targetAcc === '4530' || targetAcc === '4540' ? '9' : '');
+      const remember = Boolean(rememberVendorMap[issue.lineKey]);
+
+      const res = await fetch(`${apiBase}/review/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scope: report.scope,
+          lineKey: issue.lineKey,
+          action: option.action || 'SET_ACCOUNT',
+          gegenkonto: targetAcc,
+          buCode: targetBu,
+          remember_vendor: remember,
+          vendor_text: issue.booking.text,
+          document_id: documentId,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Fehler beim Speichern');
+      }
+
+      const data = await res.json();
+      setStatusMessage(data.message || (isDe ? 'Entscheidung gespeichert.' : 'Decision saved.'));
+      await onRefresh();
+    } catch (err: any) {
+      alert(`Fehler: ${err.message}`);
+    } finally {
+      setResolvingKey(null);
+    }
+  };
+
+  const handleReset = async (lineKey?: string) => {
+    try {
+      await fetch(`${apiBase}/review/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: report.scope, lineKey }),
+      });
+      await onRefresh();
+    } catch (e: any) {
+      alert(`Fehler: ${e.message}`);
+    }
+  };
+
+  const handleAskAiAll = async () => {
+    setIsAskingAi(true);
+    try {
+      const res = await fetch(`${apiBase}/review/ask-ai`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: report.scope }),
+      });
+      const data = await res.json();
+      setStatusMessage(data.message || 'KI-Analyse abgeschlossen.');
+      await onRefresh();
+    } catch (e: any) {
+      alert(`KI-Fehler: ${e.message}`);
+    } finally {
+      setIsAskingAi(false);
+    }
+  };
+
+  const handleInlineUpload = async (e: React.ChangeEvent<HTMLInputElement>, _issue: ReviewIssue) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    setUploadingForIssue(_issue.lineKey);
+    try {
+      const formData = new FormData();
+      formData.append('document', file);
+      formData.append('category', '01_FiBu');
+      formData.append('client_id', clientId);
+      formData.append('year', String(report.year));
+      formData.append('month', String(report.month).padStart(2, '0'));
+
+      const res = await fetch(`${apiBase}/documents/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) throw new Error('Upload fehlgeschlagen');
+      setStatusMessage(isDe ? `Beleg "${file.name}" empfangen und analysiert!` : `Document "${file.name}" uploaded and parsed!`);
+      await onRefresh();
+    } catch (err: any) {
+      alert(`Upload-Fehler: ${err.message}`);
+    } finally {
+      setUploadingForIssue(null);
+    }
+  };
+
+  const openIssues = report.issues.filter((i) => !i.resolved);
+  const resolvedIssues = report.issues.filter((i) => i.resolved);
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(11, 26, 48, 0.82)',
+        backdropFilter: 'blur(8px)',
+        zIndex: 2200,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '18px',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 960,
+          maxHeight: '92vh',
+          background: '#0b1a30',
+          borderRadius: 20,
+          border: report.blocked ? '1.5px solid #ef4444' : '1.5px solid #10b981',
+          boxShadow: report.blocked
+            ? '0 25px 60px rgba(239, 68, 68, 0.25), 0 0 30px rgba(0,0,0,0.8)'
+            : '0 25px 60px rgba(16, 185, 129, 0.25), 0 0 30px rgba(0,0,0,0.8)',
+          color: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          fontFamily: 'inherit',
+        }}
+      >
+        {/* Modal Header */}
+        <div
+          style={{
+            padding: '22px 28px',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            background: 'linear-gradient(180deg, rgba(30,41,59,0.7), rgba(15,23,42,0.9))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+          }}
+        >
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: '1.4rem' }}>{report.blocked ? '🛡️' : '✅'}</span>
+              <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800 }}>
+                {isDe ? 'DATEV-Prüfbericht & Freigabe' : 'DATEV Review Gate & Approval'}
+              </h2>
+              <span
+                style={{
+                  background: report.blocked ? 'rgba(239, 68, 68, 0.18)' : 'rgba(16, 185, 129, 0.18)',
+                  color: report.blocked ? '#f87171' : '#34d399',
+                  border: report.blocked ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)',
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {report.blocked
+                  ? isDe
+                    ? `Export gesperrt (${report.open_critical} offen)`
+                    : `Export Blocked (${report.open_critical} open)`
+                  : isDe
+                  ? 'Freigegeben (Export bereit)'
+                  : 'Approved (Export Ready)'}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+              Monat {String(report.month).padStart(2, '0')}/{report.year} • {report.total_bookings} Buchungen ({report.auto_booked} automatisch verifiziert)
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: 'none',
+              color: '#94a3b8',
+              borderRadius: 10,
+              width: 36,
+              height: 36,
+              fontSize: '1.2rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Scrollable Content Body */}
+        <div style={{ padding: '22px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Status Alert Banner */}
+          {statusMessage && (
+            <div
+              style={{
+                background: 'rgba(14, 165, 233, 0.15)',
+                border: '1px solid rgba(14, 165, 233, 0.4)',
+                borderRadius: 12,
+                padding: '12px 16px',
+                fontSize: '0.88rem',
+                color: '#38bdf8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span>ℹ️ {statusMessage}</span>
+              <button
+                onClick={() => setStatusMessage(null)}
+                style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Control Checks Grid */}
+          <div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>
+              {isDe ? 'Automatische Kontroll-Prüfungen (DATEV-Integrität)' : 'Integrity Control Checks'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+              {report.checks.map((check) => {
+                const isPass = check.status === 'PASS';
+                const isWarn = check.status === 'WARN';
+                return (
+                  <div
+                    key={check.id}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      borderRadius: 12,
+                      padding: '12px 14px',
+                      border: isPass
+                        ? '1px solid rgba(16, 185, 129, 0.3)'
+                        : isWarn
+                        ? '1px solid rgba(245, 158, 11, 0.3)'
+                        : '1px solid rgba(239, 68, 68, 0.4)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: 600 }}>{check.label}</span>
+                      <span style={{ fontSize: '0.95rem' }}>{isPass ? '✅' : isWarn ? '⚠️' : '❌'}</span>
+                    </div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: isPass ? '#34d399' : isWarn ? '#fbbf24' : '#f87171' }}>
+                      {check.value}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
+                      {check.hint || `Soll: ${check.expected}`}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Open Doubts Section */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#f8fafc' }}>
+                  {isDe ? 'Zu prüfende Positionen' : 'Items Requiring Review'}
+                </span>
+                <span
+                  style={{
+                    background: openIssues.length > 0 ? '#ef4444' : '#10b981',
+                    color: '#ffffff',
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  {openIssues.length}
+                </span>
+              </div>
+
+              {openIssues.length > 0 && (
+                <button
+                  onClick={handleAskAiAll}
+                  disabled={isAskingAi}
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(99, 102, 241, 0.25))',
+                    border: '1px solid rgba(56, 189, 248, 0.4)',
+                    color: '#38bdf8',
+                    padding: '6px 14px',
+                    borderRadius: 8,
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: isAskingAi ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span>✨</span>
+                  <span>{isAskingAi ? (isDe ? 'Qwen analysiert...' : 'Analyzing with Qwen...') : (isDe ? 'Qwen KI um Rat fragen' : 'Ask Qwen AI Advice')}</span>
+                </button>
+              )}
+            </div>
+
+            {openIssues.length === 0 ? (
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: 14,
+                  padding: '28px',
+                  textAlign: 'center',
+                  color: '#34d399',
+                }}
+              >
+                <div style={{ fontSize: '2rem', marginBottom: 8 }}>🎉</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+                  {isDe ? 'Alle Positionen sind eindeutig zugeordnet!' : 'All transactions verified!'}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 4 }}>
+                  {isDe ? 'Keine offenen Zweifel. Die DATEV EXTF CSV-Dateien sind exportbereit.' : 'No open doubts. DATEV CSV is ready for download.'}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {openIssues.map((issue) => {
+                  const b = issue.booking;
+                  const isBusy = resolvingKey === issue.lineKey;
+                  const isUploading = uploadingForIssue === issue.lineKey;
+
+                  return (
+                    <div
+                      key={issue.id}
+                      style={{
+                        background: 'linear-gradient(180deg, #13233c, #0d1b2f)',
+                        borderRadius: 16,
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                        padding: '18px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 12,
+                      }}
+                    >
+                      {/* Top Row: Type Badge + Booking Summary */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <span
+                              style={{
+                                background: issue.severity === 'CRITICAL' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+                                color: issue.severity === 'CRITICAL' ? '#f87171' : '#fbbf24',
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                fontSize: '0.74rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {issue.severity === 'CRITICAL' ? '🔴 KRITISCH' : '⚠️ PRÜFUNG'}
+                            </span>
+                            <span style={{ fontWeight: 700, fontSize: '0.98rem', color: '#ffffff' }}>
+                              {issue.title}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.88rem', color: '#cbd5e1' }}>
+                            {issue.question}
+                          </div>
+                        </div>
+
+                        {/* Amount & Date badge */}
+                        <div style={{ textAlign: 'right', minWidth: 120 }}>
+                          <div
+                            style={{
+                              fontSize: '1.2rem',
+                              fontWeight: 800,
+                              color: b.sh === 'S' && b.konto === '1200' ? '#34d399' : '#f87171',
+                            }}
+                          >
+                            {b.sh === 'S' && b.konto === '1200' ? '+' : '−'}{b.amount.toFixed(2)} €
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                            {b.date} • {b.konto === '1200' ? 'Bank 1200' : 'Kasse 1000'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Transaction Description Box */}
+                      <div
+                        style={{
+                          background: 'rgba(15, 23, 42, 0.75)',
+                          borderRadius: 8,
+                          padding: '8px 12px',
+                          fontSize: '0.82rem',
+                          color: '#94a3b8',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                        }}
+                      >
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <strong style={{ color: '#e2e8f0' }}>Text:</strong> {b.text}
+                        </span>
+                        {b.belegfeld1 && (
+                          <span style={{ color: '#38bdf8', fontSize: '0.75rem', background: 'rgba(56,189,248,0.1)', padding: '2px 6px', borderRadius: 4 }}>
+                            Beleg: {b.belegfeld1}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* AI Advice Callout */}
+                      {issue.ai && (issue.ai.reason || issue.ai.suggested_gegenkonto) && (
+                        <div
+                          style={{
+                            background: 'rgba(14, 165, 233, 0.1)',
+                            border: '1px solid rgba(14, 165, 233, 0.3)',
+                            borderRadius: 10,
+                            padding: '10px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            fontSize: '0.84rem',
+                          }}
+                        >
+                          <span style={{ fontSize: '1.2rem' }}>🤖</span>
+                          <div style={{ flex: 1 }}>
+                            <strong style={{ color: '#38bdf8' }}>
+                              Qwen KI-Vorschlag: Konto {issue.ai.suggested_gegenkonto || 'Prüfen'}
+                              {issue.ai.confidence !== undefined && ` (${(issue.ai.confidence * 100).toFixed(0)}% Sicherheit)`}
+                            </strong>
+                            <div style={{ color: '#cbd5e1', fontSize: '0.8rem', marginTop: 2 }}>
+                              {issue.ai.reason || 'Basierend auf deutschem SKR03 Standard & Mandanten-Regeln.'}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Choice Buttons */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8' }}>
+                          {isDe ? 'Bitte wählen Sie die korrekte steuerliche Behandlung:' : 'Choose correct tax treatment:'}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {issue.options.map((opt, idx) => (
+                            <button
+                              key={idx}
+                              disabled={isBusy}
+                              onClick={() => handleResolve(issue, opt)}
+                              style={{
+                                background: opt.recommended
+                                  ? 'linear-gradient(135deg, #0284c7, #2563eb)'
+                                  : opt.action === 'EXCLUDE'
+                                  ? 'rgba(239, 68, 68, 0.15)'
+                                  : 'rgba(255, 255, 255, 0.08)',
+                                border: opt.recommended
+                                  ? '1px solid #38bdf8'
+                                  : opt.action === 'EXCLUDE'
+                                  ? '1px solid rgba(239,68,68,0.4)'
+                                  : '1px solid rgba(255, 255, 255, 0.15)',
+                                color: opt.action === 'EXCLUDE' ? '#f87171' : '#ffffff',
+                                padding: '8px 14px',
+                                borderRadius: 8,
+                                fontSize: '0.84rem',
+                                fontWeight: opt.recommended ? 700 : 600,
+                                cursor: isBusy ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.15s ease',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                              }}
+                            >
+                              {opt.recommended && <span>⭐</span>}
+                              <span>{opt.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Extra Actions: Remember Vendor Toggle & Missing Beleg Upload */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: '#94a3b8', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(rememberVendorMap[issue.lineKey])}
+                            onChange={(e) => setRememberVendorMap({ ...rememberVendorMap, [issue.lineKey]: e.target.checked })}
+                          />
+                          <span>{isDe ? 'Diesen Empfänger für zukünftige Monate speichern' : 'Remember vendor for future months'}</span>
+                        </label>
+
+                        {/* Inline File Re-Upload */}
+                        <label
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px dashed rgba(255,255,255,0.25)',
+                            borderRadius: 8,
+                            padding: '4px 10px',
+                            fontSize: '0.78rem',
+                            color: '#cbd5e1',
+                            cursor: isUploading ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          <span>{isUploading ? '⏳ Upload...' : '📎 Fehlenden Beleg nachreichen'}</span>
+                          <input
+                            type="file"
+                            accept=".pdf,image/*"
+                            style={{ display: 'none' }}
+                            disabled={isUploading}
+                            onChange={(e) => handleInlineUpload(e, issue)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Resolved Items List (Audit Trail) */}
+          {resolvedIssues.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>
+                {isDe ? `Bereits bestätigte Positionen (${resolvedIssues.length})` : `Resolved Items (${resolvedIssues.length})`}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resolvedIssues.map((issue) => (
+                  <div
+                    key={issue.id}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.45)',
+                      borderRadius: 10,
+                      padding: '10px 14px',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.84rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ color: '#34d399' }}>✓</span>
+                      <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{issue.booking.date} • {issue.booking.text.slice(0, 40)}</span>
+                      <span style={{ color: '#38bdf8', fontSize: '0.78rem' }}>
+                        → {issue.resolution?.action === 'EXCLUDE' ? 'Ausgeschlossen' : `Gegenkonto ${issue.resolution?.gegenkonto || issue.booking.gegenkonto}`}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleReset(issue.lineKey)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      {isDe ? 'Rückgängig' : 'Undo'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer with Download Blocker State */}
+        <div
+          style={{
+            padding: '18px 28px',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            background: 'linear-gradient(180deg, rgba(15,23,42,0.95), rgba(11,26,48,1))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+          }}
+        >
+          <div style={{ fontSize: '0.85rem' }}>
+            {report.blocked ? (
+              <span style={{ color: '#f87171', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>🔒</span>
+                <span>{report.block_reasons[0] || (isDe ? 'DATEV Export gesperrt' : 'DATEV export blocked')}</span>
+              </span>
+            ) : (
+              <span style={{ color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>✅</span>
+                <span>{isDe ? 'Alle Prüfungen bestanden! DATEV-Export freigegeben.' : 'All checks passed! DATEV CSV unlocked.'}</span>
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: '#ffffff',
+                padding: '10px 18px',
+                borderRadius: 10,
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {isDe ? 'Schließen' : 'Close'}
+            </button>
+
+            {documentId ? (
+              <a
+                href={report.blocked ? undefined : `${apiBase}/documents/${documentId}/skr03-csv`}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  background: report.blocked ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
+                  color: report.blocked ? '#94a3b8' : '#ffffff',
+                  padding: '10px 22px',
+                  borderRadius: 10,
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  cursor: report.blocked ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  boxShadow: report.blocked ? 'none' : '0 4px 16px rgba(16, 185, 129, 0.4)',
+                  pointerEvents: report.blocked ? 'none' : 'auto',
+                }}
+              >
+                <span>{report.blocked ? '🔒' : '⬇️'}</span>
+                <span>{isDe ? 'DATEV EXTF CSV herunterladen' : 'Download DATEV CSV'}</span>
+              </a>
+            ) : (
+              <a
+                href={report.blocked ? undefined : `${apiBase}/export/agenda-skr03`}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  background: report.blocked ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
+                  color: report.blocked ? '#94a3b8' : '#ffffff',
+                  padding: '10px 22px',
+                  borderRadius: 10,
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  cursor: report.blocked ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  boxShadow: report.blocked ? 'none' : '0 4px 16px rgba(16, 185, 129, 0.4)',
+                  pointerEvents: report.blocked ? 'none' : 'auto',
+                }}
+              >
+                <span>{report.blocked ? '🔒' : '⬇️'}</span>
+                <span>{isDe ? 'DATEV EXTF CSV herunterladen' : 'Download DATEV CSV'}</span>
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

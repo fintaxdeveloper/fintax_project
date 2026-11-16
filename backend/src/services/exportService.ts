@@ -7,6 +7,7 @@ import { googleDriveService } from './googleDriveService.js';
 import { clientFolderService } from './clientFolderService.js';
 import { monthlyDocumentRegistry } from './monthlyDocumentRegistry.js';
 import { generatePersonenkontenCsvContent, generateSachkontenCsvContent } from './datevExtfTemplates.js';
+import { reviewService, ReviewReport } from './reviewService.js';
 
 // Exact 124 columns for Agenda & DATEV EXTF format (Buchungsstapel Version 700 / 12)
 const EXTF_COLUMNS = [
@@ -572,7 +573,8 @@ export const exportService = {
     doc: DocumentRecord,
     allDocs: DocumentRecord[],
     targetYear: number | string,
-    targetMonth: number
+    targetMonth: number,
+    opts: { allowBlocked?: boolean; writeFiles?: boolean } = {}
   ): {
     singleCsvContent: string;
     singleCsvFileName: string;
@@ -589,6 +591,7 @@ export const exportService = {
     sachkontenCsvContent: string;
     sachkontenCsvFileName: string;
     bookingCount: number;
+    reviewReport: ReviewReport;
   } {
     const yearNum = Number(targetYear) || new Date().getFullYear();
     const monthNum = targetMonth >= 1 && targetMonth <= 12 ? targetMonth : new Date().getMonth() + 1;
@@ -703,8 +706,12 @@ export const exportService = {
           }];
 
     let allMonthlyItems: BookingItem[] = [];
+    let hasBankStatement = false;
+    let openingBalance: number | undefined;
+    let closingBalance: number | undefined;
     if (officialMonthBookings && officialMonthBookings.length > 0) {
       allMonthlyItems = [...officialMonthBookings];
+      hasBankStatement = true;
     } else {
       // 3-Track Separation: Bank Statements (1200) vs Kasse (1000) vs Bank Belege (Invoices/Receipts)
       const isBankStmt = (d: DocumentRecord): boolean =>
@@ -727,6 +734,19 @@ export const exportService = {
       const belegDocs = monthDocs.filter((d) => !isBankStmt(d) && !isKasseDoc(d));
 
       if (bankDocs.length > 0) {
+        hasBankStatement = true;
+        // Opening/closing balance for the reconciliation control check (sum of all statements this month)
+        const withBalances = bankDocs.filter(
+          (bd) => typeof bd.extracted_data?.opening_balance === 'number' && typeof bd.extracted_data?.closing_balance === 'number'
+        );
+        if (withBalances.length === bankDocs.length) {
+          openingBalance = Number(withBalances[0].extracted_data!.opening_balance);
+          const sumDelta = withBalances.reduce(
+            (s, bd) => s + (Number(bd.extracted_data!.closing_balance) - Number(bd.extracted_data!.opening_balance)),
+            0
+          );
+          closingBalance = Math.round((openingBalance + sumDelta) * 100) / 100;
+        }
         // Track 1: Bank Statement is the Single Source of Truth for Konto 1200
         // Use occurrence-indexed keys per statement document so two separate same-day same-amount
         // card payments within ONE statement are NEVER dropped, while duplicate re-uploads are deduplicated.
@@ -892,6 +912,7 @@ export const exportService = {
     }
 
     // Final deterministic SKR03 & VAT safety normalization before EXTF row generation
+    const vinUnresolved = new Set<BookingItem>();
     for (const item of allMonthlyItems) {
       const txt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toLowerCase();
       if (/\b(aral|shell|esso|total|jet|avia|omv|tankstelle|agip|bft|minera|couche-tard|circle k|westfalen|star tankstelle|hem\b|sprint|sb-tank)\b/i.test(txt)) {
@@ -941,11 +962,18 @@ export const exportService = {
           item.buCode = '';
         } else if (
           item.gegenkonto === '8193' &&
-          !/(differenzbesteuerung|25a|siehe anlage 1|augustin logistic|akontacije za golf|schiebelhut|vossmeyer|cibian)/i.test(txt)
+          /(differenzbesteuerung|25a|siehe anlage 1|augustin logistic|akontacije za golf|schiebelhut|vossmeyer|cibian)/i.test(txt)
         ) {
-          // Default domestic car sales without explicit §25a indicator or §25a VIN purchase to 8400 (19% USt)
-          item.gegenkonto = '8400';
-          item.buCode = '';
+          // Explicit §25a indicator in the text → keep 8193 (no doubt)
+        } else {
+          // VIN not found in purchase history → provisional 8400, but NEVER final: route to Review List
+          if (item.gegenkonto === '8193') {
+            item.gegenkonto = '8400';
+            item.buCode = '';
+          }
+          if ((Number(item.amount) || 0) >= 500) {
+            vinUnresolved.add(item);
+          }
         }
       }
     }
@@ -996,8 +1024,46 @@ export const exportService = {
       } else if (item.sh === 'S' && ['8400', '8193'].includes(item.gegenkonto) && payeeSaleMap.has(prefix)) {
         item.gegenkonto = payeeSaleMap.get(prefix)!;
         item.buCode = '';
+        // Linked to the same buyer's main sale → same account, but only certain if that sale itself is certain
+        const linkedSaleIsCertain = allMonthlyItems.some(
+          (other) =>
+            other !== item &&
+            other.sh === 'S' &&
+            !vinUnresolved.has(other) &&
+            other.gegenkonto === item.gegenkonto &&
+            extractPayeePrefix(other.buchungstext || '') === prefix
+        );
+        if (linkedSaleIsCertain) vinUnresolved.delete(item);
       }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // REVIEW GATE: user-confirmed vendor rules → saved user answers → doubt detection
+    // ─────────────────────────────────────────────────────────────────────────────
+    const reviewScope = reviewService.scopeKey(doc.client_id, yearNum, monthNum);
+    const vendorRuleHits = reviewService.applyVendorRules(allMonthlyItems);
+    if (vendorRuleHits > 0) {
+      console.log(`[Review Gate ${yearNum}-${monthPadded}] Applied ${vendorRuleHits} user-confirmed vendor rule(s).`);
+    }
+    const lineKeys = reviewService.assignLineKeys(allMonthlyItems);
+    const { kept, excluded, resolvedKeys } = reviewService.applyResolutions(reviewScope, allMonthlyItems, lineKeys);
+    allMonthlyItems = kept;
+    const reviewReport = reviewService.analyze(allMonthlyItems, {
+      scope: reviewScope,
+      clientId: doc.client_id || 'user_client_1',
+      year: yearNum,
+      month: monthNum,
+      hasBankStatement,
+      openingBalance,
+      closingBalance,
+      vinUnresolved,
+      lineKeys,
+      excludedLines: excluded,
+      resolvedKeys,
+    });
+    console.log(
+      `[Review Gate ${yearNum}-${monthPadded}] ${reviewReport.total_bookings} bookings | auto ${reviewReport.auto_booked} | open critical ${reviewReport.open_critical} | warnings ${reviewReport.open_warnings} | ${reviewReport.blocked ? 'EXPORT BLOCKED: ' + reviewReport.block_reasons.join(' ; ') : 'CSV READY ✅'}`
+    );
 
     // Automatic Self-Audit Reconciliation Check before EXTF generation
     let auditBankNet = 0;
@@ -1084,14 +1150,39 @@ export const exportService = {
     const singleXlsxFileName = `EXTF_Buchungen_${datePart}_${timePart}_${yearNum}_${monthNum}.xlsx`;
     const singleXlsxContent = this.buildSkr03ExcelWorkbook(allMonthlyItems, yearNum, monthPadded, `EXTF ${yearNum}/${monthPadded}`);
 
-    // Save the 3 EXTF CSV files to local storage/exports
-    const exportDir = path.resolve(process.cwd(), '../storage/exports');
-    if (!fs.existsSync(exportDir)) {
-      fs.mkdirSync(exportDir, { recursive: true });
+    // HARD EXPORT BLOCKER: while critical doubts / failed control checks remain, NO DATEV CSV is released.
+    const releaseCsv = !reviewReport.blocked || opts.allowBlocked === true;
+    if (!releaseCsv) {
+      return {
+        singleCsvContent: '',
+        singleCsvFileName: '',
+        singleXlsxContent: undefined,
+        singleXlsxFileName: undefined,
+        monthlyCsvContent: '',
+        monthlyCsvFileName: '',
+        monthlyXlsxContent: undefined,
+        monthlyXlsxFileName: undefined,
+        buchungenCsvContent: '',
+        buchungenCsvFileName: '',
+        personenkontenCsvContent: '',
+        personenkontenCsvFileName: '',
+        sachkontenCsvContent: '',
+        sachkontenCsvFileName: '',
+        bookingCount: activeRows.length,
+        reviewReport,
+      };
     }
-    fs.writeFileSync(path.join(exportDir, buchungenCsvFileName), buchungenCsvContent, 'utf-8');
-    fs.writeFileSync(path.join(exportDir, personenkontenCsvFileName), personenkontenCsvContent, 'utf-8');
-    fs.writeFileSync(path.join(exportDir, sachkontenCsvFileName), sachkontenCsvContent, 'utf-8');
+
+    // Save the 3 EXTF CSV files to local storage/exports
+    if (opts.writeFiles !== false) {
+      const exportDir = path.resolve(process.cwd(), '../storage/exports');
+      if (!fs.existsSync(exportDir)) {
+        fs.mkdirSync(exportDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(exportDir, buchungenCsvFileName), buchungenCsvContent, 'utf-8');
+      fs.writeFileSync(path.join(exportDir, personenkontenCsvFileName), personenkontenCsvContent, 'utf-8');
+      fs.writeFileSync(path.join(exportDir, sachkontenCsvFileName), sachkontenCsvContent, 'utf-8');
+    }
 
     return {
       singleCsvContent: buchungenCsvContent,
@@ -1109,6 +1200,7 @@ export const exportService = {
       sachkontenCsvContent,
       sachkontenCsvFileName,
       bookingCount: activeRows.length,
+      reviewReport,
     };
   },
 };

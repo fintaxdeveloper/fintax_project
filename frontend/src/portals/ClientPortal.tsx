@@ -4,6 +4,8 @@ import { useSnackbar } from '../context/SnackbarContext';
 import type { Language } from '../translations';
 import type { ClientTabType } from '../components/Sidebar';
 import { FileExplorer } from '../components/FileExplorer';
+import { AiProcessingOverlay } from '../components/AiProcessingOverlay';
+import { ReviewGateModal } from '../components/ReviewGateModal';
 import {
   Users,
   FolderTree,
@@ -74,6 +76,8 @@ interface DocumentRecord {
     target_year?: string;
     target_month?: string;
     target_folder?: string;
+    review_blocked?: boolean;
+    review_open_issues?: number;
   };
   relative_path?: string;
 }
@@ -136,6 +140,47 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
   const [note, setNote] = useState('');
   const [modalFiles, setModalFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reviewGateOpen, setReviewGateOpen] = useState(false);
+  const [currentReviewReport, setCurrentReviewReport] = useState<any>(null);
+  const [reviewDocId, setReviewDocId] = useState<string | undefined>(undefined);
+
+  const openReviewForDoc = async (docId?: string) => {
+    try {
+      const url = docId
+        ? `${API_BASE}/documents/${docId}/review-report`
+        : `${API_BASE}/review-report?client_id=${encodeURIComponent(user?.id || 'user_client_1')}&year=${selectedYear}&month=8`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(isDe ? 'Prüfbericht konnte nicht geladen werden.' : 'Could not load review report.');
+      const data = await res.json();
+      setCurrentReviewReport(data.report);
+      setReviewDocId(docId);
+      setReviewGateOpen(true);
+    } catch (e: any) {
+      error(e.message);
+    }
+  };
+
+  const refreshCurrentReview = async () => {
+    if (reviewDocId) {
+      const res = await fetch(`${API_BASE}/documents/${reviewDocId}/review-report`);
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentReviewReport(data.report);
+      }
+    } else if (currentReviewReport?.scope) {
+      const parts = String(currentReviewReport.scope).split('|');
+      const cId = parts[0] || user?.id || 'user_client_1';
+      const ym = (parts[1] || '').split('-');
+      const y = ym[0] || '2024';
+      const m = ym[1] || '8';
+      const res = await fetch(`${API_BASE}/review-report?client_id=${encodeURIComponent(cId)}&year=${y}&month=${m}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentReviewReport(data.report);
+      }
+    }
+    window.dispatchEvent(new CustomEvent('fintax_doc_updated'));
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropzoneInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -668,6 +713,8 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
     try {
       let lastPipelineSummary: any = null;
       let lastExpiryInfo: any = null;
+      let lastReviewReport: any = null;
+      let lastDocId: string | undefined = undefined;
 
       for (const file of modalFiles) {
         const formData = new FormData();
@@ -697,6 +744,12 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
         }
         if (resData?.expiry_info) {
           lastExpiryInfo = resData.expiry_info;
+        }
+        if (resData?.review_report) {
+          lastReviewReport = resData.review_report;
+        }
+        if (resData?.document?.id) {
+          lastDocId = resData.document.id;
         }
       }
 
@@ -755,6 +808,20 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
       window.dispatchEvent(new CustomEvent('fintax_doc_updated'));
       if (wasFormation) {
         setActiveInternalTab('FORMATION');
+      }
+
+      if (lastReviewReport && (lastReviewReport.blocked || (lastReviewReport.issues && lastReviewReport.issues.length > 0))) {
+        setCurrentReviewReport(lastReviewReport);
+        setReviewDocId(lastDocId);
+        setReviewGateOpen(true);
+        if (lastReviewReport.blocked) {
+          error(
+            isDe
+              ? `Achtung: ${lastReviewReport.open_critical} Position(en) erfordern Ihre Bestätigung vor dem DATEV-Export!`
+              : `Notice: ${lastReviewReport.open_critical} item(s) require your confirmation before DATEV export!`,
+            isDe ? 'DATEV-Prüfbericht' : 'Review Gate'
+          );
+        }
       }
     } catch (err: any) {
       error(isDe ? `Fehler beim Einreichen: ${err.message}` : `Error submitting documents: ${err.message}`);
@@ -2107,6 +2174,30 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                                 <Download size={13} />
                                 <span>CSV</span>
                               </a>
+                              <button
+                                onClick={() => openReviewForDoc(doc.id)}
+                                title={isDe ? 'DATEV-Prüfbericht & Freigabe' : 'DATEV Review Gate & Approval'}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  color: doc.extracted_data?.review_blocked ? '#dc2626' : '#0284c7',
+                                  fontWeight: 600,
+                                  fontSize: '0.75rem',
+                                  background: doc.extracted_data?.review_blocked ? '#fef2f2' : '#f0f9ff',
+                                  padding: '7px 11px',
+                                  borderRadius: 8,
+                                  border: doc.extracted_data?.review_blocked ? '1px solid #fecaca' : '1px solid #bae6fd',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = doc.extracted_data?.review_blocked ? '#fee2e2' : '#e0f2fe'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = doc.extracted_data?.review_blocked ? '#fef2f2' : '#f0f9ff'; }}
+                              >
+                                <ShieldCheck size={13} />
+                                <span>{doc.extracted_data?.review_blocked ? (isDe ? '⚠️ Prüfen' : '⚠️ Review') : (isDe ? 'Prüfbericht' : 'Review')}</span>
+                              </button>
                             </>
                           )}
                           <a
@@ -3840,6 +3931,27 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
           </div>
         </div>
       )}
+
+      {/* ── 6. AI LASER SCANNING ANIMATION OVERLAY ── */}
+      {isSubmitting && (
+        <AiProcessingOverlay
+          filename={modalFiles[0]?.name || 'Belege.pdf'}
+          category={activeModal ? modalConfigs[activeModal]?.title : '01_FiBu'}
+          isDe={isDe}
+        />
+      )}
+
+      {/* ── 7. DATEV REVIEW GATE & DOUBT CONFIRMATION MODAL ── */}
+      <ReviewGateModal
+        isOpen={reviewGateOpen}
+        onClose={() => setReviewGateOpen(false)}
+        report={currentReviewReport}
+        onRefresh={refreshCurrentReview}
+        isDe={isDe}
+        apiBase={API_BASE}
+        clientId={user?.id || 'user_client_1'}
+        documentId={reviewDocId}
+      />
 
     </div>
   );

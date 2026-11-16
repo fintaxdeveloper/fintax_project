@@ -24,6 +24,12 @@ export interface BookingItem {
   belegfeld2?: string;
   buchungstext: string;
   currency?: string;
+  /** Qwen fallback classification metadata (only set for lines the deterministic rules could not map) */
+  ai_category?: string;
+  ai_confidence?: number;
+  ai_reason?: string;
+  ai_suggested_gegenkonto?: string;
+  ai_suggested_bu?: string;
 }
 
 export interface ExtractedInvoiceData {
@@ -47,6 +53,12 @@ export interface ExtractedInvoiceData {
   target_year?: string;
   target_month?: string;
   target_folder?: string;
+  /** Bank statement opening / closing balance (positive = credit balance) for reconciliation */
+  opening_balance?: number;
+  closing_balance?: number;
+  /** Review gate status of the month this document belongs to */
+  review_blocked?: boolean;
+  review_open_issues?: number;
 }
 
 export interface ValidationIssue {
