@@ -891,7 +891,10 @@ Return strictly JSON, no markdown:
       : [];
 
     if (typeof parsed.line_items_summary === 'string') {
-      summary = parsed.line_items_summary.trim();
+      const s = parsed.line_items_summary.trim();
+      if (!/brief description|placeholder|lorem ipsum|beispieltext/i.test(s)) {
+        summary = s;
+      }
     } else if (rawItems.length > 0) {
       summary = rawItems
         .map((it: any) => {

@@ -464,7 +464,8 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       }
 
       // 1) Car sale whose VIN was not found in purchase history (8193 vs 8400 decision)
-      if (ctx.vinUnresolved.has(it)) {
+      // Only applicable to vehicle sales (incoming bank payment S on 8193/8400/8125). Never apply to expenses or purchases (H).
+      if (ctx.vinUnresolved.has(it) && sh === 'S' && ['8193', '8400', '8125'].includes(it.gegenkonto)) {
         const vin = (text.toUpperCase().match(vinRegex) || [])[1];
         pushIssue(it, {
           type: 'VIN_NOT_FOUND',
@@ -700,6 +701,17 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       expected: '≥ 0,00 € (ohne Anfangsbestand)',
       hint: minCash > -0.05 ? undefined : 'Cash went negative — check opening cash balance or missing deposits.',
     });
+    if (kasseNet > 20000) {
+      checks.push({
+        id: 'KASSE_SANITY',
+        label: 'Kassenbestand am Monatsende',
+        status: 'WARN',
+        critical: false,
+        value: `${round2(kasseNet).toFixed(2)} €`,
+        expected: '≤ 20.000,00 € (Prüfungsrisiko bei hohem Bar-Saldo)',
+        hint: 'Kassenbestand ist sehr hoch (> 20.000 €). Prüfen Sie, ob Belege für Barkäufe (Fahrzeugeinkauf) noch fehlen.',
+      });
+    }
     checks.push({
       id: 'SOLL_HABEN',
       label: 'Alle Buchungen mit Betrag, S/H, Konto & Gegenkonto',

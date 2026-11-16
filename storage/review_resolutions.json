@@ -1,0 +1,12 @@
+{
+  "user_1794303867395_317f|2024-03": {
+    "1403|30000.00|S|1200|thomasboidolamgc63zahlung#1": {
+      "action": "SET_ACCOUNT",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "resolved_by": "User/Accountant",
+      "resolved_at": "2026-11-16T10:46:07.960Z",
+      "note": "Kassenbelege S. 8: Rechnung 05/2024 C63 AMG (42.600 € brutto, 30.000 € Anzahlung 14.03.) - Verkauf nach §25a UStG"
+    }
+  }
+}

@@ -604,7 +604,11 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
                             checked={Boolean(rememberVendorMap[issue.lineKey])}
                             onChange={(e) => setRememberVendorMap({ ...rememberVendorMap, [issue.lineKey]: e.target.checked })}
                           />
-                          <span>{isDe ? 'Diesen Empfänger für zukünftige Monate speichern' : 'Remember vendor for future months'}</span>
+                          <span>
+                            {issue.type === 'VIN_NOT_FOUND'
+                              ? (isDe ? 'In VIN-Register / Fahrzeughistorie speichern' : 'Save to VIN register / vehicle history')
+                              : (isDe ? 'Diesen Empfänger für zukünftige Monate speichern' : 'Remember vendor for future months')}
+                          </span>
                         </label>
 
                         {/* Inline File Re-Upload */}

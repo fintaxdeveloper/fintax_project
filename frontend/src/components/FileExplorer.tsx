@@ -604,6 +604,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                       {isDir
                         ? `${item.fileCount || 0} ${lang === 'de' ? 'Dateien' : 'files'}`
                         : formatSize(item.sizeBytes)}
+
                     </div>
 
                     <div style={{ textAlign: 'right' }}>
@@ -614,7 +615,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                             openFolderInDriveView(item);
                           }}
                           style={{
-                            background: darkTheme ? '#1e293b' : '#f1f5f9',
+                            background: darkTheme ? '#1e293b' : '#ffffffff',
                             color: textMain,
                             border: `1px solid ${border}`,
                             borderRadius: '0.375rem',
