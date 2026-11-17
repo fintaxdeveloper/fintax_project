@@ -26,6 +26,7 @@ import { backupService } from './services/backupService.js';
 import { maskingService } from './services/maskingService.js';
 import { monthlyDocumentRegistry } from './services/monthlyDocumentRegistry.js';
 import { reviewService, ReviewReport, ReviewAction } from './services/reviewService.js';
+import { aiCacheService } from './services/aiCacheService.js';
 import { skr03Mapper } from './services/skr03Mapper.js';
 import { DocumentRecord, ExtractedInvoiceData } from './types/document.js';
 
@@ -494,11 +495,16 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       // Step 3: OCR & Step 4: Fast Deterministic + Ollama Data Extraction
       console.log(`[Step 3/6 - OCR] Reading text & layout from ${originalname}...`);
       console.log(`[Step 4/6 - Ollama Extraction] Extracting invoice date, supplier, amounts & line items...`);
-      const extracted = await aiService.processInvoice(storedPath, mimetype);
+      // ⚡ Same file uploaded before? Reuse the stored AI result instantly (skips all GPU vision scans)
+      const cachedAi = aiCacheService.get(checksum);
+      if (cachedAi) {
+        console.log(`[AI Cache] ⚡ Cache HIT for "${originalname}" — reusing previous AI extraction (no GPU scan needed).`);
+      }
+      const extracted = cachedAi ? cachedAi.extracted : await aiService.processInvoice(storedPath, mimetype);
 
       // Only run fallback bankStatementService Ollama extraction if deterministic parser returned <= 1 booking
       let bankStmtResult: any = null;
-      if (classification.category === 'BANK_STATEMENT' && (!extracted.bookings || extracted.bookings.length <= 1)) {
+      if (!cachedAi && classification.category === 'BANK_STATEMENT' && (!extracted.bookings || extracted.bookings.length <= 1)) {
         try {
           bankStmtResult = await bankStatementService.processBankStatement(storedPath, mimetype, docId);
         } catch (bsErr) {
@@ -573,13 +579,19 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       // Step 4b: Multi-Bill Detection — one photo/PDF may contain several bills from DIFFERENT months.
       // Each bill becomes its own document record and is routed into its own Year/Month folder.
       let splitBills: any[] = [];
-      if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
-        try {
-          splitBills = await aiService.extractMultipleBills(storedPath, mimetype, originalname);
-        } catch (mbErr) {
-          console.warn('[Upload] Multi-bill detection notice:', mbErr);
-          splitBills = [];
+      if (cachedAi) {
+        splitBills = cachedAi.splitBills || [];
+      } else {
+        if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
+          try {
+            splitBills = await aiService.extractMultipleBills(storedPath, mimetype, originalname);
+          } catch (mbErr) {
+            console.warn('[Upload] Multi-bill detection notice:', mbErr);
+            splitBills = [];
+          }
         }
+        // Store the AI result so a re-upload of the identical file is instant
+        aiCacheService.set(checksum, originalname, extracted, splitBills);
       }
 
       // Only use the user-selected month/year as a fallback when the document itself has no readable date
@@ -818,10 +830,11 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       const single = routeFinancialDocument(docId, newDoc, extracted, [docId], checksum);
       const { updated, isDuplicate, year, monthFolder, driveTargetFolder, finalRelativeFolder, generatedCsvFileName, monthlyCsvFileName, reviewReport } = single;
 
-      // Qwen explains the open doubts in the background (suggestions only — never auto-applied)
-      if (reviewReport && reviewReport.issues.some((i) => !i.resolved)) {
-        reviewService.generateAiAdvice(reviewReport).catch(() => undefined);
-      }
+      // NOTE: Qwen review advice is NOT started automatically anymore. Running the text model in the
+      // background while the next PDF is being vision-scanned forced the GPU to swap models
+      // (qwen ⇄ minicpm-v) and caused HeadersTimeout errors + very slow uploads.
+      // Advice is generated on demand via the "Ask Qwen AI Advice" button (/api/review/ai-advice).
+      void reviewReport;
 
       return res.status(201).json({
         message: isDuplicate

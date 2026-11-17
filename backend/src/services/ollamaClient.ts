@@ -44,8 +44,11 @@ export const ollamaClient = {
     const body: Record<string, any> = {
       model,
       prompt: options.prompt,
-      stream: false,
-      keep_alive: '10m',
+      // Streaming: Ollama sends response headers immediately, so long GPU jobs (vision scans of
+      // large scanned pages) never trigger Node's 5-minute UND_ERR_HEADERS_TIMEOUT.
+      stream: true,
+      // Keep models resident in VRAM between pages/uploads (avoids expensive reloads)
+      keep_alive: process.env.OLLAMA_KEEP_ALIVE || '30m',
       options: {
         num_predict: 4096,
         temperature: typeof options.temperature === 'number' ? options.temperature : 0.1,
@@ -76,8 +79,38 @@ export const ollamaClient = {
       throw new Error(`Ollama returned status ${res.status}: ${res.statusText}`);
     }
 
-    const data: any = await res.json();
-    return data.response || '';
+    // Read the NDJSON stream and concatenate the generated tokens
+    if (!res.body) {
+      const data: any = await res.json();
+      return data.response || '';
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let output = '';
+    const consumeLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        const chunk = JSON.parse(trimmed);
+        if (chunk.error) throw new Error(`Ollama error: ${chunk.error}`);
+        if (typeof chunk.response === 'string') output += chunk.response;
+      } catch (e: any) {
+        if (String(e?.message || '').startsWith('Ollama error')) throw e;
+      }
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf('\n')) !== -1) {
+        consumeLine(buffer.slice(0, nl));
+        buffer = buffer.slice(nl + 1);
+      }
+    }
+    consumeLine(buffer);
+    return output;
   },
 
   async generateJson<T = any>(options: OllamaVisionRequest): Promise<T> {
