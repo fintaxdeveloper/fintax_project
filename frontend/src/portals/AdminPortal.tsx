@@ -23,6 +23,9 @@ import {
   File,
   ChevronRight,
   FolderOpen,
+  HardDrive,
+  FileCheck,
+  Clock,
 } from 'lucide-react';
 
 const API_BASE = 'http://127.0.0.1:5000/api';
@@ -220,6 +223,23 @@ export const AdminPortal: React.FC<{
     });
   };
 
+  // Helper to resolve client number (even if null in users table, extracts from folder name like "JJ-50012_Mansoor")
+  const getClientNumber = (u: UserItem): string => {
+    if (u.client_number && u.client_number.trim() !== '') return u.client_number;
+    const folder = clientFolderList.find((f) => f.toLowerCase().includes(u.name.toLowerCase()));
+    if (folder) {
+      const parts = folder.split('_');
+      if (parts.length > 1 && parts[0].includes('-')) return parts[0];
+    }
+    const cDocs = getClientDocs(u);
+    for (const doc of cDocs) {
+      const p = doc.relative_path || doc.file_path || '';
+      const match = p.match(/([A-Z0-9]{2,5}-[0-9]{3,6})/i);
+      if (match) return match[1].toUpperCase();
+    }
+    return '—';
+  };
+
   // Documents belonging to currently selected client
   const currentClientDocs = useMemo(() => {
     if (!selectedClientForDocs) return [];
@@ -320,7 +340,7 @@ export const AdminPortal: React.FC<{
 
   // Format bytes helper
   const formatBytes = (bytes?: number) => {
-    if (!bytes || bytes <= 0) return '—';
+    if (!bytes || bytes <= 0) return '0 MB';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -491,6 +511,819 @@ export const AdminPortal: React.FC<{
 
   const pendingDeletionsCount = deletionRequests.filter(d => d.status !== 'APPROVED_AND_DELETED' && d.status !== 'REJECTED').length;
 
+  // =========================================================================
+  // VIEW MODE A: DEDICATED FULL-PAGE CLIENT DOCUMENTS EXPLORER
+  // Triggered when a user clicks any client row or "View Docs" button
+  // =========================================================================
+  if (selectedClientForDocs) {
+    const resolvedClientNum = getClientNumber(selectedClientForDocs);
+    const totalStorageBytes = currentClientDocs.reduce((acc, d) => acc + (d.size_bytes || 0), 0);
+    const verifiedDocsCount = currentClientDocs.filter((d) => d.status === 'VERIFIED' || d.status === 'APPROVED' || d.status === 'EXPORTED').length;
+    const processingDocsCount = currentClientDocs.filter((d) => d.status === 'PROCESSING').length;
+
+    return (
+      <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Navigation Breadcrumb Bar */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          borderBottom: '1.5px solid #e2e8f0',
+          paddingBottom: '1rem',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => { setSelectedClientForDocs(null); resetDocFilters(); }}
+              style={{
+                background: '#ffffff',
+                color: '#1e293b',
+                border: '1.5px solid #cbd5e1',
+                padding: '0.625rem 1.25rem',
+                borderRadius: '0.625rem',
+                fontWeight: 700,
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#ffffff'; }}
+            >
+              <ArrowLeft size={16} />
+              {isDe ? '← Zurück zur Benutzerverwaltung' : '← Back to Users'}
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#64748b' }}>
+              <span>{isDe ? 'Administrator Portal' : 'Admin Portal'}</span>
+              <span>/</span>
+              <span>{isDe ? 'Mandanten' : 'Users'}</span>
+              <span>/</span>
+              <strong style={{ color: '#0f172a' }}>{selectedClientForDocs.name}</strong>
+            </div>
+          </div>
+
+          {/* Quick Client Switcher Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#475569' }}>
+              {isDe ? 'Mandant wechseln:' : 'Switch Client:'}
+            </label>
+            <select
+              value={selectedClientForDocs.id}
+              onChange={(e) => {
+                const nextUser = users.find(u => u.id === e.target.value);
+                if (nextUser) {
+                  setSelectedClientForDocs(nextUser);
+                  resetDocFilters();
+                }
+              }}
+              style={{
+                padding: '0.5rem 0.875rem',
+                borderRadius: '0.5rem',
+                border: '1.5px solid #cbd5e1',
+                fontSize: '0.8125rem',
+                fontWeight: 700,
+                color: '#0f172a',
+                backgroundColor: '#ffffff',
+                cursor: 'pointer',
+              }}
+            >
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} {getClientNumber(u) !== '—' ? `(${getClientNumber(u)})` : `(${u.role})`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Dedicated Client Hero Banner */}
+        <div style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1d4ed8 100%)',
+          color: '#ffffff',
+          borderRadius: '1.25rem',
+          padding: '2rem',
+          boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.35)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1.5rem',
+        }}>
+          {/* Client Avatar & Identity */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.75rem',
+              fontWeight: 800,
+              boxShadow: '0 0 0 4px rgba(255, 255, 255, 0.2)',
+            }}>
+              {selectedClientForDocs.name ? selectedClientForDocs.name.charAt(0).toUpperCase() : 'C'}
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+                <h1 style={{ fontSize: '1.625rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
+                  {selectedClientForDocs.name}
+                </h1>
+                {resolvedClientNum !== '—' && (
+                  <span style={{
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    color: '#ffffff',
+                    fontSize: '0.8125rem',
+                    fontWeight: 800,
+                    padding: '0.2rem 0.65rem',
+                    borderRadius: '0.375rem',
+                    letterSpacing: '0.05em',
+                  }}>
+                    {resolvedClientNum}
+                  </span>
+                )}
+                <span style={{
+                  background: selectedClientForDocs.is_active ? '#22c55e' : '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '9999px',
+                }}>
+                  {selectedClientForDocs.is_active ? (isDe ? 'Aktiv' : 'Active') : (isDe ? 'Gesperrt' : 'Disabled')}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.875rem', opacity: 0.85 }}>
+                {selectedClientForDocs.email} • {selectedClientForDocs.role}
+              </div>
+            </div>
+          </div>
+
+          {/* 4 Summary Metric Tiles */}
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(8px)', padding: '0.75rem 1.125rem', borderRadius: '0.75rem', border: '1px solid rgba(255, 255, 255, 0.15)', minWidth: '110px' }}>
+              <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <FileText size={12} />
+                {isDe ? 'Belege gesamt' : 'Total Docs'}
+              </div>
+              <div style={{ fontSize: '1.375rem', fontWeight: 800, marginTop: '0.25rem' }}>
+                {currentClientDocs.length}
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(8px)', padding: '0.75rem 1.125rem', borderRadius: '0.75rem', border: '1px solid rgba(255, 255, 255, 0.15)', minWidth: '110px' }}>
+              <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <HardDrive size={12} />
+                {isDe ? 'Speicherplatz' : 'Storage'}
+              </div>
+              <div style={{ fontSize: '1.375rem', fontWeight: 800, marginTop: '0.25rem' }}>
+                {formatBytes(totalStorageBytes)}
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(34, 197, 94, 0.2)', backdropFilter: 'blur(8px)', padding: '0.75rem 1.125rem', borderRadius: '0.75rem', border: '1px solid rgba(34, 197, 94, 0.35)', minWidth: '110px' }}>
+              <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', color: '#86efac', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <FileCheck size={12} />
+                {isDe ? 'Verifiziert' : 'Verified'}
+              </div>
+              <div style={{ fontSize: '1.375rem', fontWeight: 800, marginTop: '0.25rem', color: '#86efac' }}>
+                {verifiedDocsCount}
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(234, 179, 8, 0.2)', backdropFilter: 'blur(8px)', padding: '0.75rem 1.125rem', borderRadius: '0.75rem', border: '1px solid rgba(234, 179, 8, 0.35)', minWidth: '110px' }}>
+              <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', color: '#fde047', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Clock size={12} />
+                {isDe ? 'In Prüfung' : 'Processing'}
+              </div>
+              <div style={{ fontSize: '1.375rem', fontWeight: 800, marginTop: '0.25rem', color: '#fde047' }}>
+                {processingDocsCount}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Toolbar Card */}
+        <div style={{
+          background: '#ffffff',
+          borderRadius: '1rem',
+          padding: '1.25rem 1.5rem',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9375rem', fontWeight: 800, color: '#0f172a' }}>
+              <Filter size={18} color="#2563eb" />
+              {isDe ? 'Belege filtern & durchsuchen' : 'Filter & Search Client Documents'}
+              <span style={{
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                padding: '0.2rem 0.65rem',
+                borderRadius: '9999px',
+              }}>
+                {filteredClientDocs.length} / {currentClientDocs.length} {isDe ? 'Belege angezeigt' : 'documents shown'}
+              </span>
+            </div>
+
+            {isDocFilterActive && (
+              <button
+                type="button"
+                onClick={resetDocFilters}
+                style={{
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  padding: '0.35rem 0.85rem',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                }}
+              >
+                <X size={13} />
+                {isDe ? 'Filter zurücksetzen' : 'Reset Filters'}
+              </button>
+            )}
+          </div>
+
+          {/* Filter Inputs Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'center' }}>
+            {/* Search Input */}
+            <div style={{ position: 'relative', gridColumn: 'span 2' }}>
+              <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                type="text"
+                value={docSearchQuery}
+                onChange={(e) => setDocSearchQuery(e.target.value)}
+                placeholder={isDe ? 'Dateiname, Belegnr., Pfad suchen...' : 'Search filename, document #, path...'}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.875rem 0.625rem 2.35rem',
+                  borderRadius: '0.5rem',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '0.875rem',
+                  color: '#0f172a',
+                  fontWeight: 600,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {docSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setDocSearchQuery('')}
+                  style={{ position: 'absolute', right: '0.625rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+
+            {/* Year Filter */}
+            <div>
+              <select
+                value={docYearFilter}
+                onChange={(e) => setDocYearFilter(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '0.5rem',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '0.8125rem',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                <option value="ALL">📅 {isDe ? 'Alle Jahre' : 'All Years'}</option>
+                {availableYears.map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Month Filter */}
+            <div>
+              <select
+                value={docMonthFilter}
+                onChange={(e) => setDocMonthFilter(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '0.5rem',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '0.8125rem',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                <option value="ALL">🗓️ {isDe ? 'Alle Monate' : 'All Months'}</option>
+                {Object.entries(monthNames).map(([num, nameObj]) => (
+                  <option key={num} value={num}>
+                    {isDe ? nameObj.de : nameObj.en}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Category Filter */}
+            <div>
+              <select
+                value={docCategoryFilter}
+                onChange={(e) => setDocCategoryFilter(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '0.5rem',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '0.8125rem',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                <option value="ALL">🗂️ {isDe ? 'Alle Kategorien' : 'All Categories'}</option>
+                <option value="01_FiBu">01_FiBu (Financial Accounting)</option>
+                <option value="00_Schriftverkehr">00_Schriftverkehr (Correspondence)</option>
+                <option value="02_LoBu">02_LoBu (Payroll)</option>
+                <option value="03_Agenda">03_Agenda / 00_CSV</option>
+              </select>
+            </div>
+
+            {/* Document Type Filter */}
+            <div>
+              <select
+                value={docTypeFilter}
+                onChange={(e) => setDocTypeFilter(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '0.5rem',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '0.8125rem',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                <option value="ALL">📄 {isDe ? 'Alle Belegarten' : 'All Document Types'}</option>
+                <option value="BANK">{isDe ? 'Kontoauszug (Bank)' : 'Bank Statement'}</option>
+                <option value="INVOICE">{isDe ? 'Rechnung (Ein-/Verkauf)' : 'Invoice (Purchase/Sale)'}</option>
+                <option value="CASH">{isDe ? 'Kassenbeleg (Bargeld)' : 'Cash Receipt'}</option>
+                <option value="OTHER">{isDe ? 'Sonstige Dokumente' : 'Other Documents'}</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <select
+                value={docStatusFilter}
+                onChange={(e) => setDocStatusFilter(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '0.5rem',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '0.8125rem',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                <option value="ALL">🏷️ {isDe ? 'Alle Status' : 'All Statuses'}</option>
+                <option value="VERIFIED">{isDe ? 'Verifiziert / Freigegeben' : 'Verified / Approved'}</option>
+                <option value="EXPORTED">{isDe ? 'Exportiert (DATEV)' : 'Exported (DATEV)'}</option>
+                <option value="PROCESSING">{isDe ? 'In Verarbeitung' : 'Processing'}</option>
+                <option value="READY">{isDe ? 'Bereit' : 'Ready'}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Documents Table Card */}
+        <div style={{
+          background: '#ffffff',
+          borderRadius: '1rem',
+          border: '1px solid #e2e8f0',
+          overflow: 'hidden',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}>
+          {filteredClientDocs.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '4rem 1.5rem', color: '#64748b' }}>
+              <FolderOpen size={48} color="#94a3b8" style={{ margin: '0 auto 1rem auto' }} />
+              <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0f172a' }}>
+                {currentClientDocs.length === 0
+                  ? (isDe ? 'Keine Belege für diesen Mandanten gefunden.' : 'No documents uploaded for this client yet.')
+                  : (isDe ? 'Keine Belege entsprechen den aktuellen Filtern.' : 'No documents match the current filter criteria.')}
+              </div>
+              <div style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                {currentClientDocs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={resetDocFilters}
+                    style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', fontSize: '0.8125rem', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    {isDe ? 'Filter zurücksetzen' : 'Reset Filters'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '0.875rem 1.25rem' }}>{isDe ? 'Dokument / Dateiname' : 'Document / Filename'}</th>
+                    <th style={{ padding: '0.875rem 1.25rem' }}>{isDe ? 'Kategorie & Typ' : 'Category & Type'}</th>
+                    <th style={{ padding: '0.875rem 1.25rem' }}>{isDe ? 'Upload-Datum' : 'Upload Date'}</th>
+                    <th style={{ padding: '0.875rem 1.25rem' }}>{isDe ? 'Dateigröße' : 'File Size'}</th>
+                    <th style={{ padding: '0.875rem 1.25rem' }}>{isDe ? 'Status' : 'Status'}</th>
+                    <th style={{ padding: '0.875rem 1.25rem', textAlign: 'right' }}>{isDe ? 'Aktionen' : 'Actions'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredClientDocs.map((doc) => {
+                    const isPdf = (doc.original_filename || '').toLowerCase().endsWith('.pdf');
+                    const isCsv = (doc.original_filename || '').toLowerCase().endsWith('.csv');
+                    const isXlsx = (doc.original_filename || '').toLowerCase().endsWith('.xlsx') || (doc.original_filename || '').toLowerCase().endsWith('.xls');
+
+                    return (
+                      <tr
+                        key={doc.id}
+                        style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        <td style={{ padding: '0.875rem 1.25rem', maxWidth: '340px' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                            <div style={{
+                              marginTop: '2px',
+                              padding: '0.4rem',
+                              borderRadius: '0.375rem',
+                              background: isPdf ? '#fee2e2' : isCsv ? '#e0f2fe' : isXlsx ? '#dcfce7' : '#f1f5f9',
+                              color: isPdf ? '#dc2626' : isCsv ? '#0284c7' : isXlsx ? '#16a34a' : '#64748b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}>
+                              {isPdf ? <FileText size={18} /> : isCsv ? <FileCode size={18} /> : isXlsx ? <FileSpreadsheet size={18} /> : <File size={18} />}
+                            </div>
+                            <div style={{ overflow: 'hidden' }}>
+                              <div
+                                title={doc.original_filename}
+                                onClick={() => setPreviewDoc(doc)}
+                                style={{
+                                  fontWeight: 700,
+                                  color: '#0f172a',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {doc.original_filename}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '300px' }}>
+                                {doc.relative_path || doc.file_path || '—'}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td style={{ padding: '0.875rem 1.25rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
+                            <span style={{
+                              background: doc.category.includes('01_FiBu') ? '#eff6ff' : doc.category.includes('02_LoBu') ? '#faf5ff' : '#fef3c7',
+                              color: doc.category.includes('01_FiBu') ? '#1d4ed8' : doc.category.includes('02_LoBu') ? '#7e22ce' : '#b45309',
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '0.375rem',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                            }}>
+                              {doc.category}
+                            </span>
+                            {doc.sub_types && doc.sub_types.length > 0 && (
+                              <span style={{ fontSize: '0.75rem', color: '#475569' }}>
+                                {doc.sub_types.slice(0, 2).join(', ')}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: '0.875rem 1.25rem', color: '#475569' }}>
+                          {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString(isDe ? 'de-DE' : 'en-US', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }) : '—'}
+                        </td>
+
+                        <td style={{ padding: '0.875rem 1.25rem', color: '#64748b', fontWeight: 600 }}>
+                          {formatBytes(doc.size_bytes)}
+                        </td>
+
+                        <td style={{ padding: '0.875rem 1.25rem' }}>
+                          <span style={{
+                            padding: '0.25rem 0.625rem',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                            background: doc.status === 'VERIFIED' || doc.status === 'APPROVED' ? '#dcfce7' : doc.status === 'EXPORTED' ? '#e0f2fe' : doc.status === 'PROCESSING' ? '#fef3c7' : '#f1f5f9',
+                            color: doc.status === 'VERIFIED' || doc.status === 'APPROVED' ? '#15803d' : doc.status === 'EXPORTED' ? '#0369a1' : doc.status === 'PROCESSING' ? '#b45309' : '#475569',
+                          }}>
+                            {doc.status === 'VERIFIED' || doc.status === 'APPROVED' ? (isDe ? '✓ Verifiziert' : '✓ Verified') :
+                             doc.status === 'EXPORTED' ? (isDe ? '✓ Exportiert' : '✓ Exported') :
+                             doc.status === 'PROCESSING' ? (isDe ? '⏳ In Prüfung' : '⏳ Processing') :
+                             doc.status}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: '0.875rem 1.25rem', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            {/* Preview Button */}
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDoc(doc)}
+                              title={isDe ? 'Beleg-Vorschau öffnen' : 'Open document preview'}
+                              style={{
+                                background: '#eff6ff',
+                                color: '#2563eb',
+                                border: '1px solid #bfdbfe',
+                                padding: '0.4rem 0.75rem',
+                                borderRadius: '0.5rem',
+                                fontSize: '0.8125rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                              }}
+                            >
+                              <Eye size={14} />
+                              {isDe ? 'Vorschau' : 'Preview'}
+                            </button>
+
+                            {/* DATEV CSV Export */}
+                            <a
+                              href={`${API_BASE}/documents/${doc.id}/skr03-csv`}
+                              download
+                              title={isDe ? 'DATEV SKR03 EXTF CSV herunterladen' : 'Download DATEV SKR03 EXTF CSV'}
+                              style={{
+                                background: '#f0fdf4',
+                                color: '#16a34a',
+                                border: '1px solid #bbf7d0',
+                                padding: '0.4rem 0.65rem',
+                                borderRadius: '0.5rem',
+                                fontSize: '0.8125rem',
+                                fontWeight: 700,
+                                textDecoration: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                              }}
+                            >
+                              <Download size={14} />
+                              CSV
+                            </a>
+
+                            {/* Excel Export */}
+                            <a
+                              href={`${API_BASE}/documents/${doc.id}/skr03-xlsx`}
+                              download
+                              title={isDe ? 'SKR03 Excel-Buchungsblatt herunterladen' : 'Download SKR03 Excel Workbook'}
+                              style={{
+                                background: '#faf5ff',
+                                color: '#7e22ce',
+                                border: '1px solid #e9d5ff',
+                                padding: '0.4rem 0.65rem',
+                                borderRadius: '0.5rem',
+                                fontSize: '0.8125rem',
+                                fontWeight: 700,
+                                textDecoration: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                              }}
+                            >
+                              <Download size={14} />
+                              XLSX
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Inline Document Preview Modal */}
+        {previewDoc && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.8)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '1.5rem',
+          }}>
+            <div style={{
+              background: '#ffffff',
+              borderRadius: '1rem',
+              width: '100%',
+              maxWidth: '1050px',
+              height: '88vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35)',
+            }}>
+              {/* Modal Header */}
+              <div style={{
+                padding: '1rem 1.5rem',
+                borderBottom: '1.5px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: '#f8fafc',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
+                  <FileText size={20} color="#2563eb" />
+                  <div style={{ overflow: 'hidden' }}>
+                    <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0f172a', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '650px' }}>
+                      {previewDoc.original_filename}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                      {previewDoc.category} • {formatBytes(previewDoc.size_bytes)} • {previewDoc.status}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <a
+                    href={`${API_BASE}/documents/${previewDoc.id}/view`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      background: '#eff6ff',
+                      color: '#2563eb',
+                      border: '1px solid #bfdbfe',
+                      padding: '0.4rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                    }}
+                  >
+                    <ExternalLink size={13} />
+                    {isDe ? 'In neuem Tab öffnen' : 'Open in New Tab'}
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc(null)}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      padding: '0.4rem',
+                      borderRadius: '0.375rem',
+                      cursor: 'pointer',
+                      color: '#475569',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div style={{ flex: 1, backgroundColor: '#0f172a', position: 'relative' }}>
+                <iframe
+                  src={`${API_BASE}/documents/${previewDoc.id}/view`}
+                  title={previewDoc.original_filename}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    backgroundColor: '#ffffff',
+                  }}
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div style={{
+                padding: '0.75rem 1.5rem',
+                borderTop: '1px solid #e2e8f0',
+                background: '#f8fafc',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '0.75rem',
+                color: '#64748b',
+              }}>
+                <div>
+                  ID: <span style={{ fontFamily: 'monospace', color: '#1e293b' }}>{previewDoc.id}</span>
+                  {previewDoc.file_checksum && (
+                    <span style={{ marginLeft: '1rem' }}>
+                      SHA-256: <span style={{ fontFamily: 'monospace' }}>{previewDoc.file_checksum.slice(0, 16)}...</span>
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <a
+                    href={`${API_BASE}/documents/${previewDoc.id}/skr03-csv`}
+                    download
+                    style={{
+                      background: '#f0fdf4',
+                      color: '#15803d',
+                      border: '1px solid #bbf7d0',
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    📥 DATEV CSV
+                  </a>
+
+                  <a
+                    href={`${API_BASE}/documents/${previewDoc.id}/skr03-xlsx`}
+                    download
+                    style={{
+                      background: '#faf5ff',
+                      color: '#7e22ce',
+                      border: '1px solid #e9d5ff',
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    📊 Excel XLSX
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc(null)}
+                    style={{
+                      background: '#ffffff',
+                      color: '#0f172a',
+                      border: '1px solid #cbd5e1',
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isDe ? 'Schließen' : 'Close'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // VIEW MODE B: MAIN ADMIN PORTAL DASHBOARD (Users list, Tabs, Deletions, Folders, Audit)
+  // =========================================================================
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Header Banner */}
@@ -601,7 +1434,7 @@ export const AdminPortal: React.FC<{
       <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
         <button
           type="button"
-          onClick={() => { setActiveTab('USERS'); setSelectedClientForDocs(null); }}
+          onClick={() => setActiveTab('USERS')}
           style={{
             background: activeTab === 'USERS' ? '#2563eb' : '#eff6ff',
             color: activeTab === 'USERS' ? '#ffffff' : '#1d4ed8',
@@ -713,730 +1546,187 @@ export const AdminPortal: React.FC<{
       {/* TAB 1: USERS & ROLES */}
       {activeTab === 'USERS' && (
         <div style={{ background: '#ffffff', borderRadius: '1rem', padding: '1.5rem', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          
-          {/* VIEW A: CLIENT DOCUMENT INSPECTOR (When a client is selected) */}
-          {selectedClientForDocs ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Top Client Bar */}
-              <div style={{
-                background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-                border: '1.5px solid #cbd5e1',
-                borderRadius: '0.875rem',
-                padding: '1.25rem 1.5rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '1rem',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedClientForDocs(null); resetDocFilters(); }}
-                    style={{
-                      background: '#ffffff',
-                      color: '#1e293b',
-                      border: '1px solid #cbd5e1',
-                      padding: '0.5rem 0.875rem',
-                      borderRadius: '0.5rem',
-                      fontWeight: 700,
-                      fontSize: '0.8125rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.4rem',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                    }}
-                  >
-                    <ArrowLeft size={16} />
-                    {isDe ? 'Zurück zur Benutzerliste' : 'Back to User List'}
-                  </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                👥 {isDe ? 'Benutzerverwaltung (RBAC Rollen)' : 'User Management (RBAC Roles)'}
+              </h2>
+              <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>
+                {isDe
+                  ? 'Klicken Sie auf einen Mandanten, um dessen Belege auf einer eigenen Seite anzuzeigen'
+                  : 'Click on any client to open their dedicated documents page'}
+              </div>
+            </div>
 
-                  <div style={{ width: '1px', height: '32px', background: '#cbd5e1' }} />
+            <button
+              type="button"
+              onClick={() => setShowAddUserModal(true)}
+              style={{
+                background: '#4c1d95',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '0.5rem',
+                fontWeight: 700,
+                fontSize: '0.8125rem',
+                cursor: 'pointer',
+              }}
+            >
+              + {isDe ? 'Benutzer hinzufügen' : 'Add User'}
+            </button>
+          </div>
 
-                  {/* Avatar & Client Details */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '50%',
-                      background: '#2563eb',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.125rem',
-                      fontWeight: 800,
-                      boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
-                    }}>
-                      {selectedClientForDocs.name ? selectedClientForDocs.name.charAt(0).toUpperCase() : 'C'}
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0f172a' }}>
-                          {selectedClientForDocs.name}
-                        </span>
-                        {selectedClientForDocs.client_number && (
-                          <span style={{
-                            background: '#e0e7ff',
-                            color: '#3730a3',
-                            fontSize: '0.75rem',
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Name / Mandant' : 'Name / Client'}</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'E-Mail / Login' : 'Email / Login'}</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Mandantennummer' : 'Client Number'}</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Rolle & 2FA' : 'Role & 2FA'}</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Belege' : 'Documents'}</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Status' : 'Status'}</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{isDe ? 'Aktionen' : 'Actions'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => {
+                  const clientDocs = getClientDocs(u);
+                  const docCount = clientDocs.length;
+                  const resolvedNum = getClientNumber(u);
+
+                  return (
+                    <tr
+                      key={u.id}
+                      onClick={() => {
+                        setSelectedClientForDocs(u);
+                        resetDocFilters();
+                      }}
+                      style={{
+                        borderBottom: '1px solid #f1f5f9',
+                        transition: 'background 0.15s ease',
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div
+                          style={{
                             fontWeight: 700,
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '0.375rem',
-                          }}>
-                            {selectedClientForDocs.client_number}
-                          </span>
-                        )}
+                            color: '#0f172a',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                          }}
+                          title={isDe ? 'Klicken, um Belege dieses Mandanten anzuzeigen' : 'Click to open client documents page'}
+                        >
+                          <span style={{ color: '#1d4ed8' }}>{u.name}</span>
+                          <ChevronRight size={14} color="#94a3b8" />
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', color: '#334155' }}>{u.email}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: '#0284c7', fontWeight: 700 }}>
+                        {resolvedNum}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{
-                          background: selectedClientForDocs.is_active ? '#dcfce7' : '#fee2e2',
-                          color: selectedClientForDocs.is_active ? '#15803d' : '#b91c1c',
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '0.375rem',
                           fontSize: '0.75rem',
                           fontWeight: 700,
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '0.375rem',
+                          background: u.role === 'ADMIN' ? '#fdf2f8' : u.role === 'STAFF' ? '#eff6ff' : '#f0fdf4',
+                          color: u.role === 'ADMIN' ? '#be185d' : u.role === 'STAFF' ? '#1d4ed8' : '#15803d',
                         }}>
-                          {selectedClientForDocs.is_active ? (isDe ? 'Aktiv' : 'Active') : (isDe ? 'Gesperrt' : 'Disabled')}
+                          {u.role} {u.role !== 'CLIENT' && (isDe ? '🔒 (2FA aktiv)' : '🔒 (2FA active)')}
                         </span>
-                      </div>
-                      <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-                        {selectedClientForDocs.email} • {currentClientDocs.length} {isDe ? (currentClientDocs.length === 1 ? 'Beleg insgesamt' : 'Belege insgesamt') : (currentClientDocs.length === 1 ? 'total document' : 'total documents')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick Client Switcher */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#475569' }}>
-                    {isDe ? 'Mandant wechseln:' : 'Switch Client:'}
-                  </label>
-                  <select
-                    value={selectedClientForDocs.id}
-                    onChange={(e) => {
-                      const nextUser = users.find(u => u.id === e.target.value);
-                      if (nextUser) {
-                        setSelectedClientForDocs(nextUser);
-                        resetDocFilters();
-                      }
-                    }}
-                    style={{
-                      padding: '0.5rem 0.875rem',
-                      borderRadius: '0.5rem',
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '0.8125rem',
-                      fontWeight: 700,
-                      color: '#0f172a',
-                      backgroundColor: '#ffffff',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} {u.client_number ? `(${u.client_number})` : `(${u.role})`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Comprehensive Filter Toolbar */}
-              <div style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '0.75rem',
-                padding: '1rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.75rem',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0f172a', fontWeight: 700, fontSize: '0.875rem' }}>
-                    <Filter size={16} color="#2563eb" />
-                    {isDe ? 'Dokumente filtern & durchsuchen' : 'Filter & Search Documents'}
-                    <span style={{
-                      background: '#eff6ff',
-                      color: '#1d4ed8',
-                      fontSize: '0.75rem',
-                      fontWeight: 800,
-                      padding: '0.15rem 0.6rem',
-                      borderRadius: '9999px',
-                    }}>
-                      {filteredClientDocs.length} / {currentClientDocs.length} {isDe ? 'Treffer' : 'Matches'}
-                    </span>
-                  </div>
-
-                  {isDocFilterActive && (
-                    <button
-                      type="button"
-                      onClick={resetDocFilters}
-                      style={{
-                        background: '#f1f5f9',
-                        color: '#475569',
-                        border: '1px solid #cbd5e1',
-                        padding: '0.3rem 0.75rem',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.3rem',
-                      }}
-                    >
-                      <X size={12} />
-                      {isDe ? 'Filter zurücksetzen' : 'Reset Filters'}
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'center' }}>
-                  {/* Search Input */}
-                  <div style={{ position: 'relative', gridColumn: 'span 2' }}>
-                    <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input
-                      type="text"
-                      value={docSearchQuery}
-                      onChange={(e) => setDocSearchQuery(e.target.value)}
-                      placeholder={isDe ? 'Dateiname, Pfad, Stichwort suchen...' : 'Search filename, path, keyword...'}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.75rem 0.5rem 2.25rem',
-                        borderRadius: '0.5rem',
-                        border: '1.5px solid #cbd5e1',
-                        fontSize: '0.8125rem',
-                        color: '#0f172a',
-                        fontWeight: 600,
-                        outline: 'none',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                    {docSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setDocSearchQuery('')}
-                        style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Year Filter */}
-                  <div>
-                    <select
-                      value={docYearFilter}
-                      onChange={(e) => setDocYearFilter(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.6rem',
-                        borderRadius: '0.5rem',
-                        border: '1.5px solid #cbd5e1',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        color: '#0f172a',
-                        backgroundColor: '#ffffff',
-                      }}
-                    >
-                      <option value="ALL">📅 {isDe ? 'Alle Jahre' : 'All Years'}</option>
-                      {availableYears.map((yr) => (
-                        <option key={yr} value={yr}>{yr}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Month Filter */}
-                  <div>
-                    <select
-                      value={docMonthFilter}
-                      onChange={(e) => setDocMonthFilter(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.6rem',
-                        borderRadius: '0.5rem',
-                        border: '1.5px solid #cbd5e1',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        color: '#0f172a',
-                        backgroundColor: '#ffffff',
-                      }}
-                    >
-                      <option value="ALL">🗓️ {isDe ? 'Alle Monate' : 'All Months'}</option>
-                      {Object.entries(monthNames).map(([num, nameObj]) => (
-                        <option key={num} value={num}>
-                          {isDe ? nameObj.de : nameObj.en}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Category Filter */}
-                  <div>
-                    <select
-                      value={docCategoryFilter}
-                      onChange={(e) => setDocCategoryFilter(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.6rem',
-                        borderRadius: '0.5rem',
-                        border: '1.5px solid #cbd5e1',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        color: '#0f172a',
-                        backgroundColor: '#ffffff',
-                      }}
-                    >
-                      <option value="ALL">🗂️ {isDe ? 'Alle Kategorien' : 'All Categories'}</option>
-                      <option value="01_FiBu">01_FiBu (Financial Accounting)</option>
-                      <option value="00_Schriftverkehr">00_Schriftverkehr (Correspondence)</option>
-                      <option value="02_LoBu">02_LoBu (Payroll)</option>
-                      <option value="03_Agenda">03_Agenda / 00_CSV</option>
-                    </select>
-                  </div>
-
-                  {/* Document Type Filter */}
-                  <div>
-                    <select
-                      value={docTypeFilter}
-                      onChange={(e) => setDocTypeFilter(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.6rem',
-                        borderRadius: '0.5rem',
-                        border: '1.5px solid #cbd5e1',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        color: '#0f172a',
-                        backgroundColor: '#ffffff',
-                      }}
-                    >
-                      <option value="ALL">📄 {isDe ? 'Alle Belegarten' : 'All Document Types'}</option>
-                      <option value="BANK">{isDe ? 'Kontoauszug (Bank)' : 'Bank Statement'}</option>
-                      <option value="INVOICE">{isDe ? 'Rechnung (Ein-/Verkauf)' : 'Invoice (Purchase/Sale)'}</option>
-                      <option value="CASH">{isDe ? 'Kassenbeleg (Bargeld)' : 'Cash Receipt'}</option>
-                      <option value="OTHER">{isDe ? 'Sonstige Dokumente' : 'Other Documents'}</option>
-                    </select>
-                  </div>
-
-                  {/* Status Filter */}
-                  <div>
-                    <select
-                      value={docStatusFilter}
-                      onChange={(e) => setDocStatusFilter(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.6rem',
-                        borderRadius: '0.5rem',
-                        border: '1.5px solid #cbd5e1',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        color: '#0f172a',
-                        backgroundColor: '#ffffff',
-                      }}
-                    >
-                      <option value="ALL">🏷️ {isDe ? 'Alle Status' : 'All Statuses'}</option>
-                      <option value="VERIFIED">{isDe ? 'Verifiziert / Freigegeben' : 'Verified / Approved'}</option>
-                      <option value="EXPORTED">{isDe ? 'Exportiert (DATEV)' : 'Exported (DATEV)'}</option>
-                      <option value="PROCESSING">{isDe ? 'In Verarbeitung' : 'Processing'}</option>
-                      <option value="READY">{isDe ? 'Bereit' : 'Ready'}</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Document List / Table */}
-              {filteredClientDocs.length === 0 ? (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '3.5rem 1rem',
-                  background: '#f8fafc',
-                  borderRadius: '0.75rem',
-                  border: '1.5px dashed #cbd5e1',
-                }}>
-                  <FolderOpen size={44} color="#94a3b8" style={{ margin: '0 auto 0.75rem auto' }} />
-                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
-                    {currentClientDocs.length === 0
-                      ? (isDe ? 'Keine Belege für diesen Mandanten gefunden.' : 'No documents uploaded for this client yet.')
-                      : (isDe ? 'Keine Belege entsprechen den aktuellen Filtern.' : 'No documents match the current filter criteria.')}
-                  </div>
-                  <div style={{ fontSize: '0.8125rem', color: '#64748b', marginTop: '0.25rem' }}>
-                    {currentClientDocs.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={resetDocFilters}
-                        style={{ marginTop: '0.75rem', background: '#2563eb', color: '#ffffff', border: 'none', padding: '0.4rem 0.875rem', borderRadius: '0.375rem', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
-                      >
-                        {isDe ? 'Filter zurücksetzen' : 'Reset Filters'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '0.75rem' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                        <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Dokument / Dateiname' : 'Document / Filename'}</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Kategorie & Typ' : 'Category & Type'}</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Upload-Datum' : 'Upload Date'}</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Dateigröße' : 'File Size'}</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Status' : 'Status'}</th>
-                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{isDe ? 'Aktionen' : 'Actions'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredClientDocs.map((doc) => {
-                        const isPdf = (doc.original_filename || '').toLowerCase().endsWith('.pdf');
-                        const isCsv = (doc.original_filename || '').toLowerCase().endsWith('.csv');
-                        const isXlsx = (doc.original_filename || '').toLowerCase().endsWith('.xlsx') || (doc.original_filename || '').toLowerCase().endsWith('.xls');
-
-                        return (
-                          <tr key={doc.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s' }}>
-                            <td style={{ padding: '0.75rem 1rem', maxWidth: '320px' }}>
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem' }}>
-                                <div style={{
-                                  marginTop: '2px',
-                                  padding: '0.35rem',
-                                  borderRadius: '0.375rem',
-                                  background: isPdf ? '#fee2e2' : isCsv ? '#e0f2fe' : isXlsx ? '#dcfce7' : '#f1f5f9',
-                                  color: isPdf ? '#dc2626' : isCsv ? '#0284c7' : isXlsx ? '#16a34a' : '#64748b',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}>
-                                  {isPdf ? <FileText size={16} /> : isCsv ? <FileCode size={16} /> : isXlsx ? <FileSpreadsheet size={16} /> : <File size={16} />}
-                                </div>
-                                <div style={{ overflow: 'hidden' }}>
-                                  <div
-                                    title={doc.original_filename}
-                                    onClick={() => setPreviewDoc(doc)}
-                                    style={{
-                                      fontWeight: 700,
-                                      color: '#0f172a',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    {doc.original_filename}
-                                  </div>
-                                  <div style={{ fontSize: '0.6875rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '280px' }}>
-                                    {doc.relative_path || doc.file_path || '—'}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-
-                            <td style={{ padding: '0.75rem 1rem' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
-                                <span style={{
-                                  background: doc.category.includes('01_FiBu') ? '#eff6ff' : doc.category.includes('02_LoBu') ? '#faf5ff' : '#fef3c7',
-                                  color: doc.category.includes('01_FiBu') ? '#1d4ed8' : doc.category.includes('02_LoBu') ? '#7e22ce' : '#b45309',
-                                  padding: '0.15rem 0.5rem',
-                                  borderRadius: '0.25rem',
-                                  fontSize: '0.6875rem',
-                                  fontWeight: 700,
-                                }}>
-                                  {doc.category}
-                                </span>
-                                {doc.sub_types && doc.sub_types.length > 0 && (
-                                  <span style={{ fontSize: '0.6875rem', color: '#475569' }}>
-                                    {doc.sub_types.slice(0, 2).join(', ')}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-
-                            <td style={{ padding: '0.75rem 1rem', color: '#475569' }}>
-                              {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString(isDe ? 'de-DE' : 'en-US', {
-                                year: 'numeric',
-                                month: '2-digit',
-                                day: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              }) : '—'}
-                            </td>
-
-                            <td style={{ padding: '0.75rem 1rem', color: '#64748b', fontWeight: 600 }}>
-                              {formatBytes(doc.size_bytes)}
-                            </td>
-
-                            <td style={{ padding: '0.75rem 1rem' }}>
-                              <span style={{
-                                padding: '0.2rem 0.5rem',
-                                borderRadius: '0.375rem',
-                                fontSize: '0.6875rem',
-                                fontWeight: 800,
-                                background: doc.status === 'VERIFIED' || doc.status === 'APPROVED' ? '#dcfce7' : doc.status === 'EXPORTED' ? '#e0f2fe' : doc.status === 'PROCESSING' ? '#fef3c7' : '#f1f5f9',
-                                color: doc.status === 'VERIFIED' || doc.status === 'APPROVED' ? '#15803d' : doc.status === 'EXPORTED' ? '#0369a1' : doc.status === 'PROCESSING' ? '#b45309' : '#475569',
-                              }}>
-                                {doc.status === 'VERIFIED' || doc.status === 'APPROVED' ? (isDe ? '✓ Verifiziert' : '✓ Verified') :
-                                 doc.status === 'EXPORTED' ? (isDe ? '✓ Exportiert' : '✓ Exported') :
-                                 doc.status === 'PROCESSING' ? (isDe ? '⏳ In Prüfung' : '⏳ Processing') :
-                                 doc.status}
-                              </span>
-                            </td>
-
-                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                {/* Preview Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewDoc(doc)}
-                                  title={isDe ? 'Beleg-Vorschau öffnen' : 'Open document preview'}
-                                  style={{
-                                    background: '#eff6ff',
-                                    color: '#2563eb',
-                                    border: '1px solid #bfdbfe',
-                                    padding: '0.35rem 0.6rem',
-                                    borderRadius: '0.375rem',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.3rem',
-                                  }}
-                                >
-                                  <Eye size={13} />
-                                  {isDe ? 'Vorschau' : 'Preview'}
-                                </button>
-
-                                {/* DATEV CSV Export */}
-                                <a
-                                  href={`${API_BASE}/documents/${doc.id}/skr03-csv`}
-                                  download
-                                  title={isDe ? 'DATEV SKR03 EXTF CSV herunterladen' : 'Download DATEV SKR03 EXTF CSV'}
-                                  style={{
-                                    background: '#f0fdf4',
-                                    color: '#16a34a',
-                                    border: '1px solid #bbf7d0',
-                                    padding: '0.35rem 0.55rem',
-                                    borderRadius: '0.375rem',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    textDecoration: 'none',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem',
-                                  }}
-                                >
-                                  <Download size={13} />
-                                  CSV
-                                </a>
-
-                                {/* Excel Export */}
-                                <a
-                                  href={`${API_BASE}/documents/${doc.id}/skr03-xlsx`}
-                                  download
-                                  title={isDe ? 'SKR03 Excel-Buchungsblatt herunterladen' : 'Download SKR03 Excel Workbook'}
-                                  style={{
-                                    background: '#faf5ff',
-                                    color: '#7e22ce',
-                                    border: '1px solid #e9d5ff',
-                                    padding: '0.35rem 0.55rem',
-                                    borderRadius: '0.375rem',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    textDecoration: 'none',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem',
-                                  }}
-                                >
-                                  <Download size={13} />
-                                  XLSX
-                                </a>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* VIEW B: USERS & CLIENT LIST TABLE */
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <div>
-                  <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
-                    👥 {isDe ? 'Benutzerverwaltung (RBAC Rollen)' : 'User Management (RBAC Roles)'}
-                  </h2>
-                  <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-                    {isDe
-                      ? 'Konten anlegen, Mandantennummern zuweisen und Belege einsehen'
-                      : 'Manage accounts, assign client numbers, and inspect client documents'}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowAddUserModal(true)}
-                  style={{
-                    background: '#4c1d95',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '0.5rem 1rem',
-                    borderRadius: '0.5rem',
-                    fontWeight: 700,
-                    fontSize: '0.8125rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  + {isDe ? 'Benutzer hinzufügen' : 'Add User'}
-                </button>
-              </div>
-
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                      <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Name / Mandant' : 'Name / Client'}</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'E-Mail / Login' : 'Email / Login'}</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Mandantennummer' : 'Client Number'}</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Rolle & 2FA' : 'Role & 2FA'}</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Belege' : 'Documents'}</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>{isDe ? 'Status' : 'Status'}</th>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{isDe ? 'Aktionen' : 'Actions'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((u) => {
-                      const clientDocs = getClientDocs(u);
-                      const docCount = clientDocs.length;
-
-                      return (
-                        <tr key={u.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s' }}>
-                          <td style={{ padding: '0.75rem 1rem' }}>
-                            <div
-                              onClick={() => {
-                                setSelectedClientForDocs(u);
-                                resetDocFilters();
-                              }}
-                              style={{
-                                fontWeight: 700,
-                                color: '#0f172a',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                              }}
-                              title={isDe ? 'Klicken um Belege dieses Mandanten zu filtern & einzusehen' : 'Click to inspect & filter documents for this client'}
-                            >
-                              <span>{u.name}</span>
-                              <ChevronRight size={14} color="#94a3b8" />
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.75rem 1rem', color: '#334155' }}>{u.email}</td>
-                          <td style={{ padding: '0.75rem 1rem', color: '#0284c7', fontWeight: 600 }}>
-                            {u.client_number || '—'}
-                          </td>
-                          <td style={{ padding: '0.75rem 1rem' }}>
-                            <span style={{
-                              padding: '0.2rem 0.5rem',
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span
+                          style={{
+                            background: docCount > 0 ? '#eff6ff' : '#f8fafc',
+                            color: docCount > 0 ? '#1d4ed8' : '#64748b',
+                            border: docCount > 0 ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                          }}
+                        >
+                          <FileText size={13} />
+                          {docCount} {isDe ? (docCount === 1 ? 'Beleg' : 'Belege') : (docCount === 1 ? 'Doc' : 'Docs')}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span style={{
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          background: u.is_active ? '#dcfce7' : '#fee2e2',
+                          color: u.is_active ? '#15803d' : '#b91c1c',
+                        }}>
+                          {u.is_active ? (isDe ? 'Aktiv' : 'Active') : (isDe ? 'Gesperrt' : 'Disabled')}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedClientForDocs(u);
+                              resetDocFilters();
+                            }}
+                            style={{
+                              background: '#2563eb',
+                              color: '#ffffff',
+                              border: 'none',
+                              padding: '0.35rem 0.75rem',
                               borderRadius: '0.375rem',
                               fontSize: '0.75rem',
                               fontWeight: 700,
-                              background: u.role === 'ADMIN' ? '#fdf2f8' : u.role === 'STAFF' ? '#eff6ff' : '#f0fdf4',
-                              color: u.role === 'ADMIN' ? '#be185d' : u.role === 'STAFF' ? '#1d4ed8' : '#15803d',
-                            }}>
-                              {u.role} {u.role !== 'CLIENT' && (isDe ? '🔒 (2FA aktiv)' : '🔒 (2FA active)')}
-                            </span>
-                          </td>
-                          <td style={{ padding: '0.75rem 1rem' }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedClientForDocs(u);
-                                resetDocFilters();
-                              }}
-                              style={{
-                                background: docCount > 0 ? '#eff6ff' : '#f8fafc',
-                                color: docCount > 0 ? '#1d4ed8' : '#64748b',
-                                border: docCount > 0 ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
-                                padding: '0.3rem 0.65rem',
-                                borderRadius: '0.375rem',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                              }}
-                            >
-                              <FileText size={13} />
-                              {docCount} {isDe ? (docCount === 1 ? 'Beleg' : 'Belege') : (docCount === 1 ? 'Doc' : 'Docs')}
-                            </button>
-                          </td>
-                          <td style={{ padding: '0.75rem 1rem' }}>
-                            <span style={{
-                              padding: '0.2rem 0.5rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              boxShadow: '0 1px 2px rgba(37,99,235,0.2)',
+                            }}
+                          >
+                            <Eye size={13} />
+                            {isDe ? 'Belege einsehen' : 'View Docs'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleUserStatus(u);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: '1px solid #cbd5e1',
+                              padding: '0.35rem 0.6rem',
                               borderRadius: '0.375rem',
                               fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              color: u.is_active ? '#b91c1c' : '#15803d',
                               fontWeight: 600,
-                              background: u.is_active ? '#dcfce7' : '#fee2e2',
-                              color: u.is_active ? '#15803d' : '#b91c1c',
-                            }}>
-                              {u.is_active ? (isDe ? 'Aktiv' : 'Active') : (isDe ? 'Gesperrt' : 'Disabled')}
-                            </span>
-                          </td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedClientForDocs(u);
-                                  resetDocFilters();
-                                }}
-                                style={{
-                                  background: '#2563eb',
-                                  color: '#ffffff',
-                                  border: 'none',
-                                  padding: '0.3rem 0.65rem',
-                                  borderRadius: '0.375rem',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '0.3rem',
-                                }}
-                              >
-                                <Eye size={12} />
-                                {isDe ? 'Belege einsehen' : 'View Docs'}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleToggleUserStatus(u)}
-                                style={{
-                                  background: 'none',
-                                  border: '1px solid #cbd5e1',
-                                  padding: '0.3rem 0.6rem',
-                                  borderRadius: '0.375rem',
-                                  fontSize: '0.75rem',
-                                  cursor: 'pointer',
-                                  color: u.is_active ? '#b91c1c' : '#15803d',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {u.is_active ? (isDe ? 'Deaktivieren' : 'Deactivate') : (isDe ? 'Aktivieren' : 'Activate')}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+                            }}
+                          >
+                            {u.is_active ? (isDe ? 'Deaktivieren' : 'Deactivate') : (isDe ? 'Aktivieren' : 'Activate')}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1462,7 +1752,7 @@ export const AdminPortal: React.FC<{
               style={{ padding: '0.5rem 0.75rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', color: '#0f172a', backgroundColor: '#ffffff', fontWeight: 600 }}
             >
               {users.filter((u) => u.role === 'CLIENT').map((c) => (
-                <option key={c.id} value={c.id} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>{c.name} ({c.client_number || c.email})</option>
+                <option key={c.id} value={c.id} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>{c.name} ({getClientNumber(c) !== '—' ? getClientNumber(c) : c.email})</option>
               ))}
             </select>
             <button
@@ -1774,185 +2064,6 @@ export const AdminPortal: React.FC<{
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* DOCUMENT PREVIEW MODAL */}
-      {previewDoc && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.8)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100000,
-          padding: '1.5rem',
-        }}>
-          <div style={{
-            background: '#ffffff',
-            borderRadius: '1rem',
-            width: '100%',
-            maxWidth: '1050px',
-            height: '88vh',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35)',
-          }}>
-            {/* Modal Header */}
-            <div style={{
-              padding: '1rem 1.5rem',
-              borderBottom: '1.5px solid #e2e8f0',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: '#f8fafc',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
-                <FileText size={20} color="#2563eb" />
-                <div style={{ overflow: 'hidden' }}>
-                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0f172a', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '650px' }}>
-                    {previewDoc.original_filename}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                    {previewDoc.category} • {formatBytes(previewDoc.size_bytes)} • {previewDoc.status}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <a
-                  href={`${API_BASE}/documents/${previewDoc.id}/view`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    background: '#eff6ff',
-                    color: '#2563eb',
-                    border: '1px solid #bfdbfe',
-                    padding: '0.4rem 0.75rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    textDecoration: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                  }}
-                >
-                  <ExternalLink size={13} />
-                  {isDe ? 'In neuem Tab öffnen' : 'Open in New Tab'}
-                </a>
-
-                <button
-                  type="button"
-                  onClick={() => setPreviewDoc(null)}
-                  style={{
-                    background: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    padding: '0.4rem',
-                    borderRadius: '0.375rem',
-                    cursor: 'pointer',
-                    color: '#475569',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body: Embedded Document Viewer */}
-            <div style={{ flex: 1, backgroundColor: '#0f172a', position: 'relative' }}>
-              <iframe
-                src={`${API_BASE}/documents/${previewDoc.id}/view`}
-                title={previewDoc.original_filename}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  border: 'none',
-                  backgroundColor: '#ffffff',
-                }}
-              />
-            </div>
-
-            {/* Modal Footer */}
-            <div style={{
-              padding: '0.75rem 1.5rem',
-              borderTop: '1px solid #e2e8f0',
-              background: '#f8fafc',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '0.75rem',
-              color: '#64748b',
-            }}>
-              <div>
-                ID: <span style={{ fontFamily: 'monospace', color: '#1e293b' }}>{previewDoc.id}</span>
-                {previewDoc.file_checksum && (
-                  <span style={{ marginLeft: '1rem' }}>
-                    SHA-256: <span style={{ fontFamily: 'monospace' }}>{previewDoc.file_checksum.slice(0, 16)}...</span>
-                  </span>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <a
-                  href={`${API_BASE}/documents/${previewDoc.id}/skr03-csv`}
-                  download
-                  style={{
-                    background: '#f0fdf4',
-                    color: '#15803d',
-                    border: '1px solid #bbf7d0',
-                    padding: '0.35rem 0.75rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    textDecoration: 'none',
-                  }}
-                >
-                  📥 DATEV CSV
-                </a>
-
-                <a
-                  href={`${API_BASE}/documents/${previewDoc.id}/skr03-xlsx`}
-                  download
-                  style={{
-                    background: '#faf5ff',
-                    color: '#7e22ce',
-                    border: '1px solid #e9d5ff',
-                    padding: '0.35rem 0.75rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    textDecoration: 'none',
-                  }}
-                >
-                  📊 Excel XLSX
-                </a>
-
-                <button
-                  type="button"
-                  onClick={() => setPreviewDoc(null)}
-                  style={{
-                    background: '#ffffff',
-                    color: '#0f172a',
-                    border: '1px solid #cbd5e1',
-                    padding: '0.35rem 0.75rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {isDe ? 'Schließen' : 'Close'}
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
