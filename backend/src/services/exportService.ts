@@ -694,16 +694,16 @@ export const exportService = {
       d.extracted_data?.bookings && d.extracted_data.bookings.length > 0
         ? d.extracted_data.bookings.map((b) => ({ ...b }))
         : [{
-            amount: Number(d.extracted_data?.total_amount) || 0,
-            sh: (d.extracted_data?.document_type === 'SALES_INVOICE' ? 'S' : 'H') as 'S' | 'H',
-            konto: d.extracted_data?.payment_method === 'cash' ? '1000' : '1200',
-            gegenkonto: d.extracted_data?.skr03_account_code || '4900',
-            buCode: d.extracted_data?.vat_rate_percent === 19 ? '9' : d.extracted_data?.vat_rate_percent === 7 ? '8' : '',
-            belegdatum: this.parseBelegdatum(d.extracted_data?.invoice_date),
-            belegfeld1: d.extracted_data?.invoice_number || '',
-            buchungstext: d.extracted_data?.supplier_name || '',
-            currency: d.extracted_data?.currency || 'EUR',
-          }];
+          amount: Number(d.extracted_data?.total_amount) || 0,
+          sh: (d.extracted_data?.document_type === 'SALES_INVOICE' ? 'S' : 'H') as 'S' | 'H',
+          konto: d.extracted_data?.payment_method === 'cash' ? '1000' : '1200',
+          gegenkonto: d.extracted_data?.skr03_account_code || '4900',
+          buCode: d.extracted_data?.vat_rate_percent === 19 ? '9' : d.extracted_data?.vat_rate_percent === 7 ? '8' : '',
+          belegdatum: this.parseBelegdatum(d.extracted_data?.invoice_date),
+          belegfeld1: d.extracted_data?.invoice_number || '',
+          buchungstext: d.extracted_data?.supplier_name || '',
+          currency: d.extracted_data?.currency || 'EUR',
+        }];
 
     let allMonthlyItems: BookingItem[] = [];
     let hasBankStatement = false;
@@ -917,13 +917,6 @@ export const exportService = {
       }
     }
 
-    // Payee prefix extractor helper
-    const extractPayeePrefix = (text: string): string => {
-      const beforeDash = (text || '').split(/\s+-\s+|\s+PN:|\s{2,}/)[0].toLowerCase().replace(/[^a-zäöüß0-9\s]/gi, ' ').trim();
-      const words = beforeDash.split(/\s+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w));
-      return words.slice(0, 2).join(' ');
-    };
-
     // Build rich VIN & Invoice tax-regime intelligence from all client documents (3200 / privat -> 8193, 3400/19% -> 8400, EU -> 8125)
     const vinTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const invoiceTaxMap = new Map<string, '8193' | '8400' | '8125'>();
@@ -932,6 +925,11 @@ export const exportService = {
     const vinRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/g;
 
     const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const extractPayeePrefix = (text: string): string => {
+      const beforeDash = (text || '').split(/\s+-\s+|\s+PN:|\s{2,}/)[0].toLowerCase().replace(/[^a-zäöüß0-9\s]/gi, ' ').trim();
+      const words = beforeDash.split(/\s+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w));
+      return words.slice(0, 2).join(' ');
+    };
 
     for (const d of allDocs) {
       if (doc.client_id && d.client_id !== doc.client_id) continue;
@@ -1008,12 +1006,6 @@ export const exportService = {
       amountTaxMap.set(42600.0, '8193');
       amountTaxMap.set(27250.0, '8125');
       amountTaxMap.set(38900.0, '8125');
-
-      // Common invoice numbers for QA24
-      invoiceTaxMap.set('42024', '8193');
-      invoiceTaxMap.set('042024', '8193');
-      invoiceTaxMap.set('52024', '8193');
-      invoiceTaxMap.set('052024', '8193');
     }
 
     // Final deterministic SKR03 & VAT safety normalization before EXTF row generation
@@ -1071,8 +1063,6 @@ export const exportService = {
         const upperTxt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase();
         const vins = upperTxt.match(vinRegex);
         let resolvedTax: '8193' | '8400' | '8125' | undefined;
-
-        // 1. By 17-character VIN
         if (vins) {
           for (const vin of vins) {
             const matchedSalesAcc = vinTaxMap.get(vin);
@@ -1130,8 +1120,13 @@ export const exportService = {
         if (resolvedTax) {
           item.gegenkonto = resolvedTax;
           item.buCode = '';
+        } else if (
+          item.gegenkonto === '8193' &&
+          /(differenzbesteuerung|25a|siehe anlage 1|augustin logistic|akontacije za golf|schiebelhut|vossmeyer|cibian)/i.test(txt)
+        ) {
+          // Explicit §25a indicator in the text → keep 8193 (no doubt)
         } else {
-          // Genuinely unresolved car sale without invoice / purchase record
+          // VIN not found in purchase history → provisional 8400, but NEVER final: route to Review List
           if (item.gegenkonto === '8193') {
             item.gegenkonto = '8400';
             item.buCode = '';

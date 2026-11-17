@@ -37,20 +37,21 @@ export const documentClassifier = {
       filename.includes('bon') ||
       filename.includes('kasse') ||
       filename.includes('quittung') ||
-      filename.includes('barbeleg')
+      filename.includes('barbeleg') ||
+      filename.includes('bankbeleg')
     ) {
       return {
         category: 'RECEIPT',
         confidence: 0.98,
-        reasoning: 'Filename matches cash receipt / handwritten note',
+        reasoning: 'Filename matches cash receipt / Belege bundle',
         detected_language: 'de',
       };
     }
 
     if (
       filename.includes('kontoauszug') ||
-      filename.includes('bankbeleg') ||
-      filename.includes('bank_statement')
+      filename.includes('bank_statement') ||
+      filename.includes('bank statement')
     ) {
       return {
         category: 'BANK_STATEMENT',

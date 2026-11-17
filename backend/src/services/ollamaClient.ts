@@ -47,7 +47,7 @@ export const ollamaClient = {
       stream: false,
       keep_alive: '10m',
       options: {
-        num_predict: 1536,
+        num_predict: 4096,
         temperature: typeof options.temperature === 'number' ? options.temperature : 0.1,
       },
     };
@@ -83,6 +83,7 @@ export const ollamaClient = {
   async generateJson<T = any>(options: OllamaVisionRequest): Promise<T> {
     const raw = await this.generate({ ...options, format: options.format || 'json' });
     let cleaned = raw
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
       .replace(/\s*```$/i, '')
