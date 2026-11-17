@@ -8,7 +8,10 @@ export interface UserRecord {
   email: string;
   name: string;
   role: 'CLIENT' | 'STAFF' | 'ADMIN';
+  client_number?: string;
   is_active: boolean;
+  first_login_done?: boolean;
+  privacy_accepted_at?: string;
   created_at: string;
 }
 
@@ -278,7 +281,7 @@ export const adminService = {
   async listUsers(): Promise<UserRecord[]> {
     await this.initTables();
     const res = await pool.query(
-      'SELECT id, email, name, role, is_active, first_login_done, privacy_accepted_at, created_at FROM users ORDER BY created_at DESC'
+      'SELECT id, email, name, role, client_number, is_active, first_login_done, privacy_accepted_at, created_at FROM users ORDER BY created_at DESC'
     );
     return res.rows;
   },
