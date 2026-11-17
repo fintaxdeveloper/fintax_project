@@ -231,8 +231,9 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ATTENTION' | 'APPROVED'>('ALL');
 
-  // Active Internal Tab inside Client Portal
-  const [activeInternalTab, setActiveInternalTab] = useState<'SUBMISSIONS' | 'TASKS' | 'PAYROLL' | 'VAULT' | 'FORMATION'>('SUBMISSIONS');
+  // Active Internal Tab inside Client Portal ('OVERVIEW' is default dashboard, 'SUBMISSIONS' is dedicated full page for uploaded documents)
+  const [activeInternalTab, setActiveInternalTab] = useState<'OVERVIEW' | 'SUBMISSIONS' | 'TASKS' | 'PAYROLL' | 'VAULT' | 'FORMATION'>('OVERVIEW');
+  const [overviewSubTab, setOverviewSubTab] = useState<'TASKS' | 'PAYROLL' | 'VAULT' | 'FORMATION'>('TASKS');
 
   // Formation Documents state & Actions
   const [editingDoc, setEditingDoc] = useState<DocumentRecord | null>(null);
@@ -860,8 +861,10 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
       openModal('CORRESPONDENCE');
     } else if (externalTab === 'VAULT') {
       setActiveInternalTab('VAULT');
-    } else if (externalTab === 'OVERVIEW' || externalTab === 'DOCS') {
+    } else if (externalTab === 'DOCS') {
       setActiveInternalTab('SUBMISSIONS');
+    } else if (externalTab === 'OVERVIEW') {
+      setActiveInternalTab('OVERVIEW');
     }
   }, [externalTab]);
 
@@ -964,7 +967,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setActiveInternalTab('SUBMISSIONS');
+                  setActiveInternalTab('OVERVIEW');
                   if (onTabChange) onTabChange('OVERVIEW');
                 }}
                 style={{
@@ -1013,7 +1016,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
         )}
 
         {/* ── OVERVIEW HERO & 4 CORE ACTION CARDS (SHOWN ON DASHBOARD/OVERVIEW) ── */}
-        {activeInternalTab !== 'FORMATION' && (
+        {activeInternalTab === 'OVERVIEW' && (
           <>
             {/* Hidden Input for Instant Quick Dropzone */}
             <input
@@ -1194,16 +1197,34 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               marginBottom: 20,
             }}>
               {/* Bento 1: Total Documents */}
-              <div style={{
-                background: '#ffffff',
-                borderRadius: 16,
-                padding: '18px 20px',
-                border: '1.5px solid #e2e8f0',
-                boxShadow: '0 2px 8px rgba(15,23,42,0.03)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}>
+              <div
+                onClick={() => {
+                  setStatusFilter('ALL');
+                  setActiveInternalTab('SUBMISSIONS');
+                }}
+                style={{
+                  background: '#ffffff',
+                  borderRadius: 16,
+                  padding: '18px 20px',
+                  border: '1.5px solid #e2e8f0',
+                  boxShadow: '0 2px 8px rgba(15,23,42,0.03)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  transition: 'all 0.18s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#2563eb';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(37,99,235,0.12)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#e2e8f0';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(15,23,42,0.03)';
+                }}
+              >
                 <div>
                   <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {isDe ? 'Eingereichte Belege' : 'Total Submissions'}
@@ -1211,9 +1232,12 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                   <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.2, marginTop: 4 }}>
                     {stats.total}
                   </div>
-                  <div style={{ marginTop: 6 }}>
+                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0369a1', background: '#e0f2fe', padding: '2px 8px', borderRadius: 6 }}>
                       {isDe ? '100% GoBD-Archiv' : 'GoBD Vault'}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 700 }}>
+                      {isDe ? 'Belege öffnen →' : 'View all →'}
                     </span>
                   </div>
                 </div>
@@ -1233,16 +1257,34 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               </div>
 
               {/* Bento 2: Pending Review */}
-              <div style={{
-                background: '#ffffff',
-                borderRadius: 16,
-                padding: '18px 20px',
-                border: '1.5px solid #fed7aa',
-                boxShadow: '0 2px 8px rgba(245,158,11,0.06)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}>
+              <div
+                onClick={() => {
+                  setStatusFilter('ATTENTION');
+                  setActiveInternalTab('SUBMISSIONS');
+                }}
+                style={{
+                  background: '#ffffff',
+                  borderRadius: 16,
+                  padding: '18px 20px',
+                  border: '1.5px solid #fed7aa',
+                  boxShadow: '0 2px 8px rgba(245,158,11,0.06)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  transition: 'all 0.18s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#d97706';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(217,119,6,0.12)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#fed7aa';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(245,158,11,0.06)';
+                }}
+              >
                 <div>
                   <div style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {isDe ? 'In Kanzlei-Prüfung' : 'Needs Review'}
@@ -1250,9 +1292,12 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                   <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#b45309', lineHeight: 1.2, marginTop: 4 }}>
                     {stats.needsReview}
                   </div>
-                  <div style={{ marginTop: 6 }}>
+                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 6 }}>
                       {isDe ? 'Kanzleiteam prüft' : 'Advisor review'}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: 700 }}>
+                      {isDe ? 'Prüfen →' : 'Review →'}
                     </span>
                   </div>
                 </div>
@@ -1272,16 +1317,34 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               </div>
 
               {/* Bento 3: Approved / Agenda Export */}
-              <div style={{
-                background: '#ffffff',
-                borderRadius: 16,
-                padding: '18px 20px',
-                border: '1.5px solid #bbf7d0',
-                boxShadow: '0 2px 8px rgba(16,185,129,0.06)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}>
+              <div
+                onClick={() => {
+                  setStatusFilter('APPROVED');
+                  setActiveInternalTab('SUBMISSIONS');
+                }}
+                style={{
+                  background: '#ffffff',
+                  borderRadius: 16,
+                  padding: '18px 20px',
+                  border: '1.5px solid #bbf7d0',
+                  boxShadow: '0 2px 8px rgba(16,185,129,0.06)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  transition: 'all 0.18s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#059669';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(5,150,105,0.12)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#bbf7d0';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(16,185,129,0.06)';
+                }}
+              >
                 <div>
                   <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {isDe ? 'Freigegeben für Agenda' : 'Agenda / DATEV Ready'}
@@ -1289,9 +1352,12 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                   <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#047857', lineHeight: 1.2, marginTop: 4 }}>
                     {stats.approved}
                   </div>
-                  <div style={{ marginTop: 6 }}>
+                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: 6 }}>
                       {isDe ? 'SKR03 CSV generiert' : 'EXTF CSV Ready'}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 700 }}>
+                      {isDe ? 'Öffnen →' : 'View →'}
                     </span>
                   </div>
                 </div>
@@ -1687,122 +1753,606 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 </div>
               </div>
             </div>
-          </>
-        )}
 
-        {/* ── 3. BOTTOM SECTION: TABS & SUBMISSIONS / VAULT / PAYROLL ── */}
-        <div style={{
-          background: '#ffffff',
-          borderRadius: 18,
-          border: '1px solid #e2e8f0',
-          padding: '24px 28px',
-          boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
-        }}>
-          {/* Sub Navigation Tabs */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid #f1f5f9',
-            paddingBottom: 16,
-            marginBottom: 20,
-            flexWrap: 'wrap',
-            gap: 12,
-          }}>
+            {/* ── 3. BOTTOM SECTION ON DASHBOARD: GOBD VAULT SUMMARY & MODULE TABS ── */}
             <div style={{
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-              background: '#f8fafc',
-              padding: 4,
-              borderRadius: 12,
-              border: '1px solid #e2e8f0',
+              background: '#ffffff',
+              borderRadius: 18,
+              border: '1.5px solid #e2e8f0',
+              padding: '24px 28px',
+              boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
+              marginTop: 4,
             }}>
-              {[
-                { key: 'SUBMISSIONS', icon: FileText, label: isDe ? 'Meine Einreichungen' : 'My Submissions & Status', count: userDocs.length },
-                { key: 'FORMATION', icon: Building2, label: isDe ? 'Gründungsunterlagen' : 'Formation Documents', count: formationDocs.length },
-                { key: 'TASKS', icon: Calendar, label: isDe ? 'Monatliche Aufgaben' : 'Monthly Tasks', count: tasks.filter((t) => !t.done).length },
-                { key: 'PAYROLL', icon: Users, label: isDe ? 'Lohn & Personal' : 'Payroll & Team', count: submissions.length + payslips.length },
-                { key: 'VAULT', icon: FolderTree, label: isDe ? 'Kanzlei-Archiv (00-03)' : 'Folder Vault (00-03)' },
-              ].map((tab) => {
-                const isActive = activeInternalTab === tab.key;
-                const Icon = tab.icon;
-                return (
+              {/* GoBD Vault High-Visibility Summary Banner */}
+              <div style={{
+                background: 'linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%)',
+                border: '1.5px solid #bfdbfe',
+                borderRadius: 14,
+                padding: '20px 24px',
+                marginBottom: 22,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 16,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 12,
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 14px rgba(37,99,235,0.25)',
+                    flexShrink: 0,
+                  }}>
+                    <FileText size={24} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>
+                        {isDe ? 'Eingereichte Belege & GoBD-Archiv' : 'Submitted Documents & GoBD Vault'}
+                      </h3>
+                      <span style={{
+                        background: '#dbeafe',
+                        color: '#1d4ed8',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                      }}>
+                        {userDocs.length} {isDe ? 'Belege gespeichert' : 'Documents Stored'}
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: '#475569' }}>
+                      {isDe
+                        ? `${userDocs.length} Belege revisionssicher gespeichert • ${stats.needsReview} in Kanzleiprüfung • ${stats.approved} DATEV-freigegeben`
+                        : `${userDocs.length} documents stored in GoBD vault • ${stats.needsReview} pending advisor review • ${stats.approved} DATEV ready`}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter('ALL');
+                    setActiveInternalTab('SUBMISSIONS');
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 10,
+                    padding: '11px 22px',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 18px rgba(37,99,235,0.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 14px rgba(37,99,235,0.3)';
+                  }}
+                >
+                  <FileText size={16} />
+                  <span>{isDe ? `Alle Belege ansehen (${userDocs.length})` : `View Uploaded Documents (${userDocs.length})`}</span>
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              {/* Module Sub-tabs Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderBottom: '1px solid #f1f5f9',
+                paddingBottom: 16,
+                marginBottom: 20,
+                flexWrap: 'wrap',
+                gap: 12,
+              }}>
+                <div style={{
+                  display: 'flex',
+                  gap: 6,
+                  flexWrap: 'wrap',
+                  background: '#f8fafc',
+                  padding: 4,
+                  borderRadius: 12,
+                  border: '1px solid #e2e8f0',
+                }}>
+                  {[
+                    { key: 'TASKS', icon: Calendar, label: isDe ? 'Monatliche Aufgaben' : 'Monthly Tasks', count: tasks.filter((t) => !t.done).length },
+                    { key: 'PAYROLL', icon: Users, label: isDe ? 'Lohn & Personal' : 'Payroll & Team', count: submissions.length + payslips.length },
+                    { key: 'VAULT', icon: FolderTree, label: isDe ? 'Kanzlei-Archiv (00-03)' : 'Folder Vault (00-03)' },
+                    { key: 'FORMATION', icon: Building2, label: isDe ? 'Gründungsunterlagen' : 'Formation Documents', count: formationDocs.length },
+                  ].map((tab) => {
+                    const isActive = overviewSubTab === tab.key;
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setOverviewSubTab(tab.key as any)}
+                        style={{
+                          background: isActive ? '#2563eb' : 'transparent',
+                          color: isActive ? '#ffffff' : '#64748b',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '8px 16px',
+                          fontSize: '0.84rem',
+                          fontWeight: isActive ? 700 : 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          transition: 'all 0.18s ease',
+                          boxShadow: isActive ? '0 2px 8px rgba(37,99,235,0.25)' : 'none',
+                        }}
+                      >
+                        <Icon size={15} />
+                        <span>{tab.label}</span>
+                        {tab.count !== undefined && (
+                          <span style={{
+                            background: isActive ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+                            color: isActive ? '#ffffff' : '#475569',
+                            padding: '1px 7px',
+                            borderRadius: 999,
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                          }}>
+                            {tab.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button
-                    key={tab.key}
-                    onClick={() => setActiveInternalTab(tab.key as any)}
+                    onClick={() => openModal('ACCOUNTING')}
                     style={{
-                      background: isActive ? '#2563eb' : 'transparent',
-                      color: isActive ? '#ffffff' : '#64748b',
-                      border: 'none',
-                      borderRadius: 8,
+                      background: '#f8fafc',
+                      color: '#0f172a',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 10,
                       padding: '8px 16px',
-                      fontSize: '0.84rem',
-                      fontWeight: isActive ? 700 : 600,
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
                       cursor: 'pointer',
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 8,
-                      transition: 'all 0.18s ease',
-                      boxShadow: isActive ? '0 2px 8px rgba(37,99,235,0.25)' : 'none',
+                      transition: 'all 0.15s ease',
                     }}
                   >
-                    <Icon size={15} />
-                    <span>{tab.label}</span>
-                    {tab.count !== undefined && (
-                      <span style={{
-                        background: isActive ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
-                        color: isActive ? '#ffffff' : '#475569',
-                        padding: '1px 7px',
-                        borderRadius: 999,
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                      }}>
-                        {tab.count}
-                      </span>
-                    )}
+                    <UploadCloud size={16} />
+                    {isDe ? 'Datei hochladen' : 'Upload Document'}
                   </button>
-                );
-              })}
-            </div>
+                </div>
+              </div>
 
-            {/* Quick Upload Action */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button
-                onClick={() => openModal('ACCOUNTING')}
-                style={{
-                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '9px 18px',
+              {/* Sub-Tab Content: Tasks */}
+              {overviewSubTab === 'TASKS' && (
+                <div>
+                  <div style={{ marginBottom: 16 }}>
+                    <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 700, color: '#0b1a30' }}>
+                      {isDe ? 'Monatliche Kanzlei-Anforderungen' : 'Monthly Advisor Requests & Deadlines'}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+                      {isDe ? 'Bitte erledigen Sie diese offenen Punkte rechtzeitig vor dem Monatsabschluss.' : 'Please resolve pending items before monthly book closing.'}
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {tasks.map((task) => (
+                      <div
+                        key={task.id}
+                        onClick={() => toggleTask(task.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '14px 18px',
+                          borderRadius: 10,
+                          border: '1px solid',
+                          borderColor: task.done ? '#e2e8f0' : '#fed7aa',
+                          background: task.done ? '#f8fafc' : '#fffaf5',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={task.done}
+                            onChange={() => {}}
+                            style={{ width: 18, height: 18, accentColor: '#2563eb', cursor: 'pointer' }}
+                          />
+                          <div>
+                            <div style={{
+                              fontWeight: 700,
+                              fontSize: '0.92rem',
+                              color: task.done ? '#94a3b8' : '#0f172a',
+                              textDecoration: task.done ? 'line-through' : 'none',
+                            }}>
+                              {task.title}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
+                              {isDe ? 'Fällig bis:' : 'Due date:'} {task.due} · {task.category}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            padding: '4px 10px',
+                            borderRadius: 999,
+                            background: task.done ? '#dcfce7' : '#fef3c7',
+                            color: task.done ? '#15803d' : '#b45309',
+                          }}>
+                            {task.done ? (isDe ? '✓ Erledigt' : '✓ Completed') : (isDe ? 'Ausstehend' : 'Pending')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-Tab Content: Payroll */}
+              {overviewSubTab === 'PAYROLL' && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 700, color: '#0b1a30' }}>
+                        {isDe ? 'Lohnabrechnungen & Mitarbeiter-Daten' : 'Monthly Payslips & Team Submissions'}
+                      </h3>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+                        {isDe ? 'Verwalten Sie Stundennachweise, Krankmeldungen und fertige Gehaltsabrechnungen.' : 'Access payroll submissions, timesheets, and issued payslips archive.'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => openModal('PAYROLL')}
+                      style={{
+                        background: '#0284c7',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 16px',
+                        fontSize: '0.8125rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      + {isDe ? 'Lohnunterlagen einreichen' : 'Submit Payroll Docs'}
+                    </button>
+                  </div>
+
+                  {payslips.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '36px 20px', color: '#64748b', background: '#f8fafc', borderRadius: 10 }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        {isDe ? 'Noch keine Gehaltsabrechnungen für diesen Zeitraum vorhanden.' : 'No issued payslips published yet for this period.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {payslips.map((p) => (
+                        <div
+                          key={p.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '14px 18px',
+                            background: '#f8fafc',
+                            borderRadius: 10,
+                            border: '1px solid #e2e8f0',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.92rem' }}>
+                              {p.employee_name} — {p.period}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 3 }}>
+                              {isDe ? 'Nettogehalt' : 'Net Salary'}: <strong style={{ color: '#0f172a' }}>{p.net_salary} €</strong> ({isDe ? 'Brutto' : 'Gross'}: {p.gross_salary} €)
+                            </div>
+                          </div>
+                          <span style={{
+                            background: '#dcfce7',
+                            color: '#15803d',
+                            fontWeight: 700,
+                            fontSize: '0.75rem',
+                            padding: '4px 10px',
+                            borderRadius: 999,
+                          }}>
+                            ✓ {isDe ? 'Bereitgestellt' : 'Published'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-Tab Content: Vault Explorer */}
+              {overviewSubTab === 'VAULT' && (
+                <div>
+                  <div style={{ marginBottom: 16 }}>
+                    <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 700, color: '#0b1a30' }}>
+                      {isDe ? 'Shared with me > _INBOX > 01_Clients' : 'Shared with me > _INBOX > 01_Clients'}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+                      {isDe
+                        ? '00_Correspondence - Schriftverkehr • 01_Financial Accounting – FiBu (Jahr / Monat / PDF & 00_CSV) • 02_Payrol - Lohn'
+                        : '00_Correspondence - Schriftverkehr • 01_Financial Accounting – FiBu (Year / Month / PDF & 00_CSV) • 02_Payrol - Lohn'}
+                    </p>
+                  </div>
+                  <FileExplorer clientId={user?.name || user?.id || 'user_client_1'} lang={lang} />
+                </div>
+              )}
+
+              {/* Sub-Tab Content: Formation Quick Hub */}
+              {overviewSubTab === 'FORMATION' && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 700, color: '#0b1a30' }}>
+                        {isDe ? 'Gründungsunterlagen & Stammdaten (00_Stammdaten)' : 'Formation Documents & Master Data'}
+                      </h3>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+                        {isDe
+                          ? `${formationDocs.length} Stammdaten-Dokumente gespeichert (Gewerbe, Handelsregister, Gesellschafterliste).`
+                          : `${formationDocs.length} master records registered (Trade registry, Articles, ID).`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveInternalTab('FORMATION')}
+                      style={{
+                        background: '#4f46e5',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 16px',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <span>{isDe ? 'Vollständige Gründungsakten öffnen' : 'Open Full Master Records'}</span>
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── DEDICATED FULL-PAGE VIEW: SUBMISSIONS & UPLOADED DOCUMENTS ── */}
+        {activeInternalTab === 'SUBMISSIONS' && (
+          <div>
+            {/* Top Breadcrumb Bar */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+              flexWrap: 'wrap',
+              gap: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveInternalTab('OVERVIEW');
+                    if (onTabChange) onTabChange('OVERVIEW');
+                  }}
+                  style={{
+                    background: '#ffffff',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '8px 16px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#2563eb'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                >
+                  ← {isDe ? 'Zurück zur Übersicht' : 'Back to Dashboard'}
+                </button>
+                <span style={{ color: '#cbd5e1' }}>/</span>
+                <span style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.95rem' }}>
+                  {isDe ? 'Eingereichte Belege & GoBD-Archiv' : 'Uploaded Documents & Submissions Vault'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{
                   fontSize: '0.82rem',
+                  color: '#475569',
+                  background: '#ffffff',
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: '1px solid #e2e8f0',
+                  fontWeight: 600,
+                }}>
+                  {user?.name || 'Mansoor'} • Mandanten-Nr: <strong style={{ color: '#0f172a' }}>{user?.clientNumber || (user?.id ? user.id.slice(-8) : 'JJ-50012')}</strong>
+                </span>
+                <span style={{
+                  background: '#ecfdf5',
+                  color: '#059669',
+                  border: '1px solid #a7f3d0',
+                  borderRadius: 999,
+                  fontSize: '0.75rem',
                   fontWeight: 700,
-                  cursor: 'pointer',
+                  padding: '4px 12px',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 8,
-                  boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+                  gap: 4,
+                }}>
+                  <ShieldCheck size={14} color="#059669" />
+                  {isDe ? '100% GoBD Revisionssicher' : '100% GoBD Audit-Proof'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openModal('ACCOUNTING')}
+                  style={{
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 10,
+                    padding: '8px 18px',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+                  }}
+                >
+                  <UploadCloud size={16} />
+                  <span>{isDe ? '+ Belege hochladen' : '+ Upload Documents'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 3 Interactive KPI Filter Cards Row */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 16,
+              marginBottom: 20,
+            }}>
+              {/* Card 1: All Submissions */}
+              <div
+                onClick={() => setStatusFilter('ALL')}
+                style={{
+                  background: '#ffffff',
+                  borderRadius: 16,
+                  padding: '16px 20px',
+                  border: statusFilter === 'ALL' ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
+                  boxShadow: statusFilter === 'ALL' ? '0 8px 24px rgba(37,99,235,0.12)' : '0 2px 8px rgba(15,23,42,0.03)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   transition: 'all 0.15s ease',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,0.35)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(37,99,235,0.25)';
+              >
+                <div>
+                  <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                    {isDe ? 'Alle Belege' : 'All Submissions'}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                    {userDocs.length}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 700, marginTop: 4 }}>
+                    {isDe ? 'Vollständiges Mandanten-Archiv' : 'Full client vault'}
+                  </div>
+                </div>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileText size={22} />
+                </div>
+              </div>
+
+              {/* Card 2: Needs Review */}
+              <div
+                onClick={() => setStatusFilter('ATTENTION')}
+                style={{
+                  background: '#ffffff',
+                  borderRadius: 16,
+                  padding: '16px 20px',
+                  border: statusFilter === 'ATTENTION' ? '2px solid #f59e0b' : '1.5px solid #e2e8f0',
+                  boxShadow: statusFilter === 'ATTENTION' ? '0 8px 24px rgba(245,158,11,0.15)' : '0 2px 8px rgba(15,23,42,0.03)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                <UploadCloud size={16} />
-                {isDe ? 'Datei hochladen' : 'Upload Document'}
-              </button>
-            </div>
-          </div>
+                <div>
+                  <div style={{ fontSize: '0.76rem', color: '#b45309', fontWeight: 700, textTransform: 'uppercase' }}>
+                    {isDe ? 'In Prüfung / Ausstehend' : 'Needs Review'}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#b45309', marginTop: 2 }}>
+                    {stats.needsReview}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: 700, marginTop: 4 }}>
+                    {isDe ? 'Kanzleiprüfung erforderlich' : 'Advisor review pending'}
+                  </div>
+                </div>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: '#fffbeb', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Clock size={22} />
+                </div>
+              </div>
 
-          {/* ── TAB CONTENT 1: SUBMISSIONS TABLE WITH SEARCH & STATUS FILTER ── */}
-          {activeInternalTab === 'SUBMISSIONS' && (
-            <div>
+              {/* Card 3: Approved / DATEV Ready */}
+              <div
+                onClick={() => setStatusFilter('APPROVED')}
+                style={{
+                  background: '#ffffff',
+                  borderRadius: 16,
+                  padding: '16px 20px',
+                  border: statusFilter === 'APPROVED' ? '2px solid #10b981' : '1.5px solid #e2e8f0',
+                  boxShadow: statusFilter === 'APPROVED' ? '0 8px 24px rgba(16,185,129,0.15)' : '0 2px 8px rgba(15,23,42,0.03)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.76rem', color: '#047857', fontWeight: 700, textTransform: 'uppercase' }}>
+                    {isDe ? 'Agenda / DATEV Bereit' : 'Agenda / DATEV Ready'}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#047857', marginTop: 2 }}>
+                    {stats.approved}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 700, marginTop: 4 }}>
+                    {isDe ? 'EXTF CSV freigegeben' : 'EXTF CSV Ready'}
+                  </div>
+                </div>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: '#ecfdf5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckCircle2 size={22} />
+                </div>
+              </div>
+            </div>
+
+            {/* Document Table Card Container */}
+            <div style={{
+              background: '#ffffff',
+              borderRadius: 18,
+              border: '1px solid #e2e8f0',
+              padding: '24px 28px',
+              boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
+            }}>
               {/* Search & Filter Bar */}
               <div style={{
                 display: 'flex',
@@ -2233,11 +2783,58 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ── TAB CONTENT 2: MONTHLY TASKS CHECKLIST ── */}
-          {activeInternalTab === 'TASKS' && (
-            <div>
+        {/* ── TAB CONTENT 2: MONTHLY TASKS CHECKLIST (DEDICATED VIEW) ── */}
+        {activeInternalTab === 'TASKS' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+              flexWrap: 'wrap',
+              gap: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveInternalTab('OVERVIEW');
+                    if (onTabChange) onTabChange('OVERVIEW');
+                  }}
+                  style={{
+                    background: '#ffffff',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '8px 16px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+                  }}
+                >
+                  ← {isDe ? 'Zurück zur Übersicht' : 'Back to Dashboard'}
+                </button>
+                <span style={{ color: '#cbd5e1' }}>/</span>
+                <span style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.95rem' }}>
+                  {isDe ? 'Monatliche Kanzlei-Anforderungen' : 'Monthly Tasks & Deadlines'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              background: '#ffffff',
+              borderRadius: 18,
+              border: '1px solid #e2e8f0',
+              padding: '24px 28px',
+              boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
+            }}>
               <div style={{ marginBottom: 16 }}>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 700, color: '#0b1a30' }}>
                   {isDe ? 'Monatliche Kanzlei-Anforderungen' : 'Monthly Advisor Requests & Deadlines'}
@@ -2303,11 +2900,58 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 ))}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ── TAB CONTENT 3: PAYROLL & PAYSLIPS ── */}
-          {activeInternalTab === 'PAYROLL' && (
-            <div>
+        {/* ── TAB CONTENT 3: PAYROLL & PAYSLIPS (DEDICATED VIEW) ── */}
+        {activeInternalTab === 'PAYROLL' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+              flexWrap: 'wrap',
+              gap: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveInternalTab('OVERVIEW');
+                    if (onTabChange) onTabChange('OVERVIEW');
+                  }}
+                  style={{
+                    background: '#ffffff',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '8px 16px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+                  }}
+                >
+                  ← {isDe ? 'Zurück zur Übersicht' : 'Back to Dashboard'}
+                </button>
+                <span style={{ color: '#cbd5e1' }}>/</span>
+                <span style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.95rem' }}>
+                  {isDe ? 'Lohnabrechnungen & Mitarbeiter-Daten' : 'Monthly Payslips & Team Submissions'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              background: '#ffffff',
+              borderRadius: 18,
+              border: '1px solid #e2e8f0',
+              padding: '24px 28px',
+              boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
                 <div>
                   <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 700, color: '#0b1a30' }}>
@@ -2378,11 +3022,58 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ── TAB CONTENT 4: FILE EXPLORER ── */}
-          {activeInternalTab === 'VAULT' && (
-            <div>
+        {/* ── TAB CONTENT 4: FILE EXPLORER (DEDICATED VIEW) ── */}
+        {activeInternalTab === 'VAULT' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+              flexWrap: 'wrap',
+              gap: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveInternalTab('OVERVIEW');
+                    if (onTabChange) onTabChange('OVERVIEW');
+                  }}
+                  style={{
+                    background: '#ffffff',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '8px 16px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+                  }}
+                >
+                  ← {isDe ? 'Zurück zur Übersicht' : 'Back to Dashboard'}
+                </button>
+                <span style={{ color: '#cbd5e1' }}>/</span>
+                <span style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.95rem' }}>
+                  {isDe ? 'Kanzlei-Archiv (00-03 Struktur)' : 'Client Vault (00-03 Structure)'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              background: '#ffffff',
+              borderRadius: 18,
+              border: '1px solid #e2e8f0',
+              padding: '24px 28px',
+              boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
+            }}>
               <div style={{ marginBottom: 16 }}>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 700, color: '#0b1a30' }}>
                   {isDe ? 'Shared with me > _INBOX > 01_Clients' : 'Shared with me > _INBOX > 01_Clients'}
@@ -2395,12 +3086,19 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               </div>
               <FileExplorer clientId={user?.name || user?.id || 'user_client_1'} lang={lang} />
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ── TAB CONTENT 5: FORMATION DOCUMENTS MANAGEMENT ── */}
-          {activeInternalTab === 'FORMATION' && (
-            <div>
-              {/* Header Banner */}
+        {/* ── TAB CONTENT 5: FORMATION DOCUMENTS MANAGEMENT (DEDICATED VIEW) ── */}
+        {activeInternalTab === 'FORMATION' && (
+          <div style={{
+            background: '#ffffff',
+            borderRadius: 18,
+            border: '1px solid #e2e8f0',
+            padding: '24px 28px',
+            boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.04)',
+          }}>
+            {/* Header Banner */}
               <div
                 style={{
                   background: 'linear-gradient(135deg, #0b1a30 0%, #1e293b 100%)',
@@ -3256,8 +3954,6 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               </div>
             </div>
           )}
-
-        </div>
 
       </div>
 
