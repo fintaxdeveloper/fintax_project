@@ -148,7 +148,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
     try {
       const url = docId
         ? `${API_BASE}/documents/${docId}/review-report`
-        : `${API_BASE}/review-report?client_id=${encodeURIComponent(user?.id || 'user_client_1')}&year=${selectedYear}&month=8`;
+        : `${API_BASE}/review-report?client_id=${encodeURIComponent(user?.id || 'user_client_1')}&year=${selectedYear}&month=${selectedMonth}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(isDe ? 'Prüfbericht konnte nicht geladen werden.' : 'Could not load review report.');
       const data = await res.json();

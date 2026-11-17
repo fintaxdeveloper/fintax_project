@@ -28,13 +28,48 @@ import { monthlyDocumentRegistry } from './services/monthlyDocumentRegistry.js';
 import { reviewService, ReviewReport, ReviewAction } from './services/reviewService.js';
 import { aiCacheService } from './services/aiCacheService.js';
 import { skr03Mapper } from './services/skr03Mapper.js';
-import { DocumentRecord, ExtractedInvoiceData } from './types/document.js';
+import { DocumentRecord, ExtractedInvoiceData, BookingItem } from './types/document.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: '*' }));
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+].filter(Boolean) as string[];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS policy blocked origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
+
+// Global JWT Protection: every /api route requires authentication except login/OTP/health
+const PUBLIC_API_PATHS = new Set(['/health', '/auth/login', '/auth/verify-otp', '/auth/resend-otp']);
+app.use('/api', (req: AuthenticatedRequest, res, next) => {
+  if (PUBLIC_API_PATHS.has(req.path)) return next();
+  return requireAuth(req, res, next);
+});
+
+// Admin RBAC Guard: all /api/admin/* endpoints require ADMIN role
+app.use('/api/admin', requireRole('ADMIN'));
+
+// Client-isolation helper: CLIENT role may only read/modify its own client_id data
+const canAccessClient = (req: AuthenticatedRequest, targetClientId?: string | null): boolean => {
+  if (!req.user) return false;
+  if (req.user.role === 'ADMIN' || req.user.role === 'STAFF') return true;
+  if (!targetClientId) return false;
+  return targetClientId === req.user.id;
+};
 
 // Ensure storage directories exist
 const vaultDir = path.resolve(process.cwd(), '../storage/vault');
@@ -342,7 +377,12 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
     }
 
     const { originalname, filename, path: tempFilePath, mimetype, size } = req.file;
-    const clientId = (req.body.client_id || 'user_client_1').trim();
+    const authReq = req as AuthenticatedRequest;
+    const requestedClientId = (req.body.client_id || '').trim();
+    if (authReq.user?.role === 'CLIENT' && requestedClientId && requestedClientId !== authReq.user.id) {
+      return res.status(403).json({ error: 'Zugriff verweigert: fremde Mandanten-ID.' });
+    }
+    const clientId = authReq.user?.role === 'CLIENT' ? authReq.user.id : (requestedClientId || 'user_client_1');
     const category = (req.body.category || '01_FiBu') as any;
     const notes = req.body.notes || '';
     let subTypes: string[] = [];
@@ -500,34 +540,29 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       if (cachedAi) {
         console.log(`[AI Cache] ⚡ Cache HIT for "${originalname}" — reusing previous AI extraction (no GPU scan needed).`);
       }
-      const extracted = cachedAi ? cachedAi.extracted : await aiService.processInvoice(storedPath, mimetype);
 
-      // Only run fallback bankStatementService Ollama extraction if deterministic parser returned <= 1 booking
+      let extracted: ExtractedInvoiceData;
       let bankStmtResult: any = null;
-      if (!cachedAi && classification.category === 'BANK_STATEMENT' && (!extracted.bookings || extracted.bookings.length <= 1)) {
+
+      if (cachedAi) {
+        extracted = cachedAi.extracted;
+      } else if (classification.category === 'BANK_STATEMENT') {
+        console.log(`[Fast-Track] Direct bank statement processing for "${originalname}" via bankStatementService...`);
         try {
           bankStmtResult = await bankStatementService.processBankStatement(storedPath, mimetype, docId);
         } catch (bsErr) {
-          console.warn('[Upload] Bank statement reconciliation check notice:', bsErr);
+          console.warn('[Upload] Bank statement processing error:', bsErr);
         }
-      }
 
-      // If bankStatementService extracted multiple transactions and processInvoice only had a single fallback booking, enrich extracted with bank statement SKR03 bookings
-      if (
-        bankStmtResult &&
-        Array.isArray(bankStmtResult.transactions) &&
-        bankStmtResult.transactions.length > 0 &&
-        (!extracted.bookings || extracted.bookings.length <= 1)
-      ) {
-        const stmtYear = bankStmtResult.period_year || 2026;
-        const stmtMonth = String(bankStmtResult.period_month || 1).padStart(2, '0');
-        const txBookings = bankStmtResult.transactions
+        const stmtYear = bankStmtResult?.period_year || 2024;
+        const stmtMonth = String(bankStmtResult?.period_month || 1).padStart(2, '0');
+        const txBookings = ((bankStmtResult?.transactions || []) as any[])
           .map((tx: any) => {
             const amt = Number(tx.credit || tx.debit || 0);
             if (amt <= 0) return null;
             const isCredit = Number(tx.credit || 0) > 0;
-            const desc = String(tx.description || bankStmtResult.bank_name || 'Bankbuchung').trim();
-            const suggested = skr03Mapper.suggestAccount(bankStmtResult.bank_name || 'Bank', desc, 19);
+            const desc = String(tx.description || bankStmtResult?.bank_name || 'Bankbuchung').trim();
+            const suggested = skr03Mapper.suggestAccount(bankStmtResult?.bank_name || 'Bank', desc, 19);
             const txDateParts = String(tx.date || `${stmtYear}-${stmtMonth}-28`).split('-');
             const bd = txDateParts.length === 3 ? `${txDateParts[2]}${txDateParts[1]}` : `28${stmtMonth}`;
             return {
@@ -539,23 +574,30 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
               belegdatum: bd,
               belegfeld1: `BANK-${stmtYear}-${stmtMonth}`,
               buchungstext: desc.slice(0, 60),
-              currency: bankStmtResult.currency || 'EUR',
+              currency: bankStmtResult?.currency || 'EUR',
             };
           })
-          .filter(Boolean);
+          .filter(Boolean) as BookingItem[];
 
-        if (txBookings.length > 0) {
-          extracted.bookings = txBookings;
-          extracted.skr03_account_code = '1200';
-          extracted.supplier_name = `${bankStmtResult.bank_name || 'Bank'} Kontoauszug (${bankStmtResult.statement_period || `${stmtMonth}/${stmtYear}`})`;
-          extracted.invoice_date = `${stmtYear}-${stmtMonth}-28`;
-          const totalSum = txBookings.reduce((s: number, b: any) => s + b.amount, 0);
-          if (totalSum > 0) {
-            extracted.total_amount = parseFloat(totalSum.toFixed(2));
-            extracted.net_amount = parseFloat((totalSum / 1.19).toFixed(2));
-            extracted.vat_amount = parseFloat((totalSum - extracted.net_amount).toFixed(2));
-          }
-        }
+        const totalSum = txBookings.reduce((s: number, b: any) => s + b.amount, 0);
+        extracted = {
+          document_type: 'BANK_STATEMENT',
+          supplier_name: `${bankStmtResult?.bank_name || 'Bank'} Kontoauszug (${bankStmtResult?.statement_period || `${stmtMonth}/${stmtYear}`})`,
+          supplier_tax_id: '',
+          invoice_number: bankStmtResult?.account_number || '',
+          invoice_date: `${stmtYear}-${stmtMonth}-28`,
+          currency: 'EUR',
+          net_amount: parseFloat((totalSum / 1.19).toFixed(2)),
+          vat_rate_percent: 19,
+          vat_amount: parseFloat((totalSum - totalSum / 1.19).toFixed(2)),
+          total_amount: parseFloat(totalSum.toFixed(2)),
+          confidence_score: 0.99,
+          skr03_account_code: '1200',
+          bookings: txBookings,
+        };
+        aiCacheService.set(checksum, originalname, extracted, []);
+      } else {
+        extracted = await aiService.processInvoice(storedPath, mimetype);
       }
 
       // Ensure booking month (DDMM e.g. 3006 -> Month 06 June) refines invoice_date if needed
@@ -917,9 +959,12 @@ app.get('/api/storage/inbox-tree', async (req, res) => {
 });
 
 // GET /api/storage/clients/:clientId/tree - Return folder tree for client
-app.get('/api/storage/clients/:clientId/tree', async (req, res) => {
+app.get('/api/storage/clients/:clientId/tree', async (req: AuthenticatedRequest, res) => {
   try {
-    const clientId = req.params.clientId;
+    const clientId = String(req.params.clientId);
+    if (!canAccessClient(req, clientId)) {
+      return res.status(403).json({ error: 'Zugriff verweigert (Client isolation).' });
+    }
     if (clientId.startsWith('user_')) {
       const uRes = await pool.query('SELECT name, client_number FROM users WHERE id = $1 LIMIT 1', [clientId]).catch(() => null);
       if (uRes && uRes.rows.length > 0 && uRes.rows[0].name) {
@@ -938,11 +983,17 @@ app.get('/api/storage/clients/:clientId/tree', async (req, res) => {
 });
 
 // GET /api/storage/download - Serve/download any file inside storage/vault (PDF, Image, CSV, XLSX)
-app.get('/api/storage/download', (req, res) => {
+app.get('/api/storage/download', (req: AuthenticatedRequest, res) => {
   try {
     const relPath = String(req.query.relPath || '').trim();
     if (!relPath) {
       return res.status(400).json({ error: 'relPath query parameter is required.' });
+    }
+    if (req.user?.role === 'CLIENT') {
+      const ownFolder = clientFolderService.resolveClientFolderName(req.user.id);
+      if (!ownFolder || !relPath.replace(/\\/g, '/').includes(ownFolder)) {
+        return res.status(403).json({ error: 'Zugriff verweigert: fremder Mandantenordner.' });
+      }
     }
     const vaultRoot = clientFolderService.getVaultRootDir();
     const targetPath = path.resolve(vaultRoot, relPath);
@@ -967,31 +1018,44 @@ app.get('/api/storage/download', (req, res) => {
   }
 });
 
-// 3. List all documents (supports ?client_id=<id> filtering)
-app.get('/api/documents', (req, res) => {
+// 3. List all documents (supports ?client_id=<id> filtering; CLIENT sees only own docs)
+app.get('/api/documents', (req: AuthenticatedRequest, res) => {
   let docs = dbService.getAll();
-  const clientId = req.query.client_id as string | undefined;
-  if (clientId) {
-    docs = docs.filter((d) => d.client_id === clientId || (!d.client_id && clientId === 'user_client_1'));
+  const reqClientId = req.query.client_id as string | undefined;
+  if (req.user?.role === 'CLIENT') {
+    if (reqClientId && reqClientId !== req.user.id) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
+    }
+    docs = docs.filter((d) => d.client_id === req.user!.id);
+    return res.json(docs);
+  }
+  if (reqClientId) {
+    docs = docs.filter((d) => d.client_id === reqClientId || (!d.client_id && reqClientId === 'user_client_1'));
   }
   res.json(docs);
 });
 
 // 4. Get single document details
-app.get('/api/documents/:id', (req, res) => {
-  const doc = dbService.getById(req.params.id);
+app.get('/api/documents/:id', (req: AuthenticatedRequest, res) => {
+  const doc = dbService.getById(String(req.params.id));
   if (!doc) {
     return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+  }
+  if (!canAccessClient(req, doc.client_id || 'user_client_1')) {
+    return res.status(403).json({ error: 'Zugriff verweigert.' });
   }
   res.json(doc);
 });
 
 // 4b. Download / Serve SKR03 EXTF CSV for a single document
-app.get('/api/documents/:id/skr03-csv', (req, res) => {
+app.get('/api/documents/:id/skr03-csv', (req: AuthenticatedRequest, res) => {
   try {
-    const doc = dbService.getById(req.params.id);
+    const doc = dbService.getById(String(req.params.id));
     if (!doc) {
       return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+    }
+    if (!canAccessClient(req, doc.client_id || 'user_client_1')) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
     }
 
     const regMatch = monthlyDocumentRegistry.match(doc.original_filename, doc.size_bytes);
@@ -1023,11 +1087,14 @@ app.get('/api/documents/:id/skr03-csv', (req, res) => {
 });
 
 // 4c. Download / Serve SKR03 Excel Workbook (.xlsx) with clean columns & formatting
-app.get('/api/documents/:id/skr03-xlsx', (req, res) => {
+app.get('/api/documents/:id/skr03-xlsx', (req: AuthenticatedRequest, res) => {
   try {
-    const doc = dbService.getById(req.params.id);
+    const doc = dbService.getById(String(req.params.id));
     if (!doc) {
       return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+    }
+    if (!canAccessClient(req, doc.client_id || 'user_client_1')) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
     }
 
     const regMatch = monthlyDocumentRegistry.match(doc.original_filename, doc.size_bytes);
@@ -1106,11 +1173,14 @@ const buildReviewReportForScope = (clientId: string, year: number, monthNum: num
 };
 
 // 4d. Get Review Report for a specific document (or its month)
-app.get('/api/documents/:id/review-report', (req, res) => {
+app.get('/api/documents/:id/review-report', (req: AuthenticatedRequest, res) => {
   try {
-    const doc = dbService.getById(req.params.id);
+    const doc = dbService.getById(String(req.params.id));
     if (!doc) {
       return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+    }
+    if (!canAccessClient(req, doc.client_id || 'user_client_1')) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
     }
     const { year, monthNum } = googleDriveService.resolveYearAndMonth(
       doc.extracted_data?.invoice_date,
@@ -1131,9 +1201,13 @@ app.get('/api/documents/:id/review-report', (req, res) => {
 });
 
 // 4e. Query Review Report by Year / Month / Client
-app.get('/api/review-report', (req, res) => {
+app.get('/api/review-report', (req: AuthenticatedRequest, res) => {
   try {
-    const clientId = String(req.query.client_id || 'user_client_1');
+    const requestedClientId = String(req.query.client_id || 'user_client_1');
+    if (!canAccessClient(req, requestedClientId)) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
+    }
+    const clientId = req.user?.role === 'CLIENT' ? req.user.id : requestedClientId;
     const year = Number(req.query.year) || new Date().getFullYear();
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
     const csvData = buildReviewReportForScope(clientId, year, month);
@@ -1149,7 +1223,7 @@ app.get('/api/review-report', (req, res) => {
 });
 
 // 4f. Resolve a doubt on the Review List (set account, accept, or exclude)
-app.post('/api/review/resolve', async (req, res) => {
+app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
   try {
     const {
       scope,
@@ -1165,6 +1239,10 @@ app.post('/api/review/resolve', async (req, res) => {
 
     if (!scope || !lineKey || !action) {
       return res.status(400).json({ error: 'scope, lineKey und action sind erforderlich.' });
+    }
+    const scopeClientId = String(scope).split('|')[0] || 'user_client_1';
+    if (!canAccessClient(req, scopeClientId)) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
     }
 
     const resolution: any = {
@@ -1286,10 +1364,14 @@ app.post('/api/review/resolve', async (req, res) => {
 });
 
 // 4g. Reset a single doubt resolution or all resolutions for a scope
-app.post('/api/review/reset', (req, res) => {
+app.post('/api/review/reset', (req: AuthenticatedRequest, res) => {
   try {
     const { scope, lineKey } = req.body || {};
     if (!scope) return res.status(400).json({ error: 'scope ist erforderlich.' });
+    const scopeClientId = String(scope).split('|')[0] || 'user_client_1';
+    if (!canAccessClient(req, scopeClientId)) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
+    }
     if (lineKey) {
       reviewService.removeResolution(scope, lineKey);
     } else {
@@ -1302,12 +1384,15 @@ app.post('/api/review/reset', (req, res) => {
 });
 
 // 4h. Ask local Qwen AI for advice on remaining open doubts
-app.post('/api/review/ask-ai', async (req, res) => {
+app.post('/api/review/ask-ai', async (req: AuthenticatedRequest, res) => {
   try {
     const { scope } = req.body || {};
     if (!scope) return res.status(400).json({ error: 'scope ist erforderlich.' });
     const parts = scope.split('|');
     const clientId = parts[0] || 'user_client_1';
+    if (!canAccessClient(req, clientId)) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
+    }
     const ym = (parts[1] || '').split('-');
     const year = Number(ym[0]) || new Date().getFullYear();
     const month = Number(ym[1]) || 1;
@@ -1345,11 +1430,14 @@ function findFileInDir(dir: string, filename: string): string | null {
 }
 
 // 5. Serve original document file for Split-Screen preview / Direct View
-const handleServeDocumentFile = (req: express.Request, res: express.Response) => {
+const handleServeDocumentFile = (req: AuthenticatedRequest, res: express.Response) => {
   const docId = String(req.params.id);
   const doc = dbService.getById(docId);
   if (!doc) {
     return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+  }
+  if (!canAccessClient(req, doc.client_id || 'user_client_1')) {
+    return res.status(403).json({ error: 'Zugriff verweigert.' });
   }
 
   let resolvedPath = doc.file_path;

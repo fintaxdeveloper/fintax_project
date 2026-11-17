@@ -219,6 +219,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ lang, onClose }) => {
         </div>
       ),
     },
+
+
     {
       id: 'bank-rec',
       badge: lang === 'de' ? 'Saldenabstimmung' : 'Bank Reconciliation',

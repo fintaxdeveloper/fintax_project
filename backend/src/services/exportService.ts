@@ -8,6 +8,7 @@ import { clientFolderService } from './clientFolderService.js';
 import { monthlyDocumentRegistry } from './monthlyDocumentRegistry.js';
 import { generatePersonenkontenCsvContent, generateSachkontenCsvContent } from './datevExtfTemplates.js';
 import { reviewService, ReviewReport } from './reviewService.js';
+import { clientRulesService } from './clientRulesService.js';
 
 // Exact 124 columns for Agenda & DATEV EXTF format (Buchungsstapel Version 700 / 12)
 const EXTF_COLUMNS = [
@@ -921,7 +922,6 @@ export const exportService = {
     const vinTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const invoiceTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const payeeTaxMap = new Map<string, '8193' | '8400' | '8125'>();
-    const amountTaxMap = new Map<number, '8193' | '8400' | '8125'>();
     const vinRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/g;
 
     const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -947,10 +947,6 @@ export const exportService = {
       // Map invoice numbers
       if (ext?.invoice_number) {
         invoiceTaxMap.set(normalizeKey(ext.invoice_number), targetAccount);
-      }
-      // Map gross amount
-      if (ext?.total_amount && ext.total_amount > 100) {
-        amountTaxMap.set(Math.round(ext.total_amount * 100) / 100, targetAccount);
       }
       // Map supplier/buyer name
       if (ext?.supplier_name) {
@@ -982,30 +978,17 @@ export const exportService = {
       }
     }
 
-    // Explicit client reference vehicle registry mappings for QA24 GmbH
-    if (isQA24) {
-      vinTaxMap.set('XP7YGCEL5PB056979', '8193'); // Claudio Santos Lopes (Tesla Model Y) - §25a
-      vinTaxMap.set('W0V0XEP68K4270126', '8193'); // Sarker Abdus Sobur (Opel Corsa) - §25a
-      vinTaxMap.set('W0V0XEP68K4137673', '8193'); // Gerhard Pfuhl (Opel Corsa) - §25a
-      vinTaxMap.set('WDD2052861F594444', '8193'); // Thomas Boidol / Lena Hoffmeister (C63 AMG) - §25a
-      vinTaxMap.set('WAUZZZF53JN011340', '8193'); // Audi S5 (Hasanova / Audi Gebrauchtwagen) - §25a
-      vinTaxMap.set('LRWYGCEK3PC640865', '8193'); // Younes Kalmoua (Tesla Model Y) - §25a
-      vinTaxMap.set('LRW3E7FJ0MC333369', '8125'); // Bilar 99e OY (Tesla Model 3) - EU
-      vinTaxMap.set('LRWYGCEK0PC700861', '8125'); // Bilar 99e OY (Tesla Model Y) - EU
-
-      payeeTaxMap.set('claudio santos', '8193');
-      payeeTaxMap.set('claudio samuel', '8193');
-      payeeTaxMap.set('sarker abdus', '8193');
-      payeeTaxMap.set('thomas boidol', '8193');
-      payeeTaxMap.set('boidol thomas', '8193');
-      payeeTaxMap.set('bilar 99e', '8125');
-
-      amountTaxMap.set(43850.0, '8193');
-      amountTaxMap.set(9800.0, '8193');
-      amountTaxMap.set(30000.0, '8193');
-      amountTaxMap.set(42600.0, '8193');
-      amountTaxMap.set(27250.0, '8125');
-      amountTaxMap.set(38900.0, '8125');
+    // Merge client rules from storage/rules/<client>.json (Golden Rule: zero hardcoded client data in code)
+    const clientRules = clientRulesService.getRules(doc.client_id);
+    if (clientRules?.vehicle_registry) {
+      for (const [vKey, vRule] of Object.entries(clientRules.vehicle_registry)) {
+        vinTaxMap.set(vKey.toUpperCase(), vRule.tax_key as any);
+      }
+    }
+    if (clientRules?.payee_tax_mappings) {
+      for (const [pKey, pTax] of Object.entries(clientRules.payee_tax_mappings)) {
+        payeeTaxMap.set(pKey.toLowerCase(), pTax as any);
+      }
     }
 
     // Final deterministic SKR03 & VAT safety normalization before EXTF row generation
@@ -1063,11 +1046,25 @@ export const exportService = {
         const upperTxt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase();
         const vins = upperTxt.match(vinRegex);
         let resolvedTax: '8193' | '8400' | '8125' | undefined;
+
+        // 1. By exact 17-char VIN
         if (vins) {
           for (const vin of vins) {
-            const matchedSalesAcc = vinTaxMap.get(vin);
-            if (matchedSalesAcc) {
+            const matchedSalesAcc = vinTaxMap.get(vin) || (clientRulesService.lookupVin(doc.client_id, vin)?.taxKey as any);
+            if (matchedSalesAcc && matchedSalesAcc !== '3200') {
               resolvedTax = matchedSalesAcc;
+              break;
+            }
+          }
+        }
+
+        // 1b. By 7-character suffix VINs (e.g. Stern Wagen on bank statements: B009153, 9D98856)
+        if (!resolvedTax) {
+          const words = upperTxt.split(/[^A-Z0-9]/).filter(w => w.length >= 6 && w.length <= 10 && /\d/.test(w) && /[A-Z]/.test(w));
+          for (const w of words) {
+            const matched = clientRulesService.lookupVin(doc.client_id, w);
+            if (matched && matched.taxKey !== '3200') {
+              resolvedTax = matched.taxKey as any;
               break;
             }
           }
@@ -1079,10 +1076,15 @@ export const exportService = {
           if (payee && payeeTaxMap.has(payee)) {
             resolvedTax = payeeTaxMap.get(payee);
           } else {
-            for (const [pKey, targetAcc] of payeeTaxMap.entries()) {
-              if (pKey.length >= 4 && txt.includes(pKey)) {
-                resolvedTax = targetAcc;
-                break;
+            const matchedRule = clientRulesService.lookupPayee(doc.client_id, txt);
+            if (matchedRule && matchedRule !== '3200') {
+              resolvedTax = matchedRule as any;
+            } else {
+              for (const [pKey, targetAcc] of payeeTaxMap.entries()) {
+                if (pKey.length >= 4 && txt.includes(pKey)) {
+                  resolvedTax = targetAcc;
+                  break;
+                }
               }
             }
           }
@@ -1100,17 +1102,9 @@ export const exportService = {
           }
         }
 
-        // 4. By Exact Gross Amount
+        // 4. By Vehicle / Tax Keywords
         if (!resolvedTax) {
-          const itAmt = Math.round((Number(item.amount) || 0) * 100) / 100;
-          if (amountTaxMap.has(itAmt)) {
-            resolvedTax = amountTaxMap.get(itAmt);
-          }
-        }
-
-        // 5. By Vehicle / Tax Keywords
-        if (!resolvedTax) {
-          if (/(differenzbesteuerung|25a|siehe anlage 1|augustin logistic|akontacije za golf|schiebelhut|vossmeyer|cibian|amg\s*c63|opel\s*cor|arstanbekova|audi\s*a1)/i.test(txt)) {
+          if (/(differenzbesteuerung|25a|gebrauchtgegenst|sonderregelung|differenzbesteuert)/i.test(txt)) {
             resolvedTax = '8193';
           } else if (/(innergemeinschaftliche|eu-lieferung|steuerfrei|bilar|finnland)/i.test(txt)) {
             resolvedTax = '8125';
@@ -1122,7 +1116,7 @@ export const exportService = {
           item.buCode = '';
         } else if (
           item.gegenkonto === '8193' &&
-          /(differenzbesteuerung|25a|siehe anlage 1|augustin logistic|akontacije za golf|schiebelhut|vossmeyer|cibian)/i.test(txt)
+          /(differenzbesteuerung|25a|gebrauchtgegenst|sonderregelung|differenzbesteuert)/i.test(txt)
         ) {
           // Explicit §25a indicator in the text → keep 8193 (no doubt)
         } else {
@@ -1203,6 +1197,19 @@ export const exportService = {
     const lineKeys = reviewService.assignLineKeys(allMonthlyItems);
     const { kept, excluded, resolvedKeys } = reviewService.applyResolutions(reviewScope, allMonthlyItems, lineKeys);
     allMonthlyItems = kept;
+    // Calculate cumulative Kasse starting balance from previous months in the same year
+    let kasseOpeningBalance = clientRulesService.getStartingBalance(doc.client_id, yearNum, '1000') || 0;
+    for (const d of allDocs) {
+      if (doc.client_id && d.client_id !== doc.client_id) continue;
+      const bks = extractDocItems(d);
+      for (const b of bks) {
+        const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10);
+        if (bMonth > 0 && bMonth < monthNum && b.konto === '1000') {
+          kasseOpeningBalance += (String(b.sh).toUpperCase() === 'S' ? 1 : -1) * (Number(b.amount) || 0);
+        }
+      }
+    }
+
     const reviewReport = reviewService.analyze(allMonthlyItems, {
       scope: reviewScope,
       clientId: doc.client_id || 'user_client_1',
@@ -1211,6 +1218,7 @@ export const exportService = {
       hasBankStatement,
       openingBalance,
       closingBalance,
+      kasseOpeningBalance,
       vinUnresolved,
       lineKeys,
       excludedLines: excluded,

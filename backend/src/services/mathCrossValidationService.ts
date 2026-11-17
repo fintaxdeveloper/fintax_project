@@ -41,12 +41,22 @@ export const mathCrossValidationService = {
 
     // 2. Case: Only Total is provided (e.g. supermarket receipt or fuel slip)
     if (total > 0 && net <= 0 && vat <= 0) {
-      const targetRate = rate === 7 ? 7 : 19;
-      rate = targetRate;
-      net = Math.round((total / (1 + targetRate / 100)) * 100) / 100;
-      vat = Math.round((total - net) * 100) / 100;
-      wasCorrected = true;
-      correctionLog.push(`Derived Net (${net} €) and VAT (${vat} € at ${rate}%) from Total (${total} €)`);
+      if (params.vat_rate_percent === 0 || rate === 0) {
+        // Explicit 0% or tax-exempt / margin §25a -> do NOT derive 19% VAT
+        net = total;
+        vat = 0;
+        rate = 0;
+      } else if (rate === 7 || rate === 19) {
+        const targetRate = rate;
+        net = Math.round((total / (1 + targetRate / 100)) * 100) / 100;
+        vat = Math.round((total - net) * 100) / 100;
+        wasCorrected = true;
+        correctionLog.push(`Derived Net (${net} €) and VAT (${vat} € at ${rate}%) from Total (${total} €)`);
+      } else {
+        // Unknown or unspecified tax rate on gross total: do not invent 19% VAT
+        net = total;
+        vat = 0;
+      }
     }
 
     // 3. Case: Net and VAT provided, but Total is zero or slightly off

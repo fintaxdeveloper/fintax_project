@@ -109,6 +109,7 @@ export interface AnalyzeContext {
   hasBankStatement: boolean;
   openingBalance?: number;
   closingBalance?: number;
+  kasseOpeningBalance?: number;
   vinUnresolved: Set<BookingItem>;
   lineKeys: Map<BookingItem, string>;
   excludedLines: Array<{ item: BookingItem; lineKey: string; resolution: ReviewResolution }>;
@@ -654,8 +655,9 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
     }
     // Running cash balance (day/month sort DDMM -> MMDD)
     kasseByDate.sort((a, b) => (a.d.slice(2) + a.d.slice(0, 2)).localeCompare(b.d.slice(2) + b.d.slice(0, 2)));
-    let running = 0;
-    let minCash = 0;
+    const initialKasse = typeof ctx.kasseOpeningBalance === 'number' ? ctx.kasseOpeningBalance : 0;
+    let running = initialKasse;
+    let minCash = initialKasse;
     for (const k of kasseByDate) {
       running += k.delta;
       if (running < minCash) minCash = running;

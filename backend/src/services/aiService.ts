@@ -8,12 +8,14 @@ import { pdfExtractor } from './pdfExtractor.js';
 import { monthlyDocumentRegistry } from './monthlyDocumentRegistry.js';
 import { mathCrossValidationService } from './mathCrossValidationService.js';
 import { supplierMemoryService } from './supplierMemoryService.js';
+import { clientRulesService } from './clientRulesService.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const apiKey = process.env.GEMINI_API_KEY || '';
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+const ALLOW_CLOUD_AI = String(process.env.ALLOW_CLOUD_AI || 'false').toLowerCase() === 'true';
+const apiKey = ALLOW_CLOUD_AI ? (process.env.GEMINI_API_KEY || '') : '';
+const genAI = ALLOW_CLOUD_AI && apiKey ? new GoogleGenerativeAI(apiKey) : null;
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'ollama').toLowerCase();
 
 export const aiService = {
@@ -366,16 +368,16 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
   "invoice_year": 2024,
   "invoice_date": "YYYY-MM-DD",
   "currency": "EUR",
-  "net_amount": 100.00,
-  "vat_rate_percent": 19,
-  "vat_amount": 19.00,
-  "total_amount": 119.00,
+  "net_amount": 0.0,
+  "vat_rate_percent": null,
+  "vat_amount": 0.0,
+  "total_amount": 0.0,
   "payment_method": "cash | bank_transfer | card",
   "category": "fuel | car_purchase | car_sale | car_repair_parts | rent | travel_hotel | food_groceries | hospitality_restaurant | post_shipping | telecom_internet | office_supplies | legal_notary_tax | gov_court_fee | summary_list | other",
   "tax_regime": "regular_19 | reduced_7 | tax_exempt_0 | margin_25a | eu_b2b_0",
   "is_summary_statement": false,
   "vin": "17-char VIN if present else empty string",
-  "line_items_summary": "Brief description of items/vehicle/service"
+  "line_items_summary": ""
 }
 `;
 
@@ -477,34 +479,38 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
     const isPdf = pdfExtractor.isPdf(filePath, mimeType);
     const fname = (originalFilename || path.basename(filePath)).toLowerCase();
 
-    // Known client reference documents (Kassenbericht/Kassenbelege/Kontoauszug) already have exact multi-booking handling
+    // Known client reference documents (Kassenbericht/Kontoauszug) already have exact multi-booking handling
     if (monthlyDocumentRegistry.match(fname)) return [];
-    if (/kassenbericht|kassenbeleg|kontoausz/.test(fname)) return [];
+    if (/kassenbericht|kontoausz/.test(fname)) return [];
 
     const multiPrompt = `
-You are an accounting OCR auditor. This image may contain SEVERAL separate bills, invoices or receipts
-(e.g. multiple papers photographed together on a table, or a scanned page with several receipts).
-Identify EVERY separate bill exactly once. For each bill transcribe:
-- the supplier / company name printed at the top of that bill (e.g. DEWA, etisalat, du, RTA, noon, EDEKA, Telekom)
-- the BILL DATE / INVOICE DATE exactly as printed (labels: "Bill Date", "Invoice Date", "Rechnungsdatum", "Datum", "Belegdatum").
-  NEVER use the "Due Date" / "Fällig am" / "Zahlbar bis" date and NEVER use a date of birth.
-- the total amount payable of that bill (labels: "Total Amount", "Amount Due", "Total", "Gesamtbetrag", "Summe").
-Dates are printed in DD/MM/YYYY or DD.MM.YYYY format (day first).
+You are an accounting OCR auditor specialized in German GoBD documents (Kfz-Handel / Car Dealership, Workshops, Fuel, Office & Supplies).
+This image may contain ONE or SEVERAL separate bills, invoices, Kaufverträge, or receipts.
+Identify EVERY separate receipt / document exactly once. For each document transcribe:
+- the supplier / company / seller name printed at the top letterhead (e.g. Tankstelle, Werkstatt, Kaufvertrag / Ankaufvertrag, Hotel, Deutsche Bahn, Stadtkasse, Telekom, etc.)
+- the BILL DATE / INVOICE DATE exactly as printed (labels: "Belegdatum", "Rechnungsdatum", "Datum").
+  NEVER use the "Fällig am" date and NEVER use a date of birth.
+- the total amount payable (labels: "Gesamtbetrag", "Endbetrag", "Brutto", "Total", "Kaufpreis", "Summe").
+- "vin": 17-character vehicle identification number (Fahrgestellnummer / FIN) if a vehicle contract or repair invoice, else null.
+- "tax_regime": "margin_25a" if § 25a Differenzbesteuerung or private purchase, "regular_19" if 19% MwSt, "reduced_7" if 7%, "tax_exempt_0" if exempt.
+Dates are printed in DD.MM.YYYY format (day first).
 
 Return strictly JSON, no markdown:
 {
   "bill_count": 0,
   "bills": [
     {
-      "supplier_name": "company at the top of the bill",
-      "invoice_number": "invoice / account / receipt number",
-      "raw_bill_date": "exact printed bill date e.g. 01/09/2026",
-      "raw_due_date": "exact printed due date or null",
-      "total_amount": 0.00,
-      "vat_amount": 0.00,
-      "currency": "EUR | AED | USD",
+      "supplier_name": "company or seller name",
+      "invoice_number": "invoice or contract number",
+      "raw_bill_date": "exact printed date e.g. 15.06.2024",
+      "raw_due_date": null,
+      "total_amount": 0.0,
+      "vat_amount": 0.0,
+      "currency": "EUR",
       "document_type": "PURCHASE_INVOICE | RECEIPT | SALES_INVOICE",
-      "line_items_summary": "short list of charges with amounts"
+      "tax_regime": "regular_19 | margin_25a | reduced_7 | tax_exempt_0",
+      "vin": "17-character VIN if vehicle else null",
+      "line_items_summary": "vehicle model or service description"
     }
   ]
 }
@@ -1981,29 +1987,15 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         buCode = '';
       } else if (
         sh === 'S' &&
-        (/siehe anlage 1/i.test(lower) || /differenzbesteuerung/i.test(lower) || /25a/i.test(lower) || /augustin logistic/i.test(lower) || /akontacije za golf/i.test(lower) || /schiebelhut/i.test(lower) || /vossmeyer/i.test(lower))
+        (/siehe anlage 1/i.test(lower) || /differenzbesteuerung/i.test(lower) || /25a/i.test(lower) || clientRulesService.lookupPayee(undefined, lower) === '8193')
       ) {
         // §25a used car sale / customer deposit (Differenzbesteuerung) -> 8193
         gegenkonto = '8193';
         buCode = '';
-      } else if (/tanja scheurer/i.test(lower)) {
-        if (Math.round(tx.amount) === 1400 || /350\/24/i.test(lower)) {
-          // Legal & Tax advisory -> 4955 (BU 9)
-          gegenkonto = '4955';
-          buCode = '9';
-        } else {
-          // Other court/bailiff execution costs -> 4390
-          gegenkonto = '4390';
-          buCode = '';
-        }
-      } else if (/intec ag/i.test(lower)) {
-        // Intec vehicle guarantee / warranty -> 3200 (Vehicle acquisition costs §25a)
-        gegenkonto = '3200';
-        buCode = '';
-      } else if (/lidl/i.test(lower)) {
-        // Lidl -> 3300 without tax key (matching benchmark)
-        gegenkonto = '3300';
-        buCode = '';
+      } else if (clientRulesService.matchVendorRule(undefined, lower, tx.amount)) {
+        const vRule = clientRulesService.matchVendorRule(undefined, lower, tx.amount)!;
+        gegenkonto = vRule.account;
+        buCode = vRule.buCode;
       } else if (isBankFeeVat) {
         // 19% Vorsteuer breakdown on monthly bank fees -> 1576
         gegenkonto = '1576';
@@ -2044,14 +2036,6 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         // Software subscriptions & IT expenses -> 4964 (BU 9)
         gegenkonto = '4964';
         buCode = '9';
-      } else if (/\b(gerhard zeller|gerd zeller)\b/i.test(lower)) {
-        if (isVehiclePurchase) {
-          gegenkonto = '3200';
-          buCode = '';
-        } else {
-          gegenkonto = '4210';
-          buCode = '';
-        }
       } else if (/\b(vattenfall|stadtwerke|enbw|e\.on|rwe|strom|gas|energie|rabot)\b/i.test(lower)) {
         gegenkonto = '4240';
         buCode = '9';

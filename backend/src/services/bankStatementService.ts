@@ -7,8 +7,9 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const apiKey = process.env.GEMINI_API_KEY || '';
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+const ALLOW_CLOUD_AI = String(process.env.ALLOW_CLOUD_AI || 'false').toLowerCase() === 'true';
+const apiKey = ALLOW_CLOUD_AI ? (process.env.GEMINI_API_KEY || '') : '';
+const genAI = ALLOW_CLOUD_AI && apiKey ? new GoogleGenerativeAI(apiKey) : null;
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'ollama').toLowerCase();
 
 export interface BankTransactionRow {
@@ -94,8 +95,18 @@ Important Rules:
 
     let rawData: any = null;
 
-    // A. If PDF text exists, feed directly to Ollama LLM
-    if (extractedText && extractedText.length > 50 && AI_PROVIDER === 'ollama') {
+    // A. Fast-track regex parser for digital German bank statements with selectable text
+    if (extractedText && extractedText.length > 50) {
+      console.log('[Bank Statement] Attempting fast native regex parsing...');
+      const regexData = this.parseWithRegex(extractedText);
+      if (regexData.transactions && regexData.transactions.length >= 2) {
+        console.log(`[Bank Statement] ⚡ Fast regex parsed ${regexData.transactions.length} transactions instantly!`);
+        rawData = regexData;
+      }
+    }
+
+    // B. If PDF text exists and regex didn't parse enough, feed directly to Ollama LLM
+    if (!rawData && extractedText && extractedText.length > 50 && AI_PROVIDER === 'ollama') {
       try {
         console.log('[Bank Statement] Parsing statement text via local Ollama...');
         const promptWithText = `
@@ -115,7 +126,7 @@ ${extractedText.substring(0, 8000)}
       }
     }
 
-    // B. Image-based fallback for scanned images
+    // C. Image-based fallback for scanned images
     if (!rawData && !isPdf && AI_PROVIDER === 'ollama') {
       try {
         const fileBuffer = fs.readFileSync(filePath);
@@ -234,13 +245,25 @@ ${extractedText.substring(0, 8000)}
       }
     }
 
+    // Dynamic month and year from transaction dates
+    let detectedMonth = 1;
+    let detectedYear = 2024;
+    if (transactions.length > 0) {
+      const firstDate = transactions[0].date;
+      const parts = firstDate.split('-');
+      detectedYear = parseInt(parts[0], 10) || 2024;
+      detectedMonth = parseInt(parts[1], 10) || 1;
+    }
+    const monthNames = ['', 'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+    const dynamicPeriod = `${monthNames[detectedMonth] || 'Monat'} ${detectedYear}`;
+
     return {
       bank_name: bankName,
       account_number: accountNumber,
       iban,
-      statement_period: 'Januar 2026',
-      period_month: 1,
-      period_year: 2026,
+      statement_period: dynamicPeriod,
+      period_month: detectedMonth,
+      period_year: detectedYear,
       opening_balance: openingBalance,
       closing_balance: closingBalance,
       currency: 'EUR',

@@ -192,17 +192,21 @@ export const adminService = {
 
     for (const u of defaultUsers) {
       const isClient1 = u.id === 'user_client_1';
+      const hashedPass = authService.hashPassword(u.pass);
       await pool.query(
         `INSERT INTO users (id, email, password_hash, role, name, client_number, is_active, first_login_done, privacy_accepted_at)
          VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8)
          ON CONFLICT (id) DO UPDATE SET 
            email = EXCLUDED.email,
-           password_hash = EXCLUDED.password_hash,
+           password_hash = CASE
+             WHEN users.password_hash LIKE '%:%' THEN users.password_hash
+             ELSE EXCLUDED.password_hash
+           END,
            role = EXCLUDED.role,
            name = EXCLUDED.name,
            client_number = EXCLUDED.client_number,
            is_active = EXCLUDED.is_active;`,
-        [u.id, u.email, u.pass, u.role, u.name, u.client_number, isClient1 ? true : false, isClient1 ? new Date() : null]
+        [u.id, u.email, hashedPass, u.role, u.name, u.client_number, isClient1 ? true : false, isClient1 ? new Date() : null]
       );
     }
     // Ensure user_client_1 is pre-activated for instant test login
@@ -354,10 +358,11 @@ export const adminService = {
     clientNumber?: string
   ): Promise<UserRecord> {
     await this.initTables();
+    if (!plainPass || !plainPass.trim()) {
+      throw new Error('Passwort darf nicht leer sein.');
+    }
     const userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    // Store plain text password — verifyPassword does plain-text equality check first,
-    // so this works for newly-created users just like the demo seed accounts.
-    const passHash = plainPass.trim() || 'password123';
+    const passHash = authService.hashPassword(plainPass.trim());
     const clientNum = clientNumber ? clientNumber.trim() : null;
     const res = await pool.query(
       `INSERT INTO users (id, email, password_hash, role, name, client_number, is_active)
@@ -418,9 +423,9 @@ export const adminService = {
       fields.push(`is_active = $${idx++}`);
       values.push(updates.is_active);
     }
-    if (updates.password) {
+    if (updates.password && updates.password.trim()) {
       fields.push(`password_hash = $${idx++}`);
-      values.push(updates.password);
+      values.push(authService.hashPassword(updates.password.trim()));
     }
 
     if (fields.length === 0) return null;

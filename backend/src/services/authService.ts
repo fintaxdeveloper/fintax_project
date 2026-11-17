@@ -1,8 +1,14 @@
 import crypto from 'crypto';
+import dotenv from 'dotenv';
 import { Request, Response, NextFunction } from 'express';
 import { pool } from './pgClient.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fintax_enterprise_secret_key_2026_germany';
+dotenv.config();
+
+const JWT_SECRET = (process.env.JWT_SECRET || '').trim();
+if (!JWT_SECRET || JWT_SECRET.length < 16) {
+  throw new Error('FATAL: JWT_SECRET environment variable must be set (minimum 16 characters).');
+}
 
 export interface AuthUser {
   id: string;
@@ -118,8 +124,8 @@ export const authService = {
   },
 
   verifyPassword(plainPassword: string, storedHash: string): boolean {
-    if (plainPassword === storedHash) {
-      return true; // Matches demo seed passwords (admin123, staff123, client123)
+    if (!plainPassword || !storedHash || !storedHash.includes(':')) {
+      return false;
     }
 
     try {
@@ -127,6 +133,7 @@ export const authService = {
       if (!salt || !key) return false;
       const hashed = crypto.scryptSync(plainPassword, salt, 64);
       const keyBuffer = Buffer.from(key, 'hex');
+      if (hashed.length !== keyBuffer.length) return false;
       return crypto.timingSafeEqual(hashed, keyBuffer);
     } catch {
       return false;
@@ -181,15 +188,15 @@ export const authService = {
       console.warn('[PostgreSQL] Login query fallback check:', (e as any)?.message || e);
     }
 
-    // Fallback users if DB is offline or empty
+    // Fallback users if DB is offline or empty (passwords pre-hashed via scrypt)
     if (!dbUser) {
       const fallbackUsers = [
-        { id: 'user_admin_1', email: 'admin@fintax.de', password_hash: 'admin123', name: 'Dr. Michael von FinTax', role: 'ADMIN', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
-        { id: 'user_admin_2', email: 'partner@fintax.de', password_hash: 'admin123', name: 'Sarah Lindemann (Partnerin)', role: 'ADMIN', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
-        { id: 'user_staff_1', email: 'staff@fintax.de', password_hash: 'staff123', name: 'Sabine Weber', role: 'STAFF', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
-        { id: 'user_staff_2', email: 'accountant@fintax.de', password_hash: 'staff123', name: 'Thomas Müller', role: 'STAFF', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
-        { id: 'user_client_1', email: 'mandant@mustermann.de', password_hash: 'client123', name: 'Hans Mustermann GmbH', role: 'CLIENT', client_number: 'KD-10042', is_active: true, first_login_done: true, privacy_accepted: true },
-        { id: 'user_client_2', email: 'client@mustermann.de', password_hash: 'client123', name: 'Hans Mustermann GmbH (First-Login Demo)', role: 'CLIENT', client_number: 'KD-10043', is_active: true, first_login_done: false, privacy_accepted: false },
+        { id: 'user_admin_1', email: 'admin@fintax.de', password_hash: this.hashPassword('admin123'), name: 'Dr. Michael von FinTax', role: 'ADMIN', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
+        { id: 'user_admin_2', email: 'partner@fintax.de', password_hash: this.hashPassword('admin123'), name: 'Sarah Lindemann (Partnerin)', role: 'ADMIN', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
+        { id: 'user_staff_1', email: 'staff@fintax.de', password_hash: this.hashPassword('staff123'), name: 'Sabine Weber', role: 'STAFF', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
+        { id: 'user_staff_2', email: 'accountant@fintax.de', password_hash: this.hashPassword('staff123'), name: 'Thomas Müller', role: 'STAFF', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
+        { id: 'user_client_1', email: 'mandant@mustermann.de', password_hash: this.hashPassword('client123'), name: 'Hans Mustermann GmbH', role: 'CLIENT', client_number: 'KD-10042', is_active: true, first_login_done: true, privacy_accepted: true },
+        { id: 'user_client_2', email: 'client@mustermann.de', password_hash: this.hashPassword('client123'), name: 'Hans Mustermann GmbH (First-Login Demo)', role: 'CLIENT', client_number: 'KD-10043', is_active: true, first_login_done: false, privacy_accepted: false },
       ];
       dbUser = fallbackUsers.find(
         (u) => u.email.toLowerCase() === cleanId || u.client_number.toLowerCase() === cleanId || u.id === cleanId
@@ -198,6 +205,19 @@ export const authService = {
 
     if (!dbUser || !dbUser.is_active) {
       return null;
+    }
+
+    // One-time transparent migration of legacy plain-text passwords in PostgreSQL
+    if (dbUser.password_hash && !dbUser.password_hash.includes(':')) {
+      if (passwordPlain === dbUser.password_hash) {
+        const upgradedHash = this.hashPassword(passwordPlain);
+        dbUser.password_hash = upgradedHash;
+        pool
+          .query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [upgradedHash, dbUser.id])
+          .catch(() => {});
+      } else {
+        return null;
+      }
     }
 
     const isValid = this.verifyPassword(passwordPlain, dbUser.password_hash);
@@ -247,12 +267,13 @@ export const authService = {
 
       console.log(`[FinTax 2FA Security] Email OTP for ${authUser.email} (${authUser.role}): [ ${otp} ] (Valid for 10 min)`);
 
+      const isDev = process.env.NODE_ENV === 'development';
       return {
         requires2FA: true,
         tempToken,
         user: authUser,
         maskedEmail: maskEmail(authUser.email),
-        demoOtp: otp, // For ease of testing & demonstration
+        ...(isDev ? { demoOtp: otp } : {}),
         message: `Einmalcode (OTP) an ${maskEmail(authUser.email)} gesendet. Bitte Code zur Bestätigung eingeben.`,
       };
     }
@@ -350,9 +371,10 @@ export const authService = {
 
     console.log(`[FinTax 2FA Security] Resent OTP for ${session.user.email}: [ ${newOtp} ]`);
 
+    const isDev = process.env.NODE_ENV === 'development';
     return {
       success: true,
-      demoOtp: newOtp,
+      ...(isDev ? { demoOtp: newOtp } : {}),
       message: `Neuer Einmalcode an ${maskEmail(session.user.email)} gesendet.`,
     };
   },
@@ -361,11 +383,13 @@ export const authService = {
 // Express Middleware for JWT Protection
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : '';
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : queryToken;
+
+  if (!token) {
     return res.status(401).json({ error: 'Nicht autorisiert (Authorization header missing or invalid).' });
   }
 
-  const token = authHeader.substring(7);
   const user = authService.verifyToken(token);
   if (!user) {
     return res.status(401).json({ error: 'Sitzung abgelaufen (Invalid or expired token).' });
