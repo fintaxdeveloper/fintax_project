@@ -250,7 +250,7 @@ export const pdfExtractor = {
    * (e.g. PDFs produced by ReportLab, phone scanner apps, "Print to PDF").
    * Filters out soft masks and tiny thumbnails.
    */
-  extractEmbeddedImages(filePath: string, maxImages = 10): string[] {
+  extractEmbeddedImages(filePath: string, maxImages = 30): string[] {
     const images: string[] = [];
     try {
       const buf = fs.readFileSync(filePath);

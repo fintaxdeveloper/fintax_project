@@ -763,7 +763,32 @@ export const exportService = {
             const dedupKey = `${baseKey}#${occ}`;
             if (!seenBankKeys.has(dedupKey)) {
               seenBankKeys.add(dedupKey);
-              bankItems.push({ ...item, konto: item.konto || '1200' });
+              const bTxt = item.buchungstext || '';
+              const hasFeeMatch = item.sh === 'H' && /(?:entg|entgelt|gebühr)[:\s]*0[,.]80|securego.*0[,.]80/i.test(bTxt);
+              const amtNum = Number(item.amount) || 0;
+              if (hasFeeMatch && amtNum > 0.80) {
+                // Split into main transaction and 0.80 EUR instant fee
+                const baseAmt = parseFloat((amtNum - 0.80).toFixed(2));
+                bankItems.push({
+                  ...item,
+                  amount: baseAmt,
+                  konto: item.konto || '1200',
+                });
+                bankItems.push({
+                  amount: 0.80,
+                  sh: 'H',
+                  konto: '1200',
+                  gegenkonto: '4970',
+                  buCode: '',
+                  belegdatum: item.belegdatum,
+                  belegfeld1: item.belegfeld1 || '',
+                  belegfeld2: '',
+                  buchungstext: 'Echtzeit-Überweisung Entgelt (SecureGo)',
+                  currency: item.currency || 'EUR',
+                });
+              } else {
+                bankItems.push({ ...item, konto: item.konto || '1200' });
+              }
             }
           }
         }
@@ -1004,9 +1029,27 @@ export const exportService = {
       } else if (isQA24 && /\b(penny|rewe|aldi|edeka|lidl|netto|kaufland)\b/i.test(txt) && Number(item.amount) < 500 && item.sh === 'H') {
         item.gegenkonto = '4673';
         item.buCode = '8';
-      } else if (item.sh === 'S' && /(storno|rückbuchung|rueckbuchung|erstattung)/i.test(txt) && /\b(fintax|steuerberat|rechtsanwalt|fibu|buchhaltung)\b/i.test(txt)) {
-        item.gegenkonto = '4955';
+      } else if (item.sh === 'S' && /(storno|rückbuchung|rueckbuchung|erstattung|refund|gutschrift)/i.test(txt)) {
+        if (/\b(fintax|steuerberat|rechtsanwalt|fibu|buchhaltung)\b/i.test(txt)) {
+          item.gegenkonto = '4955';
+          item.buCode = '9';
+        } else if (/\b(auto-teile|autoteile|kfz-teile|ersatzteile)\b/i.test(txt) || /12-11907-72439/i.test(txt)) {
+          item.gegenkonto = '4540';
+          item.buCode = '9';
+        } else if (/\bebay\b/i.test(txt) || /15-11900-39159/i.test(txt)) {
+          // Reverses original eBay purchase account (Kfz-Teile 4540)
+          item.gegenkonto = '4540';
+          item.buCode = '9';
+        }
+      } else if (/\b(macoil|mr\.?\s*wash|ölwechsel|olwechsel|auto-teile|autoteile)\b/i.test(txt)) {
+        item.gegenkonto = '4540';
         item.buCode = '9';
+      } else if (/\b(maihan|spende|spenden|zuwendung)\b/i.test(txt)) {
+        item.gegenkonto = '2380';
+        item.buCode = '';
+      } else if (item.sh === 'H' && /\b(kaufvertrag|fahrzeugankauf|volmarstein|haak|anvm|arstanbekova)\b/i.test(txt)) {
+        item.gegenkonto = '3200';
+        item.buCode = '';
       } else if (/\b(fsp|tüv|tuev|dekra|gtü|küs|porsche zentrum|audi zentrum|bmw autohaus|mercedes-benz autohaus)\b/i.test(txt) && Number(item.amount) < 1500) {
         item.gegenkonto = '4540';
         item.buCode = '9';
@@ -1077,7 +1120,7 @@ export const exportService = {
 
         // 5. By Vehicle / Tax Keywords
         if (!resolvedTax) {
-          if (/(differenzbesteuerung|25a|siehe anlage 1|augustin logistic|akontacije za golf|schiebelhut|vossmeyer|cibian|amg\s*c63|opel\s*cor)/i.test(txt)) {
+          if (/(differenzbesteuerung|25a|siehe anlage 1|augustin logistic|akontacije za golf|schiebelhut|vossmeyer|cibian|amg\s*c63|opel\s*cor|arstanbekova|audi\s*a1)/i.test(txt)) {
             resolvedTax = '8193';
           } else if (/(innergemeinschaftliche|eu-lieferung|steuerfrei|bilar|finnland)/i.test(txt)) {
             resolvedTax = '8125';

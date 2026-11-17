@@ -60,6 +60,17 @@ export const SKR03_RULES: Skr03Rule[] = [
   //  3xxx – Wareneingang (Goods purchased)
   // ─────────────────────────────────────────────────
 
+  // 3200 – Wareneingang (Fahrzeugankauf / Kfz-Handel)
+  {
+    keywords: [
+      'fahrzeugankauf', 'pkw ankauf', 'ankauf', 'kaufvertrag', 'autoankauf', 'fahrzeugeinkauf',
+      'gebrauchtwagen', 'fahrzeugkauf', 'volmarstein', 'haak', 'arstanbekova', 'anvm',
+      'fatah', 'abdul fatah', 'auto ankauf', 'kfz ankauf', 'kfz-ankauf',
+    ],
+    accountCode: '3200',
+    accountName: 'Wareneingang (Fahrzeugankauf)',
+    defaultVatPercent: 0,
+  },
   // 3300 – Wareneingang 7% Vorsteuer (reduced-rate goods: food, books, …)
   {
     keywords: [
@@ -192,16 +203,27 @@ export const SKR03_RULES: Skr03Rule[] = [
     accountName: 'Kfz-Versicherungen',
     defaultVatPercent: 0,
   },
-  // 4530 – Laufende Kfz-Betriebskosten (fuel, maintenance, etc.)
+  // 4530 – Laufende Kfz-Betriebskosten (Tanken, Waschen)
   {
     keywords: [
       'aral', 'shell', 'totalenergies', 'total tankstelle', 'esso', 'jet', 'benzin', 'diesel',
       'tankstelle', 'kraftstoff', 'kfz', 'tanken', 'fuel',
-      'gasoline', 'petrol', 'tüv', 'autowäsche', 'ölwechsel',
-      'car wash', 'oil change',
+      'gasoline', 'petrol', 'autowäsche', 'car wash', 'waschstraße', 'waschanlage',
     ],
     accountCode: '4530',
     accountName: 'Laufende Kfz-Betriebskosten',
+    defaultVatPercent: 19,
+  },
+  // 4540 – Kfz-Reparaturen, TÜV & Ersatzteile (macOIL, Mr. Wash Ölwechsel, Auto-Teile)
+  {
+    keywords: [
+      'macoil', 'mac oil', 'mr. wash', 'mr wash', 'ölwechsel', 'olwechsel', 'oil change',
+      'auto-teile', 'auto-teile-de', 'autoteile', 'kfz-teile', 'ersatzteile', 'kfz reparatur',
+      'kfz-reparatur', 'tüv', 'tuev', 'dekra', 'werkstatt', 'reifen', 'reparatur',
+      'inspektion', 'bremsen', 'reifendienst', 'kfz-werkstatt',
+    ],
+    accountCode: '4540',
+    accountName: 'Kfz-Reparaturen und TÜV',
     defaultVatPercent: 19,
   },
 
@@ -330,6 +352,8 @@ export const SKR03_RULES: Skr03Rule[] = [
     keywords: [
       'bankgebühr', 'bankgebuhr', 'bankgebühren', 'kontoführung', 'abrechnung kontoführung',
       'nebenkosten des geldverkehrs', 'überweisungsgebühr', 'kartenlesegerät gebühr', 'agenda',
+      'securego', 'entg:', 'entg', 'entgelt echtzeit', 'echtzeit-überweisung', 'echtzeitüberweisung',
+      'entgelt fuer echtzeit', 'entgelt für echtzeit',
     ],
     accountCode: '4970',
     accountName: 'Nebenkosten des Geldverkehrs',
@@ -407,6 +431,16 @@ export const SKR03_RULES: Skr03Rule[] = [
     ],
     accountCode: '2375',
     accountName: 'Grundsteuer',
+    defaultVatPercent: 0,
+  },
+  // 2380 – Zuwendungen, Spenden (steuerlich abzugsfähig)
+  {
+    keywords: [
+      'spende', 'spenden', 'zuwendung', 'hilfsorganisation', 'gemeinnützig',
+      'gemeinnuetzig', 'e.v.', 'maihan', 'maihan e.v', 'charity', 'donation',
+    ],
+    accountCode: '2380',
+    accountName: 'Zuwendungen, Spenden',
     defaultVatPercent: 0,
   },
   // 4930 – Bürobedarf

@@ -152,6 +152,7 @@ const EXPENSE_OPTIONS: ReviewOption[] = [
   { gegenkonto: '4930', buCode: '9', label: '4930 Bürobedarf / Software (19%)' },
   { gegenkonto: '4955', buCode: '9', label: '4955 Buchführungs- / Steuerberatungskosten (19%)' },
   { gegenkonto: '4970', buCode: '', label: '4970 Nebenkosten des Geldverkehrs' },
+  { gegenkonto: '2380', buCode: '', label: '2380 Zuwendungen / Spenden (steuerlich abzugsfähig)' },
   { gegenkonto: '4673', buCode: '8', label: '4673 Reisekosten / Verpflegung (7%)' },
   { gegenkonto: '4900', buCode: '', label: '4900 Sonstige betriebliche Aufwendungen (bestätigen)', action: 'ACCEPT' },
 ];
@@ -174,6 +175,8 @@ const AI_CATEGORY_ACCOUNT: Record<string, { gegenkonto: string; buCode: string }
   rent: { gegenkonto: '4210', buCode: '' },
   legal_tax: { gegenkonto: '4955', buCode: '9' },
   office: { gegenkonto: '4930', buCode: '9' },
+  donation: { gegenkonto: '2380', buCode: '' },
+  bank_fee: { gegenkonto: '4970', buCode: '' },
 };
 
 export const reviewService = {
@@ -490,27 +493,37 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
         !flagged &&
         sh === 'S' &&
         isBank &&
-        /(rückerstattung|rueckerstattung|erstattung|gutschrift|refund|rückzahlung|rueckzahlung|storno|rückbuchung|rueckbuchung)/i.test(lower) &&
-        !['4955', '4520', '4530', '4540', '4210', '4510', '4970', '1780', '1576'].includes(it.gegenkonto)
+        /(rückerstattung|rueckerstattung|erstattung|gutschrift|refund|rückzahlung|rueckzahlung|storno|rückbuchung|rueckbuchung)/i.test(lower)
       ) {
-        pushIssue(it, {
-          type: 'REFUND_UNCLEAR',
-          severity: 'CRITICAL',
-          title: 'Rückerstattung: Ursprungskonto unklar',
-          question: 'Incoming refund — which ORIGINAL expense/income account must be reversed?',
-          details: `Eingang ${amt.toFixed(2)} € • aktuell Gegenkonto ${it.gegenkonto}`,
-          options: [
-            { gegenkonto: '4520', buCode: '', label: '4520 Kfz-Versicherung (Erstattung)' },
-            { gegenkonto: '4530', buCode: '9', label: '4530 Kfz-Betriebskosten (Erstattung)' },
-            { gegenkonto: '4210', buCode: '', label: '4210 Miete (Erstattung)' },
-            { gegenkonto: '4955', buCode: '9', label: '4955 Buchführungskosten (Storno/Erstattung)' },
-            { gegenkonto: '4510', buCode: '', label: '4510 Kfz-Steuer (Erstattung Hauptzollamt)' },
-            { gegenkonto: '3200', buCode: '', label: '3200 Rückzahlung Fahrzeugankauf' },
-            { gegenkonto: '8400', buCode: '', label: '8400 Kundenzahlung (keine Erstattung)' },
-          ],
-          suggest_upload: 'Upload the refund letter / credit note so the original booking can be identified.',
-        });
-        flagged = true;
+        // Auto-link known vendor refunds (e.g. eBay parts, auto-teile)
+        if (['8400', '4900'].includes(it.gegenkonto)) {
+          if (/ebay/i.test(lower) || /auto-teile/i.test(lower) || /15-11900|12-11907/.test(lower)) {
+            it.gegenkonto = '4540';
+            it.buCode = '9';
+          }
+        }
+        if (!['4955', '4520', '4530', '4540', '4210', '4510', '4970', '1780', '1576', '4930', '2380'].includes(it.gegenkonto)) {
+          pushIssue(it, {
+            type: 'REFUND_UNCLEAR',
+            severity: 'CRITICAL',
+            title: 'Rückerstattung: Ursprungskonto unklar',
+            question: 'Incoming refund — which ORIGINAL expense/income account must be reversed?',
+            details: `Eingang ${amt.toFixed(2)} € • aktuell Gegenkonto ${it.gegenkonto}`,
+            options: [
+              { gegenkonto: '4540', buCode: '9', label: '4540 Kfz-Reparaturen / Teile (Erstattung)' },
+              { gegenkonto: '4520', buCode: '', label: '4520 Kfz-Versicherung (Erstattung)' },
+              { gegenkonto: '4530', buCode: '9', label: '4530 Kfz-Betriebskosten (Erstattung)' },
+              { gegenkonto: '4930', buCode: '9', label: '4930 Bürobedarf / Software (Erstattung)' },
+              { gegenkonto: '4210', buCode: '', label: '4210 Miete (Erstattung)' },
+              { gegenkonto: '4955', buCode: '9', label: '4955 Buchführungskosten (Storno/Erstattung)' },
+              { gegenkonto: '4510', buCode: '', label: '4510 Kfz-Steuer (Erstattung Hauptzollamt)' },
+              { gegenkonto: '3200', buCode: '', label: '3200 Rückzahlung Fahrzeugankauf' },
+              { gegenkonto: '8400', buCode: '', label: '8400 Kundenzahlung (keine Erstattung)' },
+            ],
+            suggest_upload: 'Upload the refund letter / credit note so the original booking can be identified.',
+          });
+          flagged = true;
+        }
       }
 
       // 3) Unknown vendor / low AI confidence (still 4900)

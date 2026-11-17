@@ -395,10 +395,53 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
             const embeddedImages = pdfExtractor.extractEmbeddedImages(filePath);
             if (embeddedImages.length > 0) {
               console.log(`[Local AI] Scanned PDF detected: Extracted ${embeddedImages.length} page scan(s). Sending to Ollama vision (RTX A3000)...`);
-              parsed = await ollamaClient.generateJson<any>({
-                prompt,
-                images: [embeddedImages[0]],
-              });
+              const allBookings: any[] = [];
+              let combinedSummary = '';
+              let primaryParsed: any = null;
+
+              // Process pages to extract all embedded bills/contracts
+              const pagesToScan = Math.min(embeddedImages.length, 6);
+              for (let pi = 0; pi < pagesToScan; pi++) {
+                try {
+                  const pageParsed = await ollamaClient.generateJson<any>({
+                    prompt,
+                    images: [embeddedImages[pi]],
+                  });
+                  if (pageParsed) {
+                    if (!primaryParsed && (pageParsed.total_amount || pageParsed.supplier_name)) {
+                      primaryParsed = pageParsed;
+                    }
+                    if (Array.isArray(pageParsed.bookings)) {
+                      allBookings.push(...pageParsed.bookings);
+                    } else if (pageParsed.total_amount && pageParsed.supplier_name) {
+                      allBookings.push({
+                        amount: Number(pageParsed.total_amount) || 0,
+                        sh: 'H',
+                        konto: '1200',
+                        gegenkonto: pageParsed.skr03_account_code || '4540',
+                        buCode: '9',
+                        belegdatum: (pageParsed.invoice_date || '').replace(/[^0-9]/g, '').slice(-4) || '3108',
+                        belegfeld1: pageParsed.invoice_number || `SCAN-P${pi + 1}`,
+                        buchungstext: `${pageParsed.supplier_name} ${pageParsed.line_items_summary || ''}`.slice(0, 60),
+                        currency: 'EUR',
+                      });
+                    }
+                    if (pageParsed.line_items_summary) {
+                      combinedSummary += (combinedSummary ? ' | ' : '') + pageParsed.line_items_summary;
+                    }
+                  }
+                } catch (pageErr) {
+                  console.warn(`[Local AI] Page ${pi + 1} vision scan skipped:`, pageErr);
+                }
+              }
+
+              parsed = primaryParsed || {};
+              if (allBookings.length > 0) {
+                parsed.bookings = allBookings;
+              }
+              if (combinedSummary) {
+                parsed.line_items_summary = combinedSummary.slice(0, 500);
+              }
             } else {
               console.log('[Local AI] Scanned PDF has no digital text or JPEG streams. Using pattern matcher...');
             }
