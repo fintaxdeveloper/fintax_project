@@ -64,8 +64,7 @@ export const SKR03_RULES: Skr03Rule[] = [
   {
     keywords: [
       'fahrzeugankauf', 'pkw ankauf', 'ankauf', 'kaufvertrag', 'autoankauf', 'fahrzeugeinkauf',
-      'gebrauchtwagen', 'fahrzeugkauf', 'volmarstein', 'haak', 'arstanbekova', 'anvm',
-      'fatah', 'abdul fatah', 'auto ankauf', 'kfz ankauf', 'kfz-ankauf',
+      'gebrauchtwagen', 'fahrzeugkauf', 'auto ankauf', 'kfz ankauf', 'kfz-ankauf',
     ],
     accountCode: '3200',
     accountName: 'Wareneingang (Fahrzeugankauf)',
@@ -431,16 +430,6 @@ export const SKR03_RULES: Skr03Rule[] = [
     ],
     accountCode: '2375',
     accountName: 'Grundsteuer',
-    defaultVatPercent: 0,
-  },
-  // 2380 – Zuwendungen, Spenden (steuerlich abzugsfähig)
-  {
-    keywords: [
-      'spende', 'spenden', 'zuwendung', 'hilfsorganisation', 'gemeinnützig',
-      'gemeinnuetzig', 'e.v.', 'maihan', 'maihan e.v', 'charity', 'donation',
-    ],
-    accountCode: '2380',
-    accountName: 'Zuwendungen, Spenden',
     defaultVatPercent: 0,
   },
   // 4930 – Bürobedarf

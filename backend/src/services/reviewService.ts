@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { BookingItem } from '../types/document.js';
 import { ollamaClient } from './ollamaClient.js';
+import { clientRulesService } from './clientRulesService.js';
+import { extractVinFromText } from './belegIndexService.js';
 
 /**
  * FinTax Review Gate (Hard Export Blocker + Review List)
@@ -59,10 +61,14 @@ export interface ReviewIssue {
   lineKey: string;
   type: ReviewIssueType;
   severity: 'CRITICAL' | 'WARNING';
+  categoryTab?: 'MISSING_BELEG' | 'DECISION';
   title: string;
   question: string;
   details: string;
   booking: ReviewBookingView;
+  relatedLineKeys?: string[];
+  relatedBookings?: ReviewBookingView[];
+  matchedBeleg?: BookingItem['matchedBeleg'];
   options: ReviewOption[];
   ai?: { category?: string; confidence?: number; reason?: string; suggested_gegenkonto?: string; suggested_bu?: string };
   suggest_upload?: string;
@@ -144,17 +150,19 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 /** Standard SKR03 answer options for an unknown expense / income line */
 const EXPENSE_OPTIONS: ReviewOption[] = [
   { gegenkonto: '4530', buCode: '9', label: '4530 Laufende Kfz-Betriebskosten / Tanken (19%)' },
-  { gegenkonto: '4540', buCode: '9', label: '4540 Kfz-Reparaturen / TÜV (19%)' },
+  { gegenkonto: '4540', buCode: '9', label: '4540 Kfz-Reparaturen / Teile / TÜV (19%)' },
   { gegenkonto: '4520', buCode: '', label: '4520 Kfz-Versicherungen' },
   { gegenkonto: '4510', buCode: '', label: '4510 Kfz-Steuer' },
   { gegenkonto: '3200', buCode: '', label: '3200 Wareneingang (Fahrzeugankauf)' },
   { gegenkonto: '4210', buCode: '', label: '4210 Miete' },
+  { gegenkonto: '4600', buCode: '9', label: '4600 Werbekosten / Inserate (19%)' },
+  { gegenkonto: '4650', buCode: '', label: '4650 Bewirtungskosten' },
+  { gegenkonto: '4673', buCode: '8', label: '4673 Reisekosten / Verpflegung (7%)' },
   { gegenkonto: '4920', buCode: '9', label: '4920 Telefon / Internet (19%)' },
   { gegenkonto: '4930', buCode: '9', label: '4930 Bürobedarf / Software (19%)' },
   { gegenkonto: '4955', buCode: '9', label: '4955 Buchführungs- / Steuerberatungskosten (19%)' },
   { gegenkonto: '4970', buCode: '', label: '4970 Nebenkosten des Geldverkehrs' },
-  { gegenkonto: '2380', buCode: '', label: '2380 Zuwendungen / Spenden (steuerlich abzugsfähig)' },
-  { gegenkonto: '4673', buCode: '8', label: '4673 Reisekosten / Verpflegung (7%)' },
+  { gegenkonto: '0730', buCode: '', label: '0730 Gesellschafter-Verrechnungskonto (Privat)' },
   { gegenkonto: '4900', buCode: '', label: '4900 Sonstige betriebliche Aufwendungen (bestätigen)', action: 'ACCEPT' },
 ];
 
@@ -176,7 +184,9 @@ const AI_CATEGORY_ACCOUNT: Record<string, { gegenkonto: string; buCode: string }
   rent: { gegenkonto: '4210', buCode: '' },
   legal_tax: { gegenkonto: '4955', buCode: '9' },
   office: { gegenkonto: '4930', buCode: '9' },
-  donation: { gegenkonto: '2380', buCode: '' },
+  advertising: { gegenkonto: '4600', buCode: '9' },
+  hospitality: { gegenkonto: '4650', buCode: '' },
+  shareholder: { gegenkonto: '0730', buCode: '' },
   bank_fee: { gegenkonto: '4970', buCode: '' },
 };
 
@@ -276,9 +286,10 @@ export const reviewService = {
     return readJson(VENDOR_RULES_FILE, {});
   },
 
-  saveVendorRule(text: string, gegenkonto: string, buCode: string): string | null {
+  saveVendorRule(text: string, gegenkonto: string, buCode: string, clientId?: string): string | null {
     const key = this.payeeKey(text);
     if (!key || key.length < 4) return null;
+    clientRulesService.saveVendorRule(clientId, key, gegenkonto, buCode);
     const rules = this.getVendorRules();
     rules[key] = { gegenkonto, buCode, saved_at: new Date().toISOString(), example: (text || '').slice(0, 80) };
     writeJson(VENDOR_RULES_FILE, rules);
@@ -390,7 +401,7 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
   analyze(items: BookingItem[], ctx: AnalyzeContext): ReviewReport {
     const issues: ReviewIssue[] = [];
     const advice = this.getAiAdvice(ctx.scope);
-    const vinRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/;
+    const vinGroups = new Map<string, BookingItem[]>();
 
     const view = (it: BookingItem, key: string): ReviewBookingView => ({
       lineKey: key,
@@ -435,6 +446,7 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
         ...issue,
         options,
         ai,
+        matchedBeleg: issue.matchedBeleg || it.matchedBeleg,
         id: `${issue.type}:${key}`,
         lineKey: key,
         booking: view(it, key),
@@ -457,6 +469,7 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       if (!(amt > 0) || !it.konto || !it.gegenkonto) {
         pushIssue(it, {
           type: 'INVALID_AMOUNT',
+          categoryTab: 'MISSING_BELEG',
           severity: 'CRITICAL',
           title: 'Ungültige Buchung (Betrag/Konto fehlt)',
           question: 'This line has no valid amount or account. Exclude it from the DATEV export?',
@@ -468,24 +481,13 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       }
 
       // 1) Car sale whose VIN was not found in purchase history (8193 vs 8400 decision)
-      // Only applicable to vehicle sales (incoming bank payment S on 8193/8400/8125). Never apply to expenses or purchases (H).
+      // Grouped by car/customer ("1 Car = 1 Question") after the loop so partial payments combine into one question.
       if (ctx.vinUnresolved.has(it) && sh === 'S' && ['8193', '8400', '8125'].includes(it.gegenkonto)) {
-        const vin = (text.toUpperCase().match(vinRegex) || [])[1];
-        pushIssue(it, {
-          type: 'VIN_NOT_FOUND',
-          severity: 'CRITICAL',
-          title: 'Fahrzeugverkauf: Ankauf (VIN) nicht gefunden',
-          question: vin
-            ? `VIN ${vin} has no purchase record. How was this car bought — §25a (private seller) or with VAT invoice?`
-            : 'Car sale without VIN / purchase record. Was the car bought §25a (private) or with a VAT invoice?',
-          details: `Verkauf ${amt.toFixed(2)} € • aktuell Gegenkonto ${it.gegenkonto} (nur Vorschlag, nicht final)`,
-          options: [
-            { gegenkonto: '8193', buCode: '', label: '8193 §25a Differenzbesteuerung (Ankauf von Privat)' },
-            { gegenkonto: '8400', buCode: '', label: '8400 Regelbesteuerung 19% (Ankauf mit MwSt-Rechnung)' },
-            { gegenkonto: '8125', buCode: '', label: '8125 EU-Lieferung steuerfrei (Käufer mit USt-IdNr.)' },
-          ],
-          suggest_upload: 'Upload the purchase contract (Ankaufvertrag) of this car — the VIN will then resolve automatically.',
-        });
+        const vin = extractVinFromText(text) || it.matchedBeleg?.vin || undefined;
+        const gKey = it.carGroupKey || vin || this.payeeKey(it.buchungstext || '') || key;
+        const arr = vinGroups.get(gKey) || [];
+        arr.push(it);
+        vinGroups.set(gKey, arr);
         flagged = true;
       }
 
@@ -496,16 +498,17 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
         isBank &&
         /(rückerstattung|rueckerstattung|erstattung|gutschrift|refund|rückzahlung|rueckzahlung|storno|rückbuchung|rueckbuchung)/i.test(lower)
       ) {
-        // Auto-link known vendor refunds (e.g. eBay parts, auto-teile)
+        // Auto-link known vendor refunds
         if (['8400', '4900'].includes(it.gegenkonto)) {
-          if (/ebay/i.test(lower) || /auto-teile/i.test(lower) || /15-11900|12-11907/.test(lower)) {
+          if (/ebay/i.test(lower) || /auto-teile/i.test(lower)) {
             it.gegenkonto = '4540';
             it.buCode = '9';
           }
         }
-        if (!['4955', '4520', '4530', '4540', '4210', '4510', '4970', '1780', '1576', '4930', '2380'].includes(it.gegenkonto)) {
+        if (!['4955', '4520', '4530', '4540', '4210', '4510', '4970', '1780', '1576', '4930'].includes(it.gegenkonto)) {
           pushIssue(it, {
             type: 'REFUND_UNCLEAR',
+            categoryTab: 'DECISION',
             severity: 'CRITICAL',
             title: 'Rückerstattung: Ursprungskonto unklar',
             question: 'Incoming refund — which ORIGINAL expense/income account must be reversed?',
@@ -534,9 +537,12 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
         const aiAcc = it.ai_category ? AI_CATEGORY_ACCOUNT[it.ai_category] : undefined;
         pushIssue(it, {
           type: 'UNKNOWN_ACCOUNT',
+          categoryTab: it.matchedBeleg ? 'DECISION' : 'MISSING_BELEG',
           severity: 'CRITICAL',
           title: aiConf !== undefined ? `Unbekannter Empfänger (KI-Sicherheit ${(aiConf * 100).toFixed(0)}%)` : 'Unbekannter Empfänger / Konto unklar',
-          question: 'The system could not identify this vendor reliably. Which SKR03 account is correct?',
+          question: it.matchedBeleg
+            ? `Beleg gefunden (${it.matchedBeleg.partner}), bitte Gegenkonto bestätigen:`
+            : 'The system could not identify this vendor reliably. Which SKR03 account is correct?',
           details: `${sh === 'S' ? 'Eingang' : 'Ausgang'} ${amt.toFixed(2)} €${aiAcc ? ` • KI-Vorschlag ${aiAcc.gegenkonto}` : ''}`,
           options: opts,
           suggest_upload: 'Upload the invoice/receipt of this payment for automatic recognition.',
@@ -557,6 +563,7 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
         if (!matched && ctx.hasBankStatement) {
           pushIssue(it, {
             type: 'CASH_WITHOUT_WITHDRAWAL',
+            categoryTab: 'MISSING_BELEG',
             severity: 'CRITICAL',
             title: 'Bareinzahlung ohne Bank-Abhebung',
             question: 'Cash deposit to Kasse has no matching bank withdrawal (Geldtransit 1360 will not be 0). What is the source?',
@@ -578,6 +585,7 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       if (!flagged && isCash && it.gegenkonto !== '1360' && amt > 5000) {
         pushIssue(it, {
           type: 'LARGE_CASH',
+          categoryTab: 'MISSING_BELEG',
           severity: 'CRITICAL',
           title: 'Hohe Barbuchung (> 5.000 €)',
           question: 'Large cash booking. Is there an original Kassebeleg for exactly this amount?',
@@ -595,6 +603,7 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       if (!flagged && /(brief description|lorem ipsum|placeholder|beispieltext|\bn\/a\b|^\s*unknown\s*$|^\s*$)/i.test(it.buchungstext || '')) {
         pushIssue(it, {
           type: 'PLACEHOLDER_TEXT',
+          categoryTab: 'DECISION',
           severity: 'WARNING',
           title: 'Platzhalter-Buchungstext',
           question: 'Booking text looks like a placeholder. Keep this booking?',
@@ -606,6 +615,84 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
         });
       }
       void key;
+    }
+
+    // Emit 1 grouped VIN_NOT_FOUND issue per car / customer ("1 Car = 1 Question")
+    for (const [, group] of vinGroups.entries()) {
+      const first = group[0];
+      const keys = group.map((g) => ctx.lineKeys.get(g) || '').filter(Boolean);
+      const firstKey = keys[0] || '';
+      const totalAmt = round2(group.reduce((s, g) => s + (Number(g.amount) || 0), 0));
+      const matchedBeleg = group.map((g) => g.matchedBeleg).find(Boolean);
+      const vin =
+        group
+          .map((g) => extractVinFromText(`${g.buchungstext || ''} ${g.belegfeld1 || ''}`))
+          .find(Boolean) ||
+        matchedBeleg?.vin ||
+        undefined;
+      const firstRes = ctx.resolvedKeys.get(firstKey);
+      const allResolved = keys.length > 0 && keys.every((k) => ctx.resolvedKeys.has(k));
+      const adv = advice[firstKey];
+      const aiFromLine =
+        first.ai_category || first.ai_confidence !== undefined
+          ? {
+              category: first.ai_category,
+              confidence: first.ai_confidence,
+              reason: first.ai_reason,
+              suggested_gegenkonto: first.ai_suggested_gegenkonto,
+              suggested_bu: first.ai_suggested_bu,
+            }
+          : undefined;
+      const ai = adv
+        ? {
+            confidence: adv.confidence,
+            reason: adv.reason,
+            suggested_gegenkonto: adv.suggested_gegenkonto,
+            suggested_bu: adv.suggested_bu,
+            category: aiFromLine?.category,
+          }
+        : aiFromLine;
+      const baseOptions = [
+        { gegenkonto: '8193', buCode: '', label: '8193 §25a Differenzbesteuerung (Ankauf von Privat)' },
+        { gegenkonto: '8400', buCode: '', label: '8400 Regelbesteuerung 19% (Ankauf mit MwSt-Rechnung)' },
+        { gegenkonto: '8125', buCode: '', label: '8125 EU-Lieferung steuerfrei (Käufer mit USt-IdNr.)' },
+      ];
+      const options = baseOptions.map((o) => ({
+        ...o,
+        recommended: !!ai?.suggested_gegenkonto && ai.suggested_gegenkonto === o.gegenkonto,
+      }));
+      const bookingView = view(first, firstKey);
+      bookingView.amount = totalAmt;
+      if (group.length > 1) {
+        bookingView.text = `[${group.length} Teilzahlungen] ${first.buchungstext || ''}`;
+      }
+      issues.push({
+        id: `VIN_NOT_FOUND:${firstKey}`,
+        lineKey: firstKey,
+        relatedLineKeys: keys.length > 1 ? keys : undefined,
+        relatedBookings: group.length > 1 ? group.map((g, idx) => view(g, keys[idx] || '')) : undefined,
+        categoryTab: 'DECISION',
+        type: 'VIN_NOT_FOUND',
+        severity: 'CRITICAL',
+        title:
+          group.length > 1
+            ? `Fahrzeugverkauf (${group.length} Teilzahlungen): Steuerart prüfen`
+            : 'Fahrzeugverkauf: Ankauf (VIN) nicht gefunden',
+        question: vin
+          ? `VIN ${vin} has no purchase record. How was this car bought — §25a (private seller) or with VAT invoice?`
+          : 'Car sale without VIN / purchase record. Was the car bought §25a (private) or with a VAT invoice?',
+        details:
+          group.length > 1
+            ? `${group.length} Teilzahlungen, Summe ${totalAmt.toFixed(2)} € • aktuell Gegenkonto ${first.gegenkonto} (nur Vorschlag, nicht final)`
+            : `Verkauf ${totalAmt.toFixed(2)} € • aktuell Gegenkonto ${first.gegenkonto} (nur Vorschlag, nicht final)`,
+        booking: bookingView,
+        matchedBeleg,
+        options,
+        ai,
+        suggest_upload: 'Upload the purchase contract (Ankaufvertrag) of this car — the VIN will then resolve automatically.',
+        resolved: allResolved,
+        resolution: firstRes,
+      });
     }
 
     // Excluded lines are shown as resolved items (audit trail)
@@ -712,8 +799,8 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       label: 'Kassenbestand nie negativ',
       status: minCash > -0.05 ? 'PASS' : 'WARN',
       critical: false,
-      value: `min ${round2(minCash).toFixed(2)} € • Saldo ${round2(kasseNet).toFixed(2)} €`,
-      expected: '≥ 0,00 € (ohne Anfangsbestand)',
+      value: `Start ${round2(initialKasse).toFixed(2)} € • min ${round2(minCash).toFixed(2)} € • Saldo ${round2(running).toFixed(2)} €`,
+      expected: '≥ 0,00 € (inkl. Anfangsbestand)',
       hint: minCash > -0.05 ? undefined : 'Cash went negative — check opening cash balance or missing deposits.',
     });
     if (kasseNet > 20000) {

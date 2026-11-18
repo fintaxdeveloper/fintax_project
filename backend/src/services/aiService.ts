@@ -9,6 +9,8 @@ import { monthlyDocumentRegistry } from './monthlyDocumentRegistry.js';
 import { mathCrossValidationService } from './mathCrossValidationService.js';
 import { supplierMemoryService } from './supplierMemoryService.js';
 import { clientRulesService } from './clientRulesService.js';
+import { ocrService } from './ocrService.js';
+import { belegIndexService } from './belegIndexService.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -58,25 +60,9 @@ export const aiService = {
       return registryMatch;
     }
 
-    // Check if PDF text explicitly states "Kontoauszug M/2026" (e.g. Sparkasse Kontoauszug 3/2026, 4/2026, 5/2026, 6/2026)
     if (extractedText) {
-      const kaMatch = extractedText.match(/Kontoauszug\s+(0?[1-9]|1[0-2])\/(2026)/i);
-      if (kaMatch && /sparkasse/i.test(extractedText)) {
-        const kaMonth = parseInt(kaMatch[1], 10);
-        const monthMapFilename: Record<number, string> = {
-          3: '202603_kontoausz.pdf',
-          4: '202604_kontoausz.pdf',
-          5: 'kassenbelege & bank.pdf',
-          6: '202606_kontoausz.pdf',
-        };
-        if (monthMapFilename[kaMonth]) {
-          const kaRegistry = monthlyDocumentRegistry.match(monthMapFilename[kaMonth]);
-          if (kaRegistry) return kaRegistry;
-        }
-      }
-
       // Deterministic Multi-Transaction German Bank Statement (Kontoauszug) Parser
-      // Handles Volksbank, Sparkasse, VR-Bank, Commerzbank statements (e.g. 1200-Bank-10/11/12 Kontoauszug.pdf)
+      // Handles Volksbank, Sparkasse, VR-Bank, Commerzbank statements
       const parsedBankStatement = this.parseGermanBankStatement(extractedText, filename);
       if (parsedBankStatement) {
         if (AI_PROVIDER === 'ollama' && parsedBankStatement.bookings?.length) {
@@ -89,227 +75,58 @@ export const aiService = {
       }
     }
 
-    // 0. High-Accuracy Recognition for German SME / Restaurant Accounting Documents
-    if (filename.includes('kassenbericht')) {
-      if (filename.includes('201602') || filename.includes('202602') || filename.startsWith('02_')) {
-        console.log('[AI Service] Identified Kassenbericht 02/2026 (City Grill Kebap Haus, 2.560 €). Building exact SKR03 bookings...');
-        return {
-          document_type: 'SALES_INVOICE',
-          supplier_name: 'City Grill Kebap Haus Hafizullah Khpalwak',
-          supplier_tax_id: '',
-          invoice_number: 'KB-2026-02',
-          invoice_date: '2026-02-28',
-          currency: 'EUR',
-          net_amount: 2350.11,
-          vat_rate_percent: 7,
-          vat_amount: 209.89,
-          total_amount: 2560.0,
-          confidence_score: 0.99,
-          skr03_account_code: '8300',
-          payment_method: 'cash',
-          line_items_summary: 'Erlöse 7%: 2.110,00 €, Erlöse 19%: 450,00 €',
-          bookings: [
-            {
-              amount: 2110.0,
-              sh: 'S',
-              konto: '1000',
-              gegenkonto: '8300',
-              buCode: '',
-              belegdatum: '2802',
-              buchungstext: 'Kassenbericht Februar 2026 Erlöse 7%',
-            },
-            {
-              amount: 450.0,
-              sh: 'S',
-              konto: '1000',
-              gegenkonto: '8400',
-              buCode: '',
-              belegdatum: '2802',
-              buchungstext: 'Kassenbericht Februar 2026 Erlöse 19%',
-            },
-          ],
-        };
-      } else if (filename.includes('202603') || filename.startsWith('03_')) {
-        console.log('[AI Service] Identified Kassenbericht 03/2026 (City Grill Kebap Haus, 11.285 €). Building exact SKR03 bookings...');
-        return {
-          document_type: 'SALES_INVOICE',
-          supplier_name: 'City Grill Kebap Haus Hafizullah Khpalwak',
-          supplier_tax_id: '',
-          invoice_number: 'KB-2026-03',
-          invoice_date: '2026-03-31',
-          currency: 'EUR',
-          net_amount: 10452.42,
-          vat_rate_percent: 7,
-          vat_amount: 832.58,
-          total_amount: 11285.0,
-          confidence_score: 0.99,
-          skr03_account_code: '8300',
-          payment_method: 'cash',
-          line_items_summary: 'Erlöse 7%: 10.285,00 €, Erlöse 19%: 1.000,00 €',
-          bookings: [
-            {
-              amount: 10285.0,
-              sh: 'S',
-              konto: '1000',
-              gegenkonto: '8300',
-              buCode: '',
-              belegdatum: '3103',
-              buchungstext: 'Kassenbericht März 2026 Erlöse 7%',
-            },
-            {
-              amount: 1000.0,
-              sh: 'S',
-              konto: '1000',
-              gegenkonto: '8400',
-              buCode: '',
-              belegdatum: '3103',
-              buchungstext: 'Kassenbericht März 2026 Erlöse 19%',
-            },
-          ],
-        };
-      }
-    }
-
-    if (filename.includes('kassenbeleg')) {
-      if (filename.includes('202602') || filename.startsWith('02_')) {
-        console.log('[AI Service] Identified Kassenbelege 02/2026 (Bruder, Lidl, Mega Company, Müller - 147.41 €). Building exact SKR03 bookings...');
-        return {
-          document_type: 'RECEIPT',
-          supplier_name: 'Kassenbelege Sammelblatt',
-          supplier_tax_id: '',
-          invoice_number: 'KB-2026-02',
-          invoice_date: '2026-02-28',
-          currency: 'EUR',
-          net_amount: 133.27,
-          vat_rate_percent: 7,
-          vat_amount: 14.14,
-          total_amount: 147.41,
-          confidence_score: 0.99,
-          skr03_account_code: '3000',
-          payment_method: 'cash',
-          line_items_summary: 'Bruder: 5.77 €, Lidl (7%): 48.33 €, Lidl (19%): 3.34 €, Mega Company: 63.98 €, Müller: 25.99 €',
-          bookings: [
-            {
-              amount: 5.77,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '3000',
-              buCode: '8',
-              belegdatum: '2102',
-              buchungstext: 'Bruder Lebensmittel',
-            },
-            {
-              amount: 48.33,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '3000',
-              buCode: '8',
-              belegdatum: '0602',
-              buchungstext: 'Lidl',
-            },
-            {
-              amount: 3.34,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '3400',
-              buCode: '',
-              belegdatum: '0602',
-              buchungstext: 'Lidl',
-            },
-            {
-              amount: 63.98,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '4930',
-              buCode: '9',
-              belegdatum: '1002',
-              buchungstext: 'Mega Campany GmbH',
-            },
-            {
-              amount: 25.99,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '4930',
-              buCode: '9',
-              belegdatum: '2702',
-              buchungstext: 'Müller',
-            },
-          ],
-        };
-      }
-    }
-
-    if (filename.includes('bankbeleg')) {
-      if (filename.includes('202602') || filename.startsWith('02_')) {
-        console.log('[AI Service] Identified Bankbelege 02/2026 (Koyun Food e.K. Rechnung 28541 - 1.320,19 €). Building exact SKR03 bookings...');
-        return {
-          document_type: 'PURCHASE_INVOICE',
-          supplier_name: 'Koyun Food e.K.',
-          supplier_tax_id: 'DE53600501010004386218',
-          invoice_number: '28541',
-          invoice_date: '2026-02-05',
-          currency: 'EUR',
-          net_amount: 1178.50,
-          vat_rate_percent: 7,
-          vat_amount: 141.69,
-          total_amount: 1320.19,
-          confidence_score: 0.99,
-          skr03_account_code: '3000',
-          payment_method: 'cash',
-          line_items_summary: 'Lebensmittel, Fleisch, Mehl, Getränke (Gesamt: 1.320,19 €)',
-          bookings: [
-            {
-              amount: 93.0,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '4980',
-              buCode: '9',
-              belegdatum: '0502',
-              belegfeld1: '28541',
-              buchungstext: 'Koyun',
-            },
-            {
-              amount: 445.0,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '3400',
-              buCode: '',
-              belegdatum: '0502',
-              belegfeld1: '28541',
-              buchungstext: 'Koyun',
-            },
-            {
-              amount: 34.0,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '4710',
-              buCode: '9',
-              belegdatum: '0502',
-              belegfeld1: '28541',
-              buchungstext: 'Koyun',
-            },
-            {
-              amount: 15.0,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '4710',
-              buCode: '9',
-              belegdatum: '0502',
-              belegfeld1: '28541',
-              buchungstext: 'Koyun',
-            },
-            {
-              amount: 733.19,
-              sh: 'H',
-              konto: '1000',
-              gegenkonto: '3000',
-              buCode: '8',
-              belegdatum: '0502',
-              belegfeld1: '28541',
-              buchungstext: 'Koyun',
-            },
-          ],
-        };
+    // 0b. Offline CPU OCR + Multi-Page Bundle Indexing for scanned multi-page PDFs (Kassebelege/Bankbelege)
+    if (isPdf && (!extractedText || extractedText.trim().length <= 30) && /kassebeleg|bankbeleg|beleg/i.test(filename)) {
+      try {
+        const cpuPages = await ocrService.extractPages(filePath, mimeType);
+        if (cpuPages.length > 0) {
+          const mFn = filename.match(/(\d{2})(202\d)/);
+          const estMonth = mFn ? parseInt(mFn[1], 10) : 1;
+          const estYear = mFn ? 2024 : new Date().getFullYear();
+          const indexed = await belegIndexService.indexDocumentFile(filePath, mimeType, {
+            clientId: '704_QA24',
+            year: estYear,
+            month: estMonth,
+            filename,
+          });
+          if (indexed.length > 0 && indexed.some((r) => r.amount > 0)) {
+            const validBookings: BookingItem[] = indexed
+              .filter((r) => r.amount > 0)
+              .map((r) => ({
+                amount: r.amount,
+                sh: r.type === 'QA24_SALE' ? ('S' as const) : ('H' as const),
+                konto: r.paidCash && !/bankbeleg/i.test(filename) ? '1000' : '1200',
+                gegenkonto: r.skr03Account || '4900',
+                buCode: r.buCode || '',
+                belegdatum: r.belegdatum,
+                belegfeld1: (r.invoiceNo || r.vin || '').slice(0, 36),
+                buchungstext: `${r.partner}${r.vin ? ' - ' + r.vin : ''}`.slice(0, 60),
+                currency: 'EUR',
+              }));
+            const totalSum = validBookings.reduce((s, b) => s + b.amount, 0);
+            console.log(`[CPU OCR + BelegIndex] Extracted ${validBookings.length} booking(s) from "${filename}" (${cpuPages.length} pages).`);
+            return {
+              document_type: /kassebeleg/i.test(filename) ? 'RECEIPT' : 'PURCHASE_INVOICE',
+              supplier_name: validBookings.length > 1 ? `Sammelmappe ${filename}` : indexed[0].partner,
+              supplier_tax_id: '',
+              invoice_number: indexed[0].invoiceNo || filename,
+              invoice_date: indexed[0].date,
+              currency: 'EUR',
+              net_amount: totalSum,
+              vat_rate_percent: 0,
+              vat_amount: 0,
+              total_amount: Math.round(totalSum * 100) / 100,
+              confidence_score: 0.95,
+              skr03_account_code: validBookings[0]?.gegenkonto || '4900',
+              payment_method: /kassebeleg/i.test(filename) ? 'cash' : 'bank_transfer',
+              line_items_summary: indexed.map((r) => `${r.partner} (${r.amount.toFixed(2)} EUR${r.vin ? ', VIN ' + r.vin : ''})`).join('; '),
+              bookings: validBookings,
+            };
+          }
+          extractedText = cpuPages.map((p) => `--- PAGE ${p.page} ---\n${p.text}`).join('\n');
+        }
+      } catch (ocrErr: any) {
+        console.warn('[CPU OCR] Multi-page scan notice:', ocrErr?.message);
       }
     }
 
@@ -322,8 +139,8 @@ CRITICAL EXTRACTION RULES:
 1. SELLER vs BUYER (Who issued this document?):
    - "seller_name": The company/person issuing the invoice or selling the item/service (at the top letterhead).
    - "buyer_name": The recipient / customer ("Kunde", "Empfänger", "Käufer").
-   - "is_own_company_seller": true if the seller is "QA24 GmbH" (selling a car/service to a customer), false if a third-party vendor is billing the client.
-   - Note: An "Ankaufvertrag" where QA24 buys a car from a private person is a "PURCHASE_INVOICE" ("car_purchase"). A "Kaufvertrag" / "Rechnung" where QA24 sells a car to a customer is a "SALES_INVOICE" ("car_sale").
+   - "is_own_company_seller": true if the client's own dealership is selling a vehicle/service to a customer, false if a third-party vendor is billing the client.
+   - Note: An "Ankaufvertrag" where the client buys a car from a private seller is a "PURCHASE_INVOICE" ("car_purchase"). A "Kaufvertrag" / "Rechnung" selling a car to a customer is a "SALES_INVOICE" ("car_sale").
 
 2. CATEGORY (Pick the single most accurate category):
    - "fuel": Petrol, diesel, gas station (ARAL, Shell, Esso, Jet, Total, OMV, Tankstelle)
@@ -381,11 +198,23 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
 }
 `;
 
-    // 1. Try Local Ollama first (RTX A3000 GPU)
+    // 1. Try Local Ollama first (preferring extracted digital or CPU OCR text over slow vision)
     if (AI_PROVIDER === 'ollama') {
       try {
-        console.log(`[Local AI] Processing invoice with Ollama (${ollamaClient.getModel()}) on RTX A3000...`);
+        console.log(`[Local AI] Processing invoice with Ollama (${ollamaClient.getModel()})...`);
         let parsed: any = null;
+
+        if (isPdf && (!extractedText || extractedText.trim().length <= 30)) {
+          const cpuPages = await ocrService.extractPages(filePath, mimeType);
+          if (cpuPages.length > 0) {
+            extractedText = cpuPages.map((p) => p.text).join('\n').trim();
+          }
+        } else if (!isPdf && (!extractedText || extractedText.trim().length <= 30)) {
+          const cpuPages = await ocrService.extractPages(filePath, mimeType);
+          if (cpuPages.length > 0) {
+            extractedText = cpuPages.map((p) => p.text).join('\n').trim();
+          }
+        }
 
         if (isPdf) {
           if (extractedText && extractedText.trim().length > 30) {
@@ -393,20 +222,21 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
             const textPrompt = `${prompt}\n\nHere is the exact document text extracted from the PDF:\n---\n${extractedText.substring(0, 4500)}\n---`;
             parsed = await ollamaClient.generateJson<any>({ prompt: textPrompt });
           } else {
-            // Scanned PDF: extract real embedded page scans and send first page to Ollama Vision (Multi-Bill AI handles full page-by-page scan)
+            // Vision fallback only when CPU OCR produced no text
             const embeddedImages = pdfExtractor.extractEmbeddedImages(filePath, 1);
             if (embeddedImages.length > 0) {
-              console.log(`[Local AI] Scanned PDF detected: Sending cover page scan to Ollama vision (RTX A3000)...`);
+              console.log(`[Local AI] Scanned PDF fallback: Sending cover page scan to Ollama vision...`);
               parsed = await ollamaClient.generateJson<any>({
                 prompt,
                 images: [embeddedImages[0]],
               });
-            } else {
-              console.log('[Local AI] Scanned PDF has no digital text or JPEG streams. Using pattern matcher...');
             }
           }
+        } else if (extractedText && extractedText.trim().length > 30) {
+          const textPrompt = `${prompt}\n\nHere is the exact document text extracted via OCR:\n---\n${extractedText.substring(0, 4500)}\n---`;
+          parsed = await ollamaClient.generateJson<any>({ prompt: textPrompt });
         } else if (base64Data) {
-          // Send actual image (JPEG, PNG) to Ollama vision
+          // Image vision fallback
           parsed = await ollamaClient.generateJson<any>({
             prompt,
             images: [base64Data],
@@ -570,21 +400,58 @@ Return strictly JSON, no markdown:
         }
       }
     } else {
-      // Photo upload or scanned PDF: send every page image to the vision model
-      let images: string[] = [];
-      if (isPdf) {
-        images = pdfExtractor.extractEmbeddedImages(filePath, 25);
-      } else if (mimeType.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(filePath)) {
-        try {
-          images = [fs.readFileSync(filePath).toString('base64')];
-        } catch {
-          images = [];
+      // Offline CPU OCR + Page Grouping FIRST (fast CPU, avoids multi-minute GPU vision scan)
+      try {
+        const cpuPages = await ocrService.extractPages(filePath, mimeType);
+        if (cpuPages.length > 0) {
+          const mFn = fname.match(/(\d{2})(202\d)/);
+          const estMonth = mFn ? parseInt(mFn[1], 10) : 1;
+          const estYear = mFn ? 2024 : new Date().getFullYear();
+          const indexed = await belegIndexService.indexDocumentFile(filePath, mimeType, {
+            clientId: '704_QA24',
+            year: estYear,
+            month: estMonth,
+            filename: originalFilename || path.basename(filePath),
+          });
+          if (indexed.length > 1) {
+            for (const rec of indexed) {
+              if (rec.amount <= 0) continue;
+              collected.push({
+                supplier_name: rec.partner,
+                invoice_number: rec.invoiceNo || '',
+                raw_bill_date: rec.date,
+                total_amount: rec.amount,
+                vat_amount: rec.vatRate && rec.netAmount ? Math.round((rec.amount - rec.netAmount) * 100) / 100 : 0,
+                currency: 'EUR',
+                document_type: rec.type === 'QA24_SALE' ? 'SALES_INVOICE' : rec.type === 'RECEIPT' ? 'RECEIPT' : 'PURCHASE_INVOICE',
+                tax_regime: rec.taxClause === '25a' ? 'margin_25a' : rec.taxClause === 'EU' ? 'eu_b2b_0' : rec.taxClause === '7' ? 'reduced_7' : 'regular_19',
+                vin: rec.vin || '',
+                line_items_summary: rec.matchedLineSnippet || rec.partner,
+              });
+            }
+          }
         }
+      } catch (cpuErr: any) {
+        console.warn('[Multi-Bill CPU OCR] Notice:', cpuErr?.message);
       }
-      for (let i = 0; i < images.length; i++) {
-        console.log(`[Multi-Bill AI] Scanning page/image ${i + 1}/${images.length} for multiple bills...`);
-        const bills = await runVision(images[i]);
-        collected.push(...bills);
+
+      // Vision fallback only if CPU OCR could not extract multiple bills
+      if (collected.length === 0) {
+        let images: string[] = [];
+        if (isPdf) {
+          images = pdfExtractor.extractEmbeddedImages(filePath, 25);
+        } else if (mimeType.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(filePath)) {
+          try {
+            images = [fs.readFileSync(filePath).toString('base64')];
+          } catch {
+            images = [];
+          }
+        }
+        for (let i = 0; i < images.length; i++) {
+          console.log(`[Multi-Bill AI] Scanning page/image ${i + 1}/${images.length} for multiple bills...`);
+          const bills = await runVision(images[i]);
+          collected.push(...bills);
+        }
       }
     }
 
@@ -612,7 +479,8 @@ Return strictly JSON, no markdown:
       const total = parseAmount(b.total_amount ?? b.amount_due ?? b.total);
       if (!rawDate || isoDate === todayIso || total <= 0) continue; // unreadable bill -> ignore
 
-      const key = `${isoDate}|${total.toFixed(2)}`;
+      const disc = String(b.invoice_number || b.vin || b.supplier_name || '').toLowerCase().trim();
+      const key = `${isoDate}|${total.toFixed(2)}|${disc}`;
       if (seen.has(key)) continue; // the vision model sometimes lists the same bill twice
       seen.add(key);
       unique.push({ ...b, _iso: isoDate, _total: total, _rawDate: rawDate });
@@ -825,14 +693,8 @@ Return strictly JSON, no markdown:
     }
 
     if (total === 0 && lowerName.includes('total')) {
-      const numMatch = lowerName.match(/(\d+)/);
-      if (numMatch) total = parseFloat(numMatch[1]);
-      else total = 130.0;
-    }
-
-    // Fallback amount if completely undetectable (never leave 0 in German bookkeeping export)
-    if (total === 0) {
-      total = 100.0;
+      const numMatch = lowerName.match(/(\d+(?:[.,]\d{1,2})?)/);
+      if (numMatch) total = parseFloat(numMatch[1].replace(',', '.')) || 0;
     }
 
     const isReceipt = lowerName.includes('total') || lowerName.includes('bon') || lowerName.includes('bar') || lowerName.includes('kasse');
@@ -972,10 +834,6 @@ Return strictly JSON, no markdown:
       }
     }
 
-    // Fix 0 amounts for handwritten total notes or when OCR text contains the amount
-    if (total === 0 && isHandwritten) {
-      total = 130.0;
-    }
     if (total === 0 && rawItems.length > 0) {
       const sumItems = rawItems.reduce((acc, it) => acc + parseNumber(it.amount || it.total || it.price || 0), 0);
       if (sumItems > 0) total = parseFloat(sumItems.toFixed(2));
@@ -994,9 +852,6 @@ Return strictly JSON, no markdown:
         }
         if (maxV > 0) total = maxV;
       }
-    }
-    if (total <= 0 && net <= 0) {
-      total = 100.0;
     }
 
     // Mathematical consistency check (Net + VAT = Gross) & Auto-Correction via Math Cross-Validation Engine
@@ -1127,37 +982,8 @@ Return strictly JSON, no markdown:
         currency: b.currency || parsed.currency || 'EUR',
       }));
     } else {
-      const combined = `${supplier} ${summary} ${filename}`.toLowerCase();
-
-      // Check A: Kassenbericht City Grill Kebap Haus (2.560 € = 2.110 € 7% + 450 € 19%)
-      if ((combined.includes('boniert') || combined.includes('kebap') || combined.includes('city grill') || combined.includes('kassenbericht')) && (total === 2560 || combined.includes('2110') || combined.includes('2560'))) {
-        bookings = [
-          { amount: 2110.0, sh: 'S', konto: '1000', gegenkonto: '8300', buCode: '', belegdatum: '2802', buchungstext: 'Kassenbericht Februar 2026 Erlöse 7%' },
-          { amount: 450.0, sh: 'S', konto: '1000', gegenkonto: '8400', buCode: '', belegdatum: '2802', buchungstext: 'Kassenbericht Februar 2026 Erlöse 19%' },
-        ];
-      }
-      // Check B: Kassenbelege Sammelblatt (Bruder 5.77, Lidl 48.33 + 3.34, Mega Company 63.98, Müller 25.99)
-      else if (combined.includes('bruder') && (combined.includes('lidl') || combined.includes('müller') || combined.includes('mega'))) {
-        bookings = [
-          { amount: 5.77, sh: 'H', konto: '1000', gegenkonto: '3000', buCode: '8', belegdatum: '2102', buchungstext: 'Bruder Lebensmittel' },
-          { amount: 48.33, sh: 'H', konto: '1000', gegenkonto: '3000', buCode: '8', belegdatum: '0602', buchungstext: 'Lidl' },
-          { amount: 3.34, sh: 'H', konto: '1000', gegenkonto: '3400', buCode: '', belegdatum: '0602', buchungstext: 'Lidl' },
-          { amount: 63.98, sh: 'H', konto: '1000', gegenkonto: '4930', buCode: '9', belegdatum: '1002', buchungstext: 'Mega Campany GmbH' },
-          { amount: 25.99, sh: 'H', konto: '1000', gegenkonto: '4930', buCode: '9', belegdatum: '2702', buchungstext: 'Müller' },
-        ];
-      }
-      // Check C: Koyun Food e.K. (1.320,19 €)
-      else if (combined.includes('koyun') && (combined.includes('28541') || total === 1320.19 || Math.abs(total - 1320.19) < 1)) {
-        bookings = [
-          { amount: 93.0, sh: 'H', konto: '1000', gegenkonto: '4980', buCode: '9', belegdatum: '0502', belegfeld1: '28541', buchungstext: 'Koyun' },
-          { amount: 445.0, sh: 'H', konto: '1000', gegenkonto: '3400', buCode: '', belegdatum: '0502', belegfeld1: '28541', buchungstext: 'Koyun' },
-          { amount: 34.0, sh: 'H', konto: '1000', gegenkonto: '4710', buCode: '9', belegdatum: '0502', belegfeld1: '28541', buchungstext: 'Koyun' },
-          { amount: 15.0, sh: 'H', konto: '1000', gegenkonto: '4710', buCode: '9', belegdatum: '0502', belegfeld1: '28541', buchungstext: 'Koyun' },
-          { amount: 733.19, sh: 'H', konto: '1000', gegenkonto: '3000', buCode: '8', belegdatum: '0502', belegfeld1: '28541', buchungstext: 'Koyun' },
-        ];
-      }
-      // Check D: Generic Invoice Line Items (Camera 899, Fitness Tracker 129, Laptop 1199, etc.)
-      else if (rawItems.length > 1) {
+      // Generic Invoice Line Items
+      if (rawItems.length > 1) {
         const itemBookings: BookingItem[] = [];
         for (const it of rawItems) {
           const itemDesc = String(it.item_description || it.description || it.name || it.item || 'Item').trim();
@@ -1826,7 +1652,7 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         sh === 'S' && (
           /stammkapital|stammeinlage|kapitaleinzahlung|gründungskapital|gesellschaftsvertrag/i.test(lower) ||
           (/(?:i\.?\s*gr\.?|in\s+gründung)/i.test(extractedText) && [12500, 25000].includes(tx.amount)) ||
-          (/\b(stammkapital|stammeinlage)\b/i.test(extractedText) && tx.amount >= 5000 && /soheil|qayumi/i.test(lower))
+          (/\b(stammkapital|stammeinlage)\b/i.test(extractedText) && tx.amount >= 5000 && clientRulesService.isOwner(undefined, lower))
         );
 
       // 2. Loans & Shareholder balances (Darlehen / Kredit)
@@ -1848,11 +1674,13 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
           /crs weilbach|bad soden gaa|gaa \d/i.test(combined)
         );
 
-      // 5. Vehicle purchases & sales (for automotive dealership QA24)
+      // 5. Vehicle purchases & sales (for automotive dealership)
+      const hasVinInText = /(?<![A-Z0-9])[A-HJ-NPR-Z]{3}[A-HJ-NPR-Z0-9]{8}\d{6}(?![0-9])/i.test(combined);
       const isVehiclePurchase =
         /\b(kauf|anzahlung|restzahlung|differenzbetrag|fahrzeug|auto|pkw|kfz|polo|tesla|adam|vito|fiat|golf|corsa|astra|passat|audi|bmw|mercedes|opel|volkswagen|cupra|skoda|seat|porsche|land rover|range rover)\b/i.test(lower) ||
-        /\b[A-HJ-NPR-Z0-9]{17}\b/i.test(combined) ||
-        /fortia automotive|auto-|kfz-|car-/i.test(lower);
+        hasVinInText ||
+        /auto-|kfz-|car-/i.test(lower) ||
+        clientRulesService.isEuDealer(undefined, lower);
 
       // 6. Bank statement fees & separate bank fee VAT breakdown (Anlage 1 PN:905)
       // IMPORTANT: Do NOT trigger bank fee on large car purchase / vendor payments that happen to have instant transfer fee text
@@ -1871,7 +1699,7 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
 
       // 8. Court, Commercial register, Bailiff (Amtsgericht, Gerichtsvollzieher, Justizkasse)
       const isCourtOrRegister =
-        /\b(amtsgericht|handelsregister|gerichtskasse|justizkasse|landgericht|zentrale mahnabteilung|gerichtsvollzieher|dr\s*ii|tanja scheurer)\b/i.test(lower);
+        /\b(amtsgericht|handelsregister|gerichtskasse|justizkasse|landgericht|zentrale mahnabteilung|gerichtsvollzieher|dr\s*ii)\b/i.test(lower);
 
       // 9. Public administration & municipal fees (Bürgerbüro, Stadtkasse, Magistrat, Verkehrsabteilung, IHK, Landratsamt)
       const isPublicAuthority =
@@ -1881,9 +1709,9 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       const isTravelOrTransport =
         /\b(db vertrieb|dz bank-db vertrieb|deutsche bahn|bahncard|lufthansa|flixbus|flixtrain|hotel|hotelbuchung|airbnb|taxi\b|fluggast)\b/i.test(lower);
 
-      // 11. Vehicle inspection & Workshop (TÜV, Dekra, Gutachter Dastgir, FSP GmbH, Porsche/Audi Zentrum, Reparatur) -> 4540 BU 9
+      // 11. Vehicle inspection & Workshop (TÜV, Dekra, Gutachter, Prüfstelle, Reparatur) -> 4540 BU 9
       const isVehicleInspectionOrRepair =
-        /\b(tüv|tuev|dekra|fsp|gtü|küs|intec|garantie|gutachten|prüfstelle|prüfbericht|dastgir|ingenieurbüro dastgir|stahlgruber|autoteile|kfz-teile|werkstatt|reparatur|reifen|vergölst|atu|gthling kaufmann|adyen.*automobile|porsche zentrum|audi zentrum|bmw autohaus|mercedes-benz autohaus)\b/i.test(lower) ||
+        /\b(tüv|tuev|dekra|fsp|gtü|küs|garantie|gutachten|prüfstelle|prüfbericht|stahlgruber|autoteile|kfz-teile|werkstatt|reparatur|reifen|vergölst|atu|porsche zentrum|audi zentrum|bmw autohaus|mercedes-benz autohaus)\b/i.test(lower) ||
         (/\b(inspektion|wartung|ölwechsel|service)\b/i.test(lower) && tx.amount < 2000);
 
       // 11b. Vehicle / Business Insurance (ARAG, Signal Iduna, Allianz, HUK, AXA, etc.) -> 4520 (no tax key)
@@ -1897,9 +1725,9 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         /(storno|rückbuchung|rueckbuchung|rückerstattung|rueckerstattung|erstattung)/i.test(lower) &&
         /\b(fintax|steuerberat|rechtsanwalt|fibu|buchhaltung)\b/i.test(lower);
 
-      // 12. Operating supplies & consumables (eBay, Villmar und Pflug, Globus) -> 4980 BU 9
+      // 12. Operating supplies & consumables (eBay, Globus, Baumarkt) -> 4980 BU 9
       const isOperatingSupplies =
-        /\b(ebay by adyen|ebay|klarna.*ebay|villmar und pflug|globus sbw|galaxus|baumarkt|hornbach|bauhaus|action deutschland|tedi\b)\b/i.test(lower);
+        /\b(ebay by adyen|ebay|klarna.*ebay|globus sbw|galaxus|baumarkt|hornbach|bauhaus|action deutschland|tedi\b)\b/i.test(lower);
 
       // 13. Car dealer financing payoff (BDK, Santander, Toyota Financial) -> 3200
       const isFinancingPayoff =
@@ -1909,20 +1737,20 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       const isCarFinancingPayout =
         sh === 'S' && /\b(bank11|santander|bdk|autofinanzierung)\b/i.test(lower);
 
-      // 15. EU tax-free cross-border automotive trading (Fortia, Bilar99e, Transiett, Van Hove) -> 8125 / 3200
-      const isEuCarDealer =
-        /\b(fortia automotive|oy fortia|bilar99e|bilar99e oy|transiett|tg transiett|van hove|auto zuyd|drive4ever|digitaldrive|stern wagen)\b/i.test(lower);
+      // 15. EU tax-free cross-border automotive trading (from client rules config) -> 8125 / 3200
+      const isEuCarDealer = clientRulesService.isEuDealer(undefined, lower);
 
-      // 16. Used vehicle purchase under § 25a Differenzbesteuerung (Autowelt Taunus, Florian Liszaj, etc.) -> 3200
+      // 16. Used vehicle purchase under § 25a Differenzbesteuerung -> 3200
       const isUsedCarPurchase =
         sh === 'H' && (
-          /\b(autowelt taunus|florian liszaj|kauf tesla|kauf audi|kauf vw|kauf bmw|kauf pkw)\b/i.test(lower) ||
-          (/\b(kauf|anzahlung|restzahlung)\b/i.test(lower) && /\b[A-HJ-NPR-Z0-9]{17}\b/i.test(combined))
+          /\b(kauf tesla|kauf audi|kauf vw|kauf bmw|kauf pkw|fahrzeugankauf|ankaufvertrag)\b/i.test(lower) ||
+          clientRulesService.lookupPayee(undefined, lower) === '3200' ||
+          (/\b(kauf|anzahlung|restzahlung)\b/i.test(lower) && hasVinInText)
         );
 
-      // 17. Owner / Shareholder transactions (Soheil Qayumi, Abdul Rahm Qayumi, Yelda Qayumi) -> 0730 / 1530
+      // 17. Owner / Shareholder transactions (loaded from client settings config) -> 0730 / 1530
       const isOwnerPrivate =
-        /\b(soheil qayumi|abdul rahm qayumi|qayumi|yelda qayumi|mechthild köbrich)\b/i.test(lower) &&
+        clientRulesService.isOwner(undefined, lower) &&
         !/\b(lohn|gehalt|stammkapital|stammeinlage)\b/i.test(lower);
 
       // 18. Fuel & service stations -> 4530 BU 9
@@ -2039,7 +1867,7 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       } else if (/\b(vattenfall|stadtwerke|enbw|e\.on|rwe|strom|gas|energie|rabot)\b/i.test(lower)) {
         gegenkonto = '4240';
         buCode = '9';
-      } else if (/\b(miete|pacht|klaus kilb|immobilien)\b/i.test(lower)) {
+      } else if (/\b(miete|pacht|immobilien)\b/i.test(lower)) {
         gegenkonto = '4210';
         buCode = '';
       } else if (/\b(mobile\.de|autoscout24|kleinanzeigen|werbung|vistaprint)\b/i.test(lower)) {
@@ -2056,10 +1884,6 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         buCode = '';
       } else if (/\b(hauptzollamt|kfz-steuer)\b/i.test(lower)) {
         gegenkonto = '4510';
-        buCode = '';
-      } else if (/\b(smarttarif24)\b/i.test(lower)) {
-        // Smarttarif24 supplier account (invoice booked separately) -> 70001 without tax key
-        gegenkonto = '70001';
         buCode = '';
       } else if (isVehiclePurchase && sh === 'H' && (tx.amount >= 1500 || /\bdifferenzbetrag\b/i.test(lower))) {
         // Outgoing vehicle purchase for resale (>= 1500 EUR or Differenzbetrag): default to 3200 (§25a UStG)
@@ -2119,10 +1943,7 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
 
       // Determine if Belegfeld 2 should be marked 'KeineRechnung' for missing invoice / unclarified bank line
       let belegfeld2 = '';
-      if (
-        (isUsedCarPurchase || /transiett|augustin logistic|intec ag|klaus kilb|tanja scheurer|voigt|stanger/i.test(lower) || (/aral/i.test(lower) && Math.round(tx.amount) === 19)) &&
-        !belegfeld1
-      ) {
+      if (isUsedCarPurchase && !belegfeld1) {
         belegfeld2 = 'KeineRechnung';
       }
 

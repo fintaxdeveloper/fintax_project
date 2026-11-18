@@ -11,6 +11,9 @@ export interface ReviewOption {
 export interface ReviewIssue {
   id: string;
   lineKey: string;
+  relatedLineKeys?: string[];
+  relatedBookings?: ReviewIssue['booking'][];
+  categoryTab?: 'MISSING_BELEG' | 'DECISION';
   type: string;
   severity: 'CRITICAL' | 'WARNING';
   title: string;
@@ -26,6 +29,18 @@ export interface ReviewIssue {
     buCode: string;
     text: string;
     belegfeld1?: string;
+  };
+  matchedBeleg?: {
+    id?: string;
+    source_file: string;
+    pages: number[];
+    partner: string;
+    invoiceNo?: string | null;
+    vin?: string | null;
+    amount: number;
+    taxClause?: string | null;
+    snippet?: string;
+    document_id?: string;
   };
   options: ReviewOption[];
   ai?: {
@@ -104,6 +119,7 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
   const [isAskingAi, setIsAskingAi] = useState(false);
   const [uploadingForIssue, setUploadingForIssue] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'ALL' | 'DECISION' | 'MISSING_BELEG'>('ALL');
 
   if (!isOpen || !report) return null;
 
@@ -125,6 +141,7 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
         body: JSON.stringify({
           scope: report.scope,
           lineKey: issue.lineKey,
+          relatedLineKeys: issue.relatedLineKeys,
           action: option.action || 'SET_ACCOUNT',
           gegenkonto: targetAcc,
           buCode: targetBu,
@@ -208,6 +225,14 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
 
   const openIssues = report.issues.filter((i) => !i.resolved);
   const resolvedIssues = report.issues.filter((i) => i.resolved);
+  const missingBelegCount = openIssues.filter((i) => i.categoryTab === 'MISSING_BELEG').length;
+  const decisionCount = openIssues.length - missingBelegCount;
+  const displayedIssues =
+    activeTab === 'ALL'
+      ? openIssues
+      : activeTab === 'MISSING_BELEG'
+      ? openIssues.filter((i) => i.categoryTab === 'MISSING_BELEG')
+      : openIssues.filter((i) => i.categoryTab !== 'MISSING_BELEG');
 
   return (
     <div
@@ -422,6 +447,36 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
               )}
             </div>
 
+            {openIssues.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                {[
+                  { id: 'ALL' as const, label: isDe ? `Alle (${openIssues.length})` : `All (${openIssues.length})` },
+                  { id: 'DECISION' as const, label: isDe ? `❓ Entscheidung (${decisionCount})` : `❓ Decisions (${decisionCount})` },
+                  { id: 'MISSING_BELEG' as const, label: isDe ? `📎 Beleg fehlt (${missingBelegCount})` : `📎 Missing Receipt (${missingBelegCount})` },
+                ].map((tab) => {
+                  const selected = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      style={{
+                        background: selected ? 'rgba(56, 189, 248, 0.22)' : 'rgba(255, 255, 255, 0.05)',
+                        border: selected ? '1px solid rgba(56, 189, 248, 0.65)' : '1px solid rgba(255, 255, 255, 0.12)',
+                        color: selected ? '#e0f2fe' : '#94a3b8',
+                        padding: '6px 12px',
+                        borderRadius: 999,
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {openIssues.length === 0 ? (
               <div
                 style={{
@@ -441,9 +496,13 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
                   {isDe ? 'Keine offenen Zweifel. Die DATEV EXTF CSV-Dateien sind exportbereit.' : 'No open doubts. DATEV CSV is ready for download.'}
                 </div>
               </div>
+            ) : displayedIssues.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.88rem' }}>
+                {isDe ? 'Keine offenen Punkte in dieser Kategorie.' : 'No open items in this category.'}
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {openIssues.map((issue) => {
+                {displayedIssues.map((issue) => {
                   const b = issue.booking;
                   const isBusy = resolvingKey === issue.lineKey;
                   const isUploading = uploadingForIssue === issue.lineKey;
@@ -527,6 +586,62 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {/* Grouped Partial Payments Box ("1 Auto = 1 Frage") */}
+                      {issue.relatedBookings && issue.relatedBookings.length > 1 && (
+                        <div
+                          style={{
+                            background: 'rgba(99, 102, 241, 0.08)',
+                            border: '1px solid rgba(129, 140, 248, 0.3)',
+                            borderRadius: 10,
+                            padding: '10px 12px',
+                            fontSize: '0.8rem',
+                            color: '#cbd5e1',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, color: '#a5b4fc', marginBottom: 6 }}>
+                            🚗 {issue.relatedBookings.length} {isDe ? 'zusammengefasste Teilzahlungen (1 Fahrzeug → 1 Entscheidung)' : 'grouped partial payments (1 car → 1 decision)'}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {issue.relatedBookings.map((rb, idx) => (
+                              <div key={rb.lineKey || idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, borderBottom: '1px dashed rgba(255,255,255,0.08)', paddingBottom: 3 }}>
+                                <span style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>{rb.date}</span>
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rb.text}</span>
+                                <span style={{ fontWeight: 700, color: '#34d399', whiteSpace: 'nowrap' }}>{rb.amount.toFixed(2)} €</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Matched Receipt Preview Banner */}
+                      {issue.matchedBeleg && (
+                        <div
+                          style={{
+                            background: 'rgba(16, 185, 129, 0.08)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            borderRadius: 10,
+                            padding: '10px 12px',
+                            fontSize: '0.8rem',
+                            color: '#cbd5e1',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, color: '#6ee7b7', marginBottom: 4 }}>
+                            📎 {isDe ? 'Gefundener Beleg' : 'Matched Receipt'}: {issue.matchedBeleg.source_file} ({isDe ? 'S.' : 'p.'} {issue.matchedBeleg.pages.join(', ')})
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: '0.78rem', color: '#94a3b8' }}>
+                            <span><strong style={{ color: '#e2e8f0' }}>Partner:</strong> {issue.matchedBeleg.partner}</span>
+                            {issue.matchedBeleg.invoiceNo && <span><strong style={{ color: '#e2e8f0' }}>Rg-Nr:</strong> {issue.matchedBeleg.invoiceNo}</span>}
+                            {issue.matchedBeleg.vin && <span><strong style={{ color: '#e2e8f0' }}>VIN:</strong> {issue.matchedBeleg.vin}</span>}
+                            {issue.matchedBeleg.taxClause && <span><strong style={{ color: '#fbbf24' }}>Steuer:</strong> {issue.matchedBeleg.taxClause}</span>}
+                          </div>
+                          {issue.matchedBeleg.snippet && (
+                            <div style={{ marginTop: 4, fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                              „{issue.matchedBeleg.snippet}“
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* AI Advice Callout */}
                       {issue.ai && (issue.ai.reason || issue.ai.suggested_gegenkonto) && (
@@ -737,7 +852,7 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
 
             {documentId ? (
               <a
-                href={report.blocked ? undefined : `${apiBase}/documents/${documentId}/skr03-csv`}
+                href={report.blocked ? undefined : `${apiBase}/documents/${documentId}/skr03-csv?token=${encodeURIComponent(localStorage.getItem('fintax_token') || '')}`}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -761,7 +876,7 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
               </a>
             ) : (
               <a
-                href={report.blocked ? undefined : `${apiBase}/export/agenda-skr03`}
+                href={report.blocked ? undefined : `${apiBase}/export/agenda-skr03?token=${encodeURIComponent(localStorage.getItem('fintax_token') || '')}`}
                 target="_blank"
                 rel="noreferrer"
                 style={{

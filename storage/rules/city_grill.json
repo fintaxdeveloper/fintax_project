@@ -1,0 +1,17 @@
+{
+  "client_id": "city_grill",
+  "client_name": "City Grill Kebap Haus",
+  "chart_of_accounts": "SKR03",
+  "industry": "Gastronomy / Restaurant",
+  "client_settings": {
+    "company_name": "City Grill Kebap Haus",
+    "owners": [],
+    "eu_dealers": [],
+    "foreign_client_keywords": ["koyun food", "royem döner", "edeka bruder", "city grill"]
+  },
+  "vendor_account_rules": [
+    { "pattern": "koyun|koyun food", "account": "3000", "bu_code": "8" },
+    { "pattern": "bruder lebensmittel|lidl", "account": "3000", "bu_code": "8" },
+    { "pattern": "mega company|mega campany|müller", "account": "4930", "bu_code": "9" }
+  ]
+}

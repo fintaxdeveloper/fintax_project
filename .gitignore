@@ -27,6 +27,8 @@ yarn-error.log*
 storage/temp/*
 storage/vault/*
 storage/exports/*
+storage/beleg_index.json
+storage/ocr_cache.json
 !storage/temp/.gitkeep
 !storage/vault/.gitkeep
 

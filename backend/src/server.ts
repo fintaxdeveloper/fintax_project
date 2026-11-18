@@ -28,6 +28,8 @@ import { monthlyDocumentRegistry } from './services/monthlyDocumentRegistry.js';
 import { reviewService, ReviewReport, ReviewAction } from './services/reviewService.js';
 import { aiCacheService } from './services/aiCacheService.js';
 import { skr03Mapper } from './services/skr03Mapper.js';
+import { belegIndexService, extractVinFromText } from './services/belegIndexService.js';
+import { clientRulesService } from './services/clientRulesService.js';
 import { DocumentRecord, ExtractedInvoiceData, BookingItem } from './types/document.js';
 
 const app = express();
@@ -636,6 +638,28 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
         aiCacheService.set(checksum, originalname, extracted, splitBills);
       }
 
+      // Offline CPU OCR Beleg Index (multi-page grouping + cross-month matching)
+      if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
+        try {
+          const hintYm = googleDriveService.resolveYearAndMonth(
+            extracted?.invoice_date,
+            originalname,
+            req.body?.year,
+            req.body?.month
+          );
+          await belegIndexService.indexDocumentFile(storedPath, mimetype, {
+            clientId,
+            year: Number(hintYm.year) || new Date().getFullYear(),
+            month: Number(hintYm.monthNum) || new Date().getMonth() + 1,
+            filename: originalname,
+            documentId: docId,
+            checksum,
+          });
+        } catch (idxErr) {
+          console.warn('[Upload] Beleg index notice:', idxErr);
+        }
+      }
+
       // Only use the user-selected month/year as a fallback when the document itself has no readable date
       const reqYear = req.body.year;
       const reqMonth = req.body.month;
@@ -1228,6 +1252,7 @@ app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
     const {
       scope,
       lineKey,
+      relatedLineKeys,
       action,
       gegenkonto,
       buCode,
@@ -1254,10 +1279,26 @@ app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
       resolved_at: new Date().toISOString(),
     };
 
-    reviewService.saveResolution(scope, lineKey, resolution);
+    const allLineKeys = Array.from(
+      new Set([String(lineKey), ...(Array.isArray(relatedLineKeys) ? relatedLineKeys.map(String) : [])].filter(Boolean))
+    );
+    for (const lk of allLineKeys) {
+      reviewService.saveResolution(scope, lk, resolution);
+    }
 
     if (remember_vendor && vendor_text && resolution.gegenkonto) {
-      reviewService.saveVendorRule(vendor_text, resolution.gegenkonto, resolution.buCode || '');
+      reviewService.saveVendorRule(vendor_text, resolution.gegenkonto, resolution.buCode || '', scopeClientId);
+      const gk = resolution.gegenkonto;
+      if (gk === '8193' || gk === '8400' || gk === '8125' || gk === '3200') {
+        const vin = extractVinFromText(String(vendor_text));
+        if (vin) {
+          clientRulesService.saveVinRule(scopeClientId, vin, gk, { customer: String(vendor_text).slice(0, 80) });
+        }
+        const pKey = reviewService.payeeKey(String(vendor_text));
+        if (pKey && pKey.length >= 4) {
+          clientRulesService.savePayeeRule(scopeClientId, pKey, gk);
+        }
+      }
     }
 
     // Parse scope (e.g. "user_client_1|2024-08")

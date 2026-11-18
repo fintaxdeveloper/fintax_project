@@ -9,6 +9,7 @@ import { monthlyDocumentRegistry } from './monthlyDocumentRegistry.js';
 import { generatePersonenkontenCsvContent, generateSachkontenCsvContent } from './datevExtfTemplates.js';
 import { reviewService, ReviewReport } from './reviewService.js';
 import { clientRulesService } from './clientRulesService.js';
+import { belegIndexService, extractVinFromText } from './belegIndexService.js';
 
 // Exact 124 columns for Agenda & DATEV EXTF format (Buchungsstapel Version 700 / 12)
 const EXTF_COLUMNS = [
@@ -414,8 +415,8 @@ export const exportService = {
     const datumVon = `${year}${month}01`;
     const lastDayOfMonth = new Date(year, now.getMonth() + 1, 0).getDate();
     const datumBis = `${year}${month}${String(lastDayOfMonth).padStart(2, '0')}`;
-    const mandantenNr = '710';
-    const beraterName = 'niazi';
+    const mandantenNr = clientRulesService.getClientSettings(undefined).mandanten_nr || '710';
+    const beraterName = clientRulesService.getClientSettings(undefined).berater_name || process.env.DEFAULT_BERATER_NAME || 'berater';
 
     // LINE 1: Agenda / DATEV EXTF Header (Version 700 / 12)
     const line1 = `"EXTF";700;21;"Buchungsstapel";12;${timestamp};;"AG";"${beraterName}";;1;${mandantenNr};${year}0101;4;${datumVon};${datumBis};;;;1;;;"EUR"`;
@@ -612,8 +613,9 @@ export const exportService = {
     const lastDay = new Date(yearNum, monthNum, 0).getDate();
     const datumBis = `${yearNum}${monthPadded}${String(lastDay).padStart(2, '0')}`;
 
-    // Extract dynamic Mandanten-Nr from client folder or document client_id
-    let mandantenNr = '726'; // Default to official client 726
+    // Extract client metadata & Mandanten-Nr dynamically from client settings / folder
+    const clientSettings = clientRulesService.getClientSettings(doc.client_id);
+    let mandantenNr = clientSettings.mandanten_nr || '726';
     const cFolder = doc.client_id ? clientFolderService.resolveClientFolderName(doc.client_id) : '';
     const numMatch = cFolder.match(/^(\d{3,6})_/);
     if (numMatch) {
@@ -622,7 +624,7 @@ export const exportService = {
       mandantenNr = doc.client_id;
     }
 
-    const beraterName = 'niazi';
+    const beraterName = clientSettings.berater_name || process.env.DEFAULT_BERATER_NAME || 'berater';
     let rawCompanyName = cFolder
       .replace(/^\d+_/, '')
       .replace(/\s*\(Mandant\)\s*$/i, '')
@@ -630,25 +632,8 @@ export const exportService = {
       .replace(/[;"\r\n]/g, '')
       .trim();
 
-    // Check if client is QA24 GmbH (either via folder/doc or via any doc belonging to this client in the batch)
-    const clientHasQA24Docs = allDocs.some(
-      (d) =>
-        (!doc.client_id || d.client_id === doc.client_id) &&
-        (/1200-Bank|QA24/i.test(d.original_filename || '') ||
-          /Frankfurter Volksbank|QA24/i.test(d.extracted_data?.supplier_name || ''))
-    );
-    let isQA24 =
-      /QA24/i.test(rawCompanyName) ||
-      /QA24/i.test(cFolder) ||
-      ((doc as any).client_name && /QA24/i.test((doc as any).client_name)) ||
-      (doc.original_filename && /1200-Bank|QA24/i.test(doc.original_filename)) ||
-      (doc.extracted_data?.supplier_name && /Frankfurter Volksbank|QA24/i.test(doc.extracted_data.supplier_name)) ||
-      /Jackson|Mustermann|user_17|user_client/i.test(rawCompanyName) ||
-      clientHasQA24Docs;
-
-    if (isQA24) {
-      rawCompanyName = 'QA24 GmbH';
-      mandantenNr = '726';
+    if (!rawCompanyName && clientSettings.company_name) {
+      rawCompanyName = clientSettings.company_name;
     }
 
     const bezeichnungField = rawCompanyName ? `"${rawCompanyName.substring(0, 30)}"` : '';
@@ -658,7 +643,6 @@ export const exportService = {
     const line2 = EXTF_COLUMNS.map((c) => `"${c}"`).join(';');
 
     // Collect all documents matching that client + year + month (strict client isolation + no duplicates)
-    const foreignClientPattern = /\b(koyun food|royem d[öo]ner|triberg|edeka bruder|payone|city grill|ben tenison)\b/i;
     const monthDocs = allDocs.filter((d) => {
       if (d.is_duplicate) return false;
       if (!d.extracted_data) return false;
@@ -667,7 +651,7 @@ export const exportService = {
         (Array.isArray(d.extracted_data.bookings) && d.extracted_data.bookings.length > 0);
       if (!hasVal) return false;
       if (doc.client_id && d.client_id !== doc.client_id) return false;
-      if (isQA24 && foreignClientPattern.test(`${d.original_filename || ''} ${d.extracted_data.supplier_name || ''}`)) {
+      if (clientRulesService.isForeignClient(doc.client_id, `${d.original_filename || ''} ${d.extracted_data.supplier_name || ''}`)) {
         return false;
       }
       const resolved = googleDriveService.resolveYearAndMonth(d.extracted_data.invoice_date, d.original_filename);
@@ -678,16 +662,10 @@ export const exportService = {
       monthDocs.push(doc);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // MULTI-DOCUMENT MONTHLY MERGING ENGINE:
-    // Check if official full monthly accounting registry bookings exist for this month
-    // ONLY when yearNum === 2026 AND at least one document in monthDocs belongs to the
-    // official 2026 City Grill reference dataset. Otherwise run clean 3-Track Architecture!
-    // ─────────────────────────────────────────────────────────────────────────────
-    const isOfficialCityGrillMonth =
-      yearNum === 2026 &&
+    // Check optional external monthly fixture overrides
+    const isOfficialFixtureMonth =
       monthDocs.some((d) => monthlyDocumentRegistry.match(d.original_filename || '', d.size_bytes || 0) !== null);
-    const officialMonthBookings = isOfficialCityGrillMonth
+    const officialMonthBookings = isOfficialFixtureMonth
       ? monthlyDocumentRegistry.getMonthBookings(monthNum)
       : null;
 
@@ -756,7 +734,7 @@ export const exportService = {
         for (const bd of bankDocs) {
           const docKeyCounts = new Map<string, number>();
           for (const item of extractDocItems(bd)) {
-            if (isQA24 && foreignClientPattern.test(item.buchungstext || '')) continue;
+            if (clientRulesService.isForeignClient(doc.client_id, item.buchungstext || '')) continue;
             const datum = (item.belegdatum || '').replace(/[^0-9]/g, '').slice(-4);
             const baseKey = `${datum}|${Number(item.amount).toFixed(2)}|${item.sh}|${(item.buchungstext || '').slice(0, 35).toLowerCase()}`;
             const occ = (docKeyCounts.get(baseKey) || 0) + 1;
@@ -830,20 +808,24 @@ export const exportService = {
 
         allMonthlyItems.push(...bankItems);
 
-        // Collect all 17-char VINs already present on Bank (1200) this month so Kasse never double-books them
+        // Collect all 17-char VINs (including glued VINs) already present on Bank (1200) this month so Kasse never double-books them
         const bankVins = new Set<string>();
-        const vinExtractRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/g;
+        const vinExtractRegex = /([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})/g;
         for (const b of bankItems) {
-          const matches = `${b.buchungstext || ''} ${b.belegfeld1 || ''}`.toUpperCase().match(vinExtractRegex);
+          const bTxt = `${b.buchungstext || ''} ${b.belegfeld1 || ''}`;
+          const v1 = extractVinFromText(bTxt);
+          if (v1) bankVins.add(v1);
+          const matches = bTxt.toUpperCase().match(vinExtractRegex);
           if (matches) matches.forEach((v) => bankVins.add(v));
         }
 
-        // Track 3: Add genuine Cash/Kasse (1000) items that are NOT already bank transfers, NOT on bank by VIN, and NOT summary/merged lists
+        // Track 3: Add genuine Cash/Kasse (1000) items that are NOT already bank transfers, NOT card/SEPA payments, NOT on bank by VIN, and NOT summary/merged lists
         for (const kd of kasseDocs) {
           if (/\[SUMMARY_LIST\]/i.test(kd.extracted_data?.line_items_summary || '')) continue;
+          if (/bankbeleg/i.test(kd.original_filename || '')) continue;
           for (const kItem of extractDocItems(kd)) {
             const kText = kItem.buchungstext || '';
-            if (isQA24 && foreignClientPattern.test(kText)) continue;
+            if (clientRulesService.isForeignClient(doc.client_id, kText)) continue;
             const kAmt = Number(kItem.amount) || 0;
             const isSummaryList =
               /\[SUMMARY_LIST\]|itemized\s*list|monatsabrechnung|sammelrechnung|tankkarten[-\s]*abrechnung|zusammenfassung|abrechnung\s+tankkarte/i.test(kText) ||
@@ -851,26 +833,28 @@ export const exportService = {
             if (isSummaryList) continue;
 
             // VIN duplicate guard: if this car's VIN already has a bank booking this month, never book in Kasse
-            const kVins = `${kText} ${kItem.belegfeld1 || ''}`.toUpperCase().match(vinExtractRegex) || [];
-            if (kVins.some((v) => bankVins.has(v))) continue;
+            const kFull = `${kText} ${kItem.belegfeld1 || ''}`;
+            const kVins = new Set<string>(kFull.toUpperCase().match(vinExtractRegex) || []);
+            const kv1 = extractVinFromText(kFull);
+            if (kv1) kVins.add(kv1);
+            if ([...kVins].some((v) => bankVins.has(v))) continue;
 
             // Merged multi-contract hallucination / inverted Ankaufvertrag guard:
-            // An Ankaufvertrag is never an 8400 sale, and a single cash receipt > 50,000 EUR is a merged multi-document sum
             if (/ankaufvertrag/i.test(kText) && kItem.sh === 'S') continue;
             if (kAmt > 50000 && kItem.gegenkonto !== '1360') continue;
 
             const isAlreadyOnBank =
               kItem.gegenkonto !== '1360' &&
               bankItems.some((b) => Math.abs((Number(b.amount) || 0) - kAmt) < 1.0);
-            const looksLikeBankTransfer = /überwiesen|ueberwiesen|bank|sparkasse|volksbank/i.test(kText);
-            if (!isAlreadyOnBank && !looksLikeBankTransfer && kItem.konto === '1000') {
+            const looksLikeBankOrCard = /überwiesen|ueberwiesen|bank|sparkasse|volksbank|girocard|ec-chip|ec-cash|kartenzahlung|kundenbeleg|sepa|lastschrift|mastercard|visa/i.test(kText);
+            if (!isAlreadyOnBank && !looksLikeBankOrCard && kItem.konto === '1000') {
               allMonthlyItems.push(kItem);
             }
           }
         }
       } else {
         // Standalone mode (no Bank Statement uploaded for this month yet)
-        allMonthlyItems = monthDocs.flatMap(extractDocItems).filter((it) => !(isQA24 && foreignClientPattern.test(it.buchungstext || '')));
+        allMonthlyItems = monthDocs.flatMap(extractDocItems).filter((it) => !clientRulesService.isForeignClient(doc.client_id, it.buchungstext || ''));
       }
     }
 
@@ -922,57 +906,108 @@ export const exportService = {
     const vinTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const invoiceTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const payeeTaxMap = new Map<string, '8193' | '8400' | '8125'>();
-    const vinRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/g;
+    const vinRegex = /([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})/g;
+    const extractAllVins = (s: string): string[] => {
+      const set = new Set<string>();
+      const v = extractVinFromText(s);
+      if (v) set.add(v);
+      const m = (s || '').toUpperCase().match(vinRegex);
+      if (m) m.forEach((x) => set.add(x));
+      return [...set];
+    };
 
     const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
     const extractPayeePrefix = (text: string): string => {
       const beforeDash = (text || '').split(/\s+-\s+|\s+PN:|\s{2,}/)[0].toLowerCase().replace(/[^a-zäöüß0-9\s]/gi, ' ').trim();
-      const words = beforeDash.split(/\s+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w));
+      const legalStop = /^(gmbh|mbh|ug|ag|kg|ohg|gbr|unipessoal|lda|ltda|sarl|srl|sas|bv|nv|oy|ab|aps|inc|llc|co|ltd|firma|herr|frau)$/;
+      const words = beforeDash.split(/\s+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !legalStop.test(w));
       return words.slice(0, 2).join(' ');
     };
 
     for (const d of allDocs) {
       if (doc.client_id && d.client_id !== doc.client_id) continue;
       const ext = d.extracted_data;
+      const dBookings = extractDocItems(d);
       const allText = `${d.original_filename || ''} ${ext?.supplier_name || ''} ${ext?.line_items_summary || ''} ${JSON.stringify(ext?.bookings || [])}`;
+      const has3200Purchase = dBookings.some((b) => b.gegenkonto === '3200');
+      const has19CarDoc = dBookings.some((b) => b.gegenkonto === '3400' || b.gegenkonto === '8400');
       const isExplicit25a =
         (ext as any)?.tax_regime === 'margin_25a' ||
+        has3200Purchase ||
         /(?:§\s*25a|differenzbesteuerung|gebrauchtgegenstände|sonderregelung)/i.test(allText);
       const isEuSale =
         (ext as any)?.tax_regime === 'eu_b2b_0' ||
-        /(?:innergemeinschaftliche|eu-lieferung|steuerfrei|bilar|finnland)/i.test(allText);
+        dBookings.some((b) => b.gegenkonto === '8125') ||
+        /(?:innergemeinschaftliche|eu-lieferung)/i.test(allText);
 
-      const targetAccount: '8193' | '8400' | '8125' = isEuSale ? '8125' : isExplicit25a ? '8193' : '8400';
+      const targetAccount: '8193' | '8400' | '8125' | undefined = isEuSale
+        ? '8125'
+        : isExplicit25a
+        ? '8193'
+        : has19CarDoc
+        ? '8400'
+        : undefined;
 
-      // Map invoice numbers
-      if (ext?.invoice_number) {
-        invoiceTaxMap.set(normalizeKey(ext.invoice_number), targetAccount);
-      }
-      // Map supplier/buyer name
-      if (ext?.supplier_name) {
-        const pKey = extractPayeePrefix(ext.supplier_name);
-        if (pKey && pKey.length >= 3) {
-          payeeTaxMap.set(pKey, targetAccount);
+      if (targetAccount) {
+        if (ext?.invoice_number) {
+          invoiceTaxMap.set(normalizeKey(ext.invoice_number), targetAccount);
         }
-      }
-
-      // Map VINs
-      const docVins = allText.toUpperCase().match(vinRegex);
-      if (docVins) {
-        for (const v of docVins) {
+        if (ext?.supplier_name) {
+          const pKey = extractPayeePrefix(ext.supplier_name);
+          if (pKey && pKey.length >= 3) {
+            payeeTaxMap.set(pKey, targetAccount);
+          }
+        }
+        for (const v of extractAllVins(allText)) {
           vinTaxMap.set(v, targetAccount);
         }
       }
 
-      // Also scan bookings
-      for (const b of extractDocItems(d)) {
+      // Also scan individual vehicle bookings across all months
+      for (const b of dBookings) {
+        if (!['8125', '3200', '8193', '3400', '8400'].includes(b.gegenkonto)) continue;
         const bText = `${b.buchungstext || ''} ${b.belegfeld1 || ''}`;
-        const bVins = bText.toUpperCase().match(vinRegex);
-        if (bVins) {
+        const bVins = extractAllVins(bText);
+        if (bVins.length > 0) {
           const bTarget: '8193' | '8400' | '8125' =
             b.gegenkonto === '8125' ? '8125' : b.gegenkonto === '3200' || b.gegenkonto === '8193' ? '8193' : '8400';
           for (const vin of bVins) {
-            vinTaxMap.set(vin, bTarget);
+            const prev = vinTaxMap.get(vin);
+            if (!prev || bTarget === '8125' || bTarget === '8193') {
+              vinTaxMap.set(vin, bTarget);
+            }
+          }
+        }
+      }
+    }
+
+    // Merge cross-month OCR Beleg Index (multi-page PDFs grouped by invoice/contract/receipt)
+    const indexedBelege = belegIndexService.getClientIndex(doc.client_id, yearNum, monthNum, 6);
+    for (const r of indexedBelege) {
+      let idxAcc: '8193' | '8400' | '8125' | undefined;
+      if (r.taxClause === 'EU' || r.skr03Account === '8125' || (r.partner && clientRulesService.isEuDealer(doc.client_id, r.partner))) {
+        idxAcc = '8125';
+      } else if (r.type === 'QA24_PURCHASE' || r.skr03Account === '3200') {
+        idxAcc = r.taxClause === '19' ? '8400' : '8193';
+      } else if (r.type === 'QA24_SALE' || r.type === 'CONTRACT') {
+        if (r.taxClause === '25a') idxAcc = '8193';
+        else if (r.taxClause === '19') idxAcc = '8400';
+      }
+      if (idxAcc) {
+        if (r.vin) {
+          const existing = vinTaxMap.get(r.vin.toUpperCase());
+          if (!existing || idxAcc === '8125' || idxAcc === '8193') {
+            vinTaxMap.set(r.vin.toUpperCase(), idxAcc);
+          }
+        }
+        if (r.invoiceNo) invoiceTaxMap.set(normalizeKey(r.invoiceNo), idxAcc);
+        if (r.partner) {
+          const pKey = extractPayeePrefix(r.partner);
+          if (pKey && pKey.length >= 3) {
+            const existingP = payeeTaxMap.get(pKey);
+            if (!existingP || idxAcc === '8125' || idxAcc === '8193') {
+              payeeTaxMap.set(pKey, idxAcc);
+            }
           }
         }
       }
@@ -991,9 +1026,56 @@ export const exportService = {
       }
     }
 
+    const isStornoPair = (it: BookingItem): boolean => {
+      if (it.konto !== '1200') return false;
+      const amt = Number(it.amount) || 0;
+      const p = extractPayeePrefix(it.buchungstext || '');
+      if (!p || amt <= 0) return false;
+      const oppSh = String(it.sh).toUpperCase() === 'S' ? 'H' : 'S';
+      return allMonthlyItems.some(
+        (other) =>
+          other !== it &&
+          other.konto === '1200' &&
+          String(other.sh).toUpperCase() === oppSh &&
+          Math.abs((Number(other.amount) || 0) - amt) < 0.05 &&
+          (extractPayeePrefix(other.buchungstext || '') === p ||
+            /(storno|rückzahlung|rueckzahlung|überzahlung|ueberzahlung|rückbuchung|rueckbuchung)/i.test(`${it.buchungstext} ${other.buchungstext}`))
+      );
+    };
+
     // Final deterministic SKR03 & VAT safety normalization before EXTF row generation
     const vinUnresolved = new Set<BookingItem>();
     for (const item of allMonthlyItems) {
+      const belegMatch =
+        item.konto === '1200' && indexedBelege.length > 0
+          ? belegIndexService.findMatchForBankLine(
+              indexedBelege,
+              item.buchungstext || '',
+              Number(item.amount) || 0,
+              String(item.sh).toUpperCase() === 'S' ? 'S' : 'H',
+              item.belegdatum || '',
+              item.belegfeld1
+            )
+          : null;
+      if (belegMatch) {
+        item.matchedBy = belegMatch.matchedBy;
+        item.matchedBeleg = {
+          id: belegMatch.record.id,
+          source_file: belegMatch.record.source_file,
+          pages: belegMatch.record.pages,
+          partner: belegMatch.record.partner,
+          invoiceNo: belegMatch.record.invoiceNo,
+          vin: belegMatch.record.vin,
+          amount: belegMatch.record.amount,
+          taxClause: belegMatch.record.taxClause,
+          snippet: belegMatch.record.matchedLineSnippet,
+          document_id: belegMatch.record.document_id,
+        };
+        if ((!item.belegfeld1 || /^bank/i.test(item.belegfeld1)) && belegMatch.record.invoiceNo) {
+          item.belegfeld1 = belegMatch.record.invoiceNo;
+        }
+      }
+
       const txt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toLowerCase();
       if (/\b(aral|shell|esso|total|jet|avia|omv|tankstelle|agip|bft|minera|couche-tard|circle k|westfalen|star tankstelle|hem\b|sprint|sb-tank)\b/i.test(txt)) {
         item.gegenkonto = '4530';
@@ -1001,40 +1083,34 @@ export const exportService = {
       } else if (/\b(arag|signal iduna|allianz|huk|axa|gothaer|provinzial|zurich|lvm|devk|continentale|barmenia|ergo|dkv|debeka|generali|vgh|helvetia|basler|kfz-versicherung|versicherung)\b/i.test(txt) && !/garantie/i.test(txt)) {
         item.gegenkonto = '4520';
         item.buCode = '';
-      } else if (isQA24 && /\b(penny|rewe|aldi|edeka|lidl|netto|kaufland)\b/i.test(txt) && Number(item.amount) < 500 && item.sh === 'H') {
+      } else if (clientRulesService.matchVendorRule(doc.client_id, txt, Number(item.amount) || 0)) {
+        const vr = clientRulesService.matchVendorRule(doc.client_id, txt, Number(item.amount) || 0)!;
+        item.gegenkonto = vr.account;
+        item.buCode = vr.buCode;
+      } else if (/\b(penny|rewe|aldi|edeka|lidl|netto|kaufland)\b/i.test(txt) && Number(item.amount) < 500 && item.sh === 'H') {
         item.gegenkonto = '4673';
         item.buCode = '8';
       } else if (item.sh === 'S' && /(storno|rückbuchung|rueckbuchung|erstattung|refund|gutschrift)/i.test(txt)) {
         if (/\b(fintax|steuerberat|rechtsanwalt|fibu|buchhaltung)\b/i.test(txt)) {
           item.gegenkonto = '4955';
           item.buCode = '9';
-        } else if (/\b(auto-teile|autoteile|kfz-teile|ersatzteile)\b/i.test(txt) || /12-11907-72439/i.test(txt)) {
-          item.gegenkonto = '4540';
-          item.buCode = '9';
-        } else if (/\bebay\b/i.test(txt) || /15-11900-39159/i.test(txt)) {
-          // Reverses original eBay purchase account (Kfz-Teile 4540)
+        } else if (/\b(auto-teile|autoteile|kfz-teile|ersatzteile)\b/i.test(txt) || /\bebay\b/i.test(txt)) {
           item.gegenkonto = '4540';
           item.buCode = '9';
         }
-      } else if (/\b(macoil|mr\.?\s*wash|ölwechsel|olwechsel|auto-teile|autoteile)\b/i.test(txt)) {
+      } else if (/\b(ölwechsel|olwechsel|auto-teile|autoteile)\b/i.test(txt)) {
         item.gegenkonto = '4540';
         item.buCode = '9';
-      } else if (/\b(maihan|spende|spenden|zuwendung)\b/i.test(txt)) {
-        item.gegenkonto = '2380';
-        item.buCode = '';
-      } else if (item.sh === 'H' && /\b(kaufvertrag|fahrzeugankauf|volmarstein|haak|anvm|arstanbekova)\b/i.test(txt)) {
+      } else if (item.sh === 'H' && (/\b(kaufvertrag|fahrzeugankauf)\b/i.test(txt) || clientRulesService.lookupPayee(doc.client_id, txt) === '3200')) {
         item.gegenkonto = '3200';
         item.buCode = '';
-      } else if (/\b(fsp|tüv|tuev|dekra|gtü|küs|porsche zentrum|audi zentrum|bmw autohaus|mercedes-benz autohaus)\b/i.test(txt) && Number(item.amount) < 1500) {
+      } else if (/\b(tüv|tuev|dekra|gtü|küs|porsche zentrum|audi zentrum|bmw autohaus|mercedes-benz autohaus)\b/i.test(txt) && Number(item.amount) < 1500) {
         item.gegenkonto = '4540';
         item.buCode = '9';
       } else if (/\b(deutsche post|briefmarke|porto)\b/i.test(txt)) {
         item.gegenkonto = '4910';
         item.buCode = '';
       } else if (/\b(main-taunus-kreis|landratsamt|amtsgericht|stadtkasse|buergerbuero|bürgerbüro|kfz-steuer|hauptzollamt)\b/i.test(txt)) {
-        item.buCode = '';
-      } else if (/\bsmarttarif24\b/i.test(txt)) {
-        item.gegenkonto = '70001';
         item.buCode = '';
       } else if (/\bdifferenzbetrag\b/i.test(txt) && item.sh === 'H') {
         item.gegenkonto = '3200';
@@ -1044,11 +1120,16 @@ export const exportService = {
         item.buCode = '';
       } else if (item.sh === 'S' && (item.gegenkonto === '8193' || item.gegenkonto === '8400' || item.gegenkonto === '8125')) {
         const upperTxt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase();
-        const vins = upperTxt.match(vinRegex);
+        const vins = extractAllVins(upperTxt);
         let resolvedTax: '8193' | '8400' | '8125' | undefined;
 
-        // 1. By exact 17-char VIN
-        if (vins) {
+        // 1. EU dealer registry check (rules/<client>.json)
+        if (clientRulesService.isEuDealer(doc.client_id, txt)) {
+          resolvedTax = '8125';
+        }
+
+        // 2. By exact 17-char VIN (glued-safe)
+        if (!resolvedTax && vins.length > 0) {
           for (const vin of vins) {
             const matchedSalesAcc = vinTaxMap.get(vin) || (clientRulesService.lookupVin(doc.client_id, vin)?.taxKey as any);
             if (matchedSalesAcc && matchedSalesAcc !== '3200') {
@@ -1058,9 +1139,9 @@ export const exportService = {
           }
         }
 
-        // 1b. By 7-character suffix VINs (e.g. Stern Wagen on bank statements: B009153, 9D98856)
+        // 2b. By 7-character suffix VINs (e.g. bank statement short VINs)
         if (!resolvedTax) {
-          const words = upperTxt.split(/[^A-Z0-9]/).filter(w => w.length >= 6 && w.length <= 10 && /\d/.test(w) && /[A-Z]/.test(w));
+          const words = upperTxt.split(/[^A-Z0-9]/).filter((w) => w.length >= 6 && w.length <= 10 && /\d/.test(w) && /[A-Z]/.test(w));
           for (const w of words) {
             const matched = clientRulesService.lookupVin(doc.client_id, w);
             if (matched && matched.taxKey !== '3200') {
@@ -1070,7 +1151,21 @@ export const exportService = {
           }
         }
 
-        // 2. By Payee / Buyer name
+        // 3. By matched OCR BelegRecord (cross-month §25a / EU / 19% / private purchase)
+        if (!resolvedTax && belegMatch) {
+          const r = belegMatch.record;
+          if (r.taxClause === 'EU' || r.skr03Account === '8125' || clientRulesService.isEuDealer(doc.client_id, r.partner || '')) {
+            resolvedTax = '8125';
+          } else if (r.taxClause === '25a' || (r.type === 'QA24_PURCHASE' && r.taxClause !== '19') || r.skr03Account === '8193') {
+            resolvedTax = '8193';
+          } else if (r.taxClause === '19') {
+            resolvedTax = '8400';
+          } else if (r.vin && vinTaxMap.has(r.vin.toUpperCase())) {
+            resolvedTax = vinTaxMap.get(r.vin.toUpperCase());
+          }
+        }
+
+        // 4. By Payee / Buyer name
         if (!resolvedTax) {
           const payee = extractPayeePrefix(item.buchungstext || '');
           if (payee && payeeTaxMap.has(payee)) {
@@ -1090,7 +1185,7 @@ export const exportService = {
           }
         }
 
-        // 3. By Invoice / Beleg Number
+        // 5. By Invoice / Beleg Number
         if (!resolvedTax) {
           const invMatch = (item.buchungstext || '').match(/(?:rechnungsnummer|rechnung|rg|rn|beleg)[:\s]*([a-z0-9\/\-]+)/i);
           const rawInv = invMatch ? invMatch[1] : item.belegfeld1;
@@ -1102,11 +1197,11 @@ export const exportService = {
           }
         }
 
-        // 4. By Vehicle / Tax Keywords
+        // 6. By Vehicle / Tax Keywords
         if (!resolvedTax) {
           if (/(differenzbesteuerung|25a|gebrauchtgegenst|sonderregelung|differenzbesteuert)/i.test(txt)) {
             resolvedTax = '8193';
-          } else if (/(innergemeinschaftliche|eu-lieferung|steuerfrei|bilar|finnland)/i.test(txt)) {
+          } else if (/(innergemeinschaftliche|eu-lieferung|steuerfrei\s*§?\s*4|ig\.?\s*lieferung)/i.test(txt)) {
             resolvedTax = '8125';
           }
         }
@@ -1125,9 +1220,25 @@ export const exportService = {
             item.gegenkonto = '8400';
             item.buCode = '';
           }
-          if ((Number(item.amount) || 0) >= 500) {
+          item.carGroupKey =
+            belegMatch?.record.vin ||
+            vins[0] ||
+            (belegMatch?.record.partner ? extractPayeePrefix(belegMatch.record.partner) : '') ||
+            extractPayeePrefix(item.buchungstext || '') ||
+            undefined;
+          if (!isStornoPair(item) && (Number(item.amount) || 0) >= 500) {
             vinUnresolved.add(item);
           }
+        }
+      } else if (
+        item.sh === 'H' &&
+        ['4900', '4930'].includes(item.gegenkonto) &&
+        belegMatch?.record.skr03Account &&
+        !['1000', '1200', '4900'].includes(belegMatch.record.skr03Account)
+      ) {
+        item.gegenkonto = belegMatch.record.skr03Account;
+        if (belegMatch.record.buCode !== undefined) {
+          item.buCode = belegMatch.record.buCode;
         }
       }
     }
@@ -1136,14 +1247,14 @@ export const exportService = {
     const monthPurchaseVins = new Set<string>();
     for (const item of allMonthlyItems) {
       if (item.sh === 'H' && item.gegenkonto === '3200') {
-        const vins = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase().match(vinRegex);
-        if (vins) vins.forEach((v) => monthPurchaseVins.add(v));
+        const vins = extractAllVins(`${item.buchungstext || ''} ${item.belegfeld1 || ''}`);
+        vins.forEach((v) => monthPurchaseVins.add(v));
       }
     }
     for (const item of allMonthlyItems) {
       if (item.sh === 'H' && item.gegenkonto === '4900') {
-        const vins = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase().match(vinRegex);
-        if (vins && vins.some((v) => monthPurchaseVins.has(v))) {
+        const vins = extractAllVins(`${item.buchungstext || ''} ${item.belegfeld1 || ''}`);
+        if (vins.some((v) => monthPurchaseVins.has(v))) {
           item.gegenkonto = '3200';
           item.buCode = '';
         }
@@ -1199,14 +1310,67 @@ export const exportService = {
     allMonthlyItems = kept;
     // Calculate cumulative Kasse starting balance from previous months in the same year
     let kasseOpeningBalance = clientRulesService.getStartingBalance(doc.client_id, yearNum, '1000') || 0;
+    const priorBankVinsByMonth = new Map<number, Set<string>>();
+    const priorBankAmountsByMonth = new Map<number, number[]>();
+    const priorBankTransitByMonth = new Map<number, number>();
     for (const d of allDocs) {
       if (doc.client_id && d.client_id !== doc.client_id) continue;
-      const bks = extractDocItems(d);
-      for (const b of bks) {
-        const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10);
-        if (bMonth > 0 && bMonth < monthNum && b.konto === '1000') {
-          kasseOpeningBalance += (String(b.sh).toUpperCase() === 'S' ? 1 : -1) * (Number(b.amount) || 0);
+      const dMeta = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+      if (Number(dMeta.year) !== yearNum) continue;
+      const isStmt = d.extracted_data?.document_type === 'BANK_STATEMENT' || /bankstatement|kontoauszug|1200-bank/i.test(d.original_filename || '');
+      if (!isStmt) continue;
+      for (const b of extractDocItems(d)) {
+        const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10) || Number(dMeta.monthNum);
+        if (!(bMonth > 0 && bMonth < monthNum)) continue;
+        if (b.konto === '1200') {
+          const amt = Number(b.amount) || 0;
+          const amts = priorBankAmountsByMonth.get(bMonth) || [];
+          amts.push(amt);
+          priorBankAmountsByMonth.set(bMonth, amts);
+          const vSet = priorBankVinsByMonth.get(bMonth) || new Set<string>();
+          extractAllVins(`${b.buchungstext || ''} ${b.belegfeld1 || ''}`).forEach((v) => vSet.add(v));
+          priorBankVinsByMonth.set(bMonth, vSet);
+          if (b.gegenkonto === '1360') {
+            const delta = String(b.sh).toUpperCase() === 'H' ? amt : -amt;
+            priorBankTransitByMonth.set(bMonth, (priorBankTransitByMonth.get(bMonth) || 0) + delta);
+          }
         }
+      }
+    }
+    const priorKasseTransitByMonth = new Map<number, number>();
+    for (const d of allDocs) {
+      if (doc.client_id && d.client_id !== doc.client_id) continue;
+      if (/bankbeleg/i.test(d.original_filename || '')) continue;
+      if (/\[SUMMARY_LIST\]/i.test(d.extracted_data?.line_items_summary || '')) continue;
+      const dMeta = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+      if (Number(dMeta.year) !== yearNum) continue;
+      for (const b of extractDocItems(d)) {
+        const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10) || Number(dMeta.monthNum);
+        if (!(bMonth > 0 && bMonth < monthNum) || b.konto !== '1000') continue;
+        const kText = b.buchungstext || '';
+        const kAmt = Number(b.amount) || 0;
+        if (clientRulesService.isForeignClient(doc.client_id, kText)) continue;
+        if (/ankaufvertrag/i.test(kText) && b.sh === 'S') continue;
+        if (kAmt > 50000 && b.gegenkonto !== '1360') continue;
+        if (/\[SUMMARY_LIST\]|itemized\s*list|monatsabrechnung|sammelrechnung|tankkarten[-\s]*abrechnung|zusammenfassung/i.test(kText) || (/\baral\b/i.test(kText) && kAmt > 250)) continue;
+        if (/überwiesen|ueberwiesen|bank|sparkasse|volksbank|girocard|ec-chip|ec-cash|kartenzahlung|kundenbeleg|sepa|lastschrift|mastercard|visa/i.test(kText)) continue;
+        const vSet = priorBankVinsByMonth.get(bMonth);
+        if (vSet && extractAllVins(`${kText} ${b.belegfeld1 || ''}`).some((v) => vSet.has(v))) continue;
+        const bAmts = priorBankAmountsByMonth.get(bMonth);
+        if (b.gegenkonto !== '1360' && bAmts && bAmts.some((ba) => Math.abs(ba - kAmt) < 1.0)) continue;
+        const delta = (String(b.sh).toUpperCase() === 'S' ? 1 : -1) * kAmt;
+        if (b.gegenkonto === '1360') {
+          priorKasseTransitByMonth.set(bMonth, (priorKasseTransitByMonth.get(bMonth) || 0) + delta);
+        } else {
+          kasseOpeningBalance += delta;
+        }
+      }
+    }
+    for (let mPrev = 1; mPrev < monthNum; mPrev++) {
+      if (priorBankTransitByMonth.has(mPrev)) {
+        kasseOpeningBalance += priorBankTransitByMonth.get(mPrev)!;
+      } else if (priorKasseTransitByMonth.has(mPrev)) {
+        kasseOpeningBalance += priorKasseTransitByMonth.get(mPrev)!;
       }
     }
 

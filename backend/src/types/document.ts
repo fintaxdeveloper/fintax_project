@@ -30,6 +30,21 @@ export interface BookingItem {
   ai_reason?: string;
   ai_suggested_gegenkonto?: string;
   ai_suggested_bu?: string;
+  /** Cross-month Beleg matching & car-level grouping metadata */
+  carGroupKey?: string;
+  matchedBy?: string;
+  matchedBeleg?: {
+    id?: string;
+    source_file: string;
+    pages: number[];
+    partner: string;
+    invoiceNo?: string | null;
+    vin?: string | null;
+    amount: number;
+    taxClause?: string | null;
+    snippet?: string;
+    document_id?: string;
+  };
 }
 
 export interface ExtractedInvoiceData {

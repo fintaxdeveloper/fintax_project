@@ -51,7 +51,8 @@ export const ollamaClient = {
       keep_alive: process.env.OLLAMA_KEEP_ALIVE || '30m',
       options: {
         num_predict: 4096,
-        temperature: typeof options.temperature === 'number' ? options.temperature : 0.1,
+        temperature: typeof options.temperature === 'number' ? options.temperature : 0,
+        seed: 42,
       },
     };
 
