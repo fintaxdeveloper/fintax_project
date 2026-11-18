@@ -78,6 +78,7 @@ function loadClientMap(): Record<string, string> {
   return {
     user_client_1: 'Hans Mustermann GmbH (Mandant)',
     user_client_2: 'Alpen Logistik Bayern KG (Mandant)',
+    user_qa24_704: '704_QA24 GmbH',
   };
 }
 

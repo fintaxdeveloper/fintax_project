@@ -290,11 +290,18 @@ app.post('/api/bank-statements/upload', upload.single('statement'), async (req, 
     }
 
     const { originalname, filename, path: filePath, mimetype, size } = req.file;
+    const authReq = req as AuthenticatedRequest;
+    const requestedClientId = (req.body.client_id || '').trim();
+    if (authReq.user?.role === 'CLIENT' && requestedClientId && requestedClientId !== authReq.user.id) {
+      return res.status(403).json({ error: 'Zugriff verweigert: fremde Mandanten-ID.' });
+    }
+    const clientId = authReq.user?.role === 'CLIENT' ? authReq.user.id : (requestedClientId || 'user_qa24_704');
     const docId = uuidv4();
 
     // Create document record
     const newDoc: DocumentRecord = {
       id: docId,
+      client_id: clientId,
       original_filename: originalname,
       stored_filename: filename,
       file_path: filePath,
@@ -384,7 +391,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
     if (authReq.user?.role === 'CLIENT' && requestedClientId && requestedClientId !== authReq.user.id) {
       return res.status(403).json({ error: 'Zugriff verweigert: fremde Mandanten-ID.' });
     }
-    const clientId = authReq.user?.role === 'CLIENT' ? authReq.user.id : (requestedClientId || 'user_client_1');
+    const clientId = authReq.user?.role === 'CLIENT' ? authReq.user.id : (requestedClientId || 'user_qa24_704');
     const category = (req.body.category || '01_FiBu') as any;
     const notes = req.body.notes || '';
     let subTypes: string[] = [];

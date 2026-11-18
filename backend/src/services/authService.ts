@@ -197,6 +197,7 @@ export const authService = {
         { id: 'user_staff_2', email: 'accountant@fintax.de', password_hash: this.hashPassword('staff123'), name: 'Thomas Müller', role: 'STAFF', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
         { id: 'user_client_1', email: 'mandant@mustermann.de', password_hash: this.hashPassword('client123'), name: 'Hans Mustermann GmbH', role: 'CLIENT', client_number: 'KD-10042', is_active: true, first_login_done: true, privacy_accepted: true },
         { id: 'user_client_2', email: 'client@mustermann.de', password_hash: this.hashPassword('client123'), name: 'Hans Mustermann GmbH (First-Login Demo)', role: 'CLIENT', client_number: 'KD-10043', is_active: true, first_login_done: false, privacy_accepted: false },
+        { id: 'user_qa24_704', email: 'qa24@fintax.de', password_hash: this.hashPassword('client123'), name: 'QA24 GmbH', role: 'CLIENT', client_number: '726', is_active: true, first_login_done: true, privacy_accepted: true },
       ];
       dbUser = fallbackUsers.find(
         (u) => u.email.toLowerCase() === cleanId || u.client_number.toLowerCase() === cleanId || u.id === cleanId

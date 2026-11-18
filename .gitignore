@@ -29,6 +29,7 @@ storage/vault/*
 storage/exports/*
 storage/beleg_index.json
 storage/ocr_cache.json
+storage_backup_18nov/
 !storage/temp/.gitkeep
 !storage/vault/.gitkeep
 

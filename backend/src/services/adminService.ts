@@ -188,6 +188,14 @@ export const adminService = {
         pass: 'client123',
         client_number: 'KD-10044',
       },
+      {
+        id: 'user_qa24_704',
+        email: 'qa24@fintax.de',
+        name: 'QA24 GmbH',
+        role: 'CLIENT',
+        pass: 'client123',
+        client_number: '726',
+      },
     ];
 
     for (const u of defaultUsers) {
