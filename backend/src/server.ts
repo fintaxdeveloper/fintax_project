@@ -635,7 +635,11 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       if (cachedAi) {
         splitBills = cachedAi.splitBills || [];
       } else {
-        if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
+        if (
+          classification.category !== 'BANK_STATEMENT' &&
+          !bankStmtResult &&
+          !/kassebeleg|bankbeleg|kontoausz|1200[-_ ]?bank/i.test(originalname)
+        ) {
           try {
             splitBills = await aiService.extractMultipleBills(storedPath, mimetype, originalname, clientId);
           } catch (mbErr) {
@@ -650,7 +654,11 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       // Offline CPU OCR Beleg Index (multi-page grouping + cross-month matching)
       try {
         await belegIndexService.ensureClientIndexed(clientId, dbService.getAll());
-        if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
+        if (
+          classification.category !== 'BANK_STATEMENT' &&
+          !bankStmtResult &&
+          !/kassebeleg|bankbeleg|kontoausz|1200[-_ ]?bank/i.test(originalname)
+        ) {
           const hintYm = googleDriveService.resolveYearAndMonth(
             extracted?.invoice_date,
             originalname,

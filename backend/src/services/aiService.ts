@@ -309,9 +309,13 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
     const isPdf = pdfExtractor.isPdf(filePath, mimeType);
     const fname = (originalFilename || path.basename(filePath)).toLowerCase();
 
-    // Known client reference documents (Kassenbericht/Kontoauszug) already have exact multi-booking handling
+    // Multi-page batch PDFs (Kassebelege, Bankbelege, Kontoauszug, Kassenbericht) are indexed
+    // deterministically and ultra-fast via offline CPU OCR in belegIndexService (skip heavy Ollama GPU vision loop)
     if (monthlyDocumentRegistry.match(fname)) return [];
-    if (/kassenbericht|kontoausz/.test(fname)) return [];
+    if (/kassebeleg|bankbeleg|kassenbericht|kontoausz|1200[-_ ]?bank/i.test(fname)) {
+      console.log(`[Multi-Bill AI] Skipping heavy per-page vision loop for batch archive "${originalFilename || path.basename(filePath)}" -> handled by fast offline OCR.`);
+      return [];
+    }
 
     const multiPrompt = `
 You are an accounting OCR auditor specialized in German GoBD documents (Kfz-Handel / Car Dealership, Workshops, Fuel, Office & Supplies).
