@@ -69,7 +69,7 @@ class ClientRulesService {
               const content = fs.readFileSync(fullPath, 'utf-8');
               const rules: ClientRules = JSON.parse(content);
               const key = rules.client_id || path.basename(file, '.json');
-              const keysToMap = [key, ...(rules.client_aliases || []), ...(rules.client_settings?.client_ids || [])];
+              const keysToMap = Array.from(new Set([key, ...(rules.client_aliases || []), ...(rules.client_settings?.client_ids || [])]));
               for (const k of keysToMap) {
                 const lower = k.toLowerCase();
                 const alpha = lower.replace(/[^a-z0-9]/g, '');
@@ -82,6 +82,7 @@ class ClientRulesService {
                   this.filePaths.set(alpha, fullPath);
                 }
               }
+              console.log(`[ClientRules] Loaded ${file} -> client_ids: [${keysToMap.join(', ')}]`);
             } catch (err: any) {
               console.warn(`[ClientRules] Error loading ${fullPath}:`, err.message);
             }

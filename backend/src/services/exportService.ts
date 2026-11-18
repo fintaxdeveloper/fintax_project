@@ -756,6 +756,7 @@ export const exportService = {
         for (const bd of bankDocs) {
           const docKeyCounts = new Map<string, number>();
           for (const item of extractDocItems(bd)) {
+            if (Number(item.amount) === 0) continue;
             if (clientRulesService.isForeignClient(doc.client_id, item.buchungstext || '')) continue;
             const datum = (item.belegdatum || '').replace(/[^0-9]/g, '').slice(-4);
             const baseKey = `${datum}|${Number(item.amount).toFixed(2)}|${item.sh}|${(item.buchungstext || '').slice(0, 35).toLowerCase()}`;
@@ -828,6 +829,9 @@ export const exportService = {
           }
         }
 
+        if (bankItems.length === 0) {
+          hasBankStatement = false;
+        }
         allMonthlyItems.push(...bankItems);
 
         // Collect all 17-char VINs (including glued VINs, excluding IBANs) already present on Bank (1200) this month so Kasse never double-books them
@@ -885,8 +889,10 @@ export const exportService = {
           }
         }
       } else {
-        // Standalone mode (no Bank Statement uploaded for this month yet)
-        allMonthlyItems = monthDocs.flatMap(extractDocItems).filter((it) => !clientRulesService.isForeignClient(doc.client_id, it.buchungstext || ''));
+        // Step 4: NEVER book Belege onto Konto 1200 when no Bank Statement exists for this month (no standalone mode).
+        // Review Gate will block export with "Kontoauszug (1200) vorhanden: fehlt".
+        hasBankStatement = false;
+        allMonthlyItems = [];
       }
     }
 
@@ -1272,12 +1278,16 @@ export const exportService = {
             item.gegenkonto = '8400';
             item.buCode = '';
           }
+          // Step 5: Group ONLY by VIN, Invoice Number, or Contract ID. NEVER by payee prefix!
+          const contractOrInvMatch =
+            belegMatch?.record.invoiceNo ||
+            (item.belegfeld1 && item.belegfeld1.length >= 4 && !/^\d{5}\s/.test(item.belegfeld1) ? item.belegfeld1 : '') ||
+            (item.buchungstext || '').match(/\b(?:ReNr|Re-Nr|RG|RE|Re|VR|Vertrag|Kaufvertrag)[.:#\s-]*([A-Z0-9\/-]{2,15})\b/i)?.[1] ||
+            '';
           item.carGroupKey =
             belegMatch?.record.vin ||
             vins[0] ||
-            (belegMatch?.record.partner ? extractPayeePrefix(belegMatch.record.partner) : '') ||
-            extractPayeePrefix(item.buchungstext || '') ||
-            undefined;
+            (contractOrInvMatch ? `ID:${contractOrInvMatch.toUpperCase()}` : undefined);
           if (!isStornoPair(item) && (Number(item.amount) || 0) >= 500) {
             vinUnresolved.add(item);
           }

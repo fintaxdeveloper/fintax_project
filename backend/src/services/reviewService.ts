@@ -484,7 +484,11 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       // Grouped by car/customer ("1 Car = 1 Question") after the loop so partial payments combine into one question.
       if (ctx.vinUnresolved.has(it) && sh === 'S' && ['8193', '8400', '8125'].includes(it.gegenkonto)) {
         const vin = extractVinFromText(text) || it.matchedBeleg?.vin || undefined;
-        const gKey = it.carGroupKey || vin || this.payeeKey(it.buchungstext || '') || key;
+        const invOrContract =
+          it.matchedBeleg?.invoiceNo ||
+          (it.belegfeld1 && it.belegfeld1.length >= 4 && !/^\d{5}\s/.test(it.belegfeld1) ? `ID:${it.belegfeld1.toUpperCase()}` : '') ||
+          '';
+        const gKey = it.carGroupKey || vin || invOrContract || key;
         const arr = vinGroups.get(gKey) || [];
         arr.push(it);
         vinGroups.set(gKey, arr);
@@ -803,13 +807,13 @@ Return ONLY JSON: { "results": [ { "id": 0, "gegenkonto": "....", "confidence": 
       expected: '≥ 0,00 € (inkl. Anfangsbestand)',
       hint: minCash > -0.05 ? undefined : 'Cash went negative — check opening cash balance or missing deposits.',
     });
-    if (kasseNet > 20000) {
+    if (running > 20000) {
       checks.push({
         id: 'KASSE_SANITY',
         label: 'Kassenbestand am Monatsende',
         status: 'WARN',
         critical: false,
-        value: `${round2(kasseNet).toFixed(2)} €`,
+        value: `${round2(running).toFixed(2)} €`,
         expected: '≤ 20.000,00 € (Prüfungsrisiko bei hohem Bar-Saldo)',
         hint: 'Kassenbestand ist sehr hoch (> 20.000 €). Prüfen Sie, ob Belege für Barkäufe (Fahrzeugeinkauf) noch fehlen.',
       });

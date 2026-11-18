@@ -114,7 +114,8 @@ export function extractVinFromText(text: string): string | null {
   }
 
   // Fallback: scan any 17-char sequence ending in 5-6 digits (tolerates glued text like ...52639ZAHLUNG, blocks trailing digits)
-  const directMatches = upper.matchAll(/(?<![A-Z0-9])([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})(?![0-9])/g);
+  // Note: ISO 3779 WMI first char can be a letter OR digit 1-5, 7 (e.g. Tesla Fremont 5YJ, Austin 7SA)
+  const directMatches = upper.matchAll(/(?<![A-Z0-9])([A-HJ-NPR-Z1-57][A-HJ-NPR-Z]{1,2}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})(?![0-9])/g);
   for (const m of directMatches) {
     const candidate = m[1].slice(0, 17);
     if (isPlausibleVin(candidate)) {
@@ -126,7 +127,7 @@ export function extractVinFromText(text: string): string | null {
   const ocrMatches = upper.matchAll(/(?<![A-Z0-9])([A-Z0-9]{11}\d{6})(?![0-9])/g);
   for (const m of ocrMatches) {
     const norm = m[1].replace(/O/g, '0').replace(/I/g, '1').replace(/Q/g, '0');
-    if (isPlausibleVin(norm) && /^[A-HJ-NPR-Z]/.test(norm)) {
+    if (isPlausibleVin(norm) && /^[A-HJ-NPR-Z1-57]/.test(norm)) {
       return norm;
     }
   }
@@ -240,12 +241,17 @@ function extractAmount(text: string): { total: number; net?: number; vatRate?: n
     .filter((n) => n > 0.5 && n < 250000);
 
   if (allMatches.length > 0) {
-    // Check if Netto + 19% VAT pair exists: prefer the Brutto value
+    // Check if Netto + 19% VAT pair exists: prefer the Brutto value, or calculate gross = net + USt
     for (const a of allMatches) {
       const expectedBrutto = Math.round(a * 1.19 * 100) / 100;
       const matchBrutto = allMatches.find((b) => Math.abs(b - expectedBrutto) < 0.05);
       if (matchBrutto) {
         return { total: matchBrutto, net: a, vatRate: 19 };
+      }
+      const expectedVat19 = Math.round(a * 0.19 * 100) / 100;
+      const matchVat19 = allMatches.find((v) => Math.abs(v - expectedVat19) < 0.05 && v < a);
+      if (matchVat19) {
+        return { total: Math.round((a + matchVat19) * 100) / 100, net: a, vatRate: 19 };
       }
     }
     // Check 7% pair
@@ -254,6 +260,11 @@ function extractAmount(text: string): { total: number; net?: number; vatRate?: n
       const matchBrutto7 = allMatches.find((b) => Math.abs(b - expectedBrutto7) < 0.05);
       if (matchBrutto7) {
         return { total: matchBrutto7, net: a, vatRate: 7 };
+      }
+      const expectedVat7 = Math.round(a * 0.07 * 100) / 100;
+      const matchVat7 = allMatches.find((v) => Math.abs(v - expectedVat7) < 0.05 && v < a);
+      if (matchVat7) {
+        return { total: Math.round((a + matchVat7) * 100) / 100, net: a, vatRate: 7 };
       }
     }
     // Otherwise highest plausible currency amount in the document (validated in text)
@@ -704,7 +715,9 @@ export const belegIndexService = {
       let bestDist = 999;
 
       for (const r of expenseCandidates) {
-        if (Math.abs(r.amount - txAmount) > 0.05) continue;
+        const matchesGross = Math.abs(r.amount - txAmount) <= 0.05;
+        const matchesNet = typeof r.netAmount === 'number' && r.netAmount > 0 && Math.abs(r.netAmount - txAmount) <= 0.05;
+        if (!matchesGross && !matchesNet) continue;
         const rDay = parseInt((r.belegdatum || '').slice(0, 2), 10) || 1;
         const rMon = parseInt((r.belegdatum || '').slice(2, 4), 10) || 1;
         const dist = Math.abs((rMon * 31 + rDay) - txApproxDays);
