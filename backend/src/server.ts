@@ -638,7 +638,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
         if (
           classification.category !== 'BANK_STATEMENT' &&
           !bankStmtResult &&
-          !/kassebeleg|bankbeleg|kontoausz|1200[-_ ]?bank/i.test(originalname)
+          !/(?:kasse|kassen|bank).*(?:beleg|bericht)|kontoausz|1200[-_ ]?bank|belege/i.test(originalname)
         ) {
           try {
             splitBills = await aiService.extractMultipleBills(storedPath, mimetype, originalname, clientId);
@@ -657,7 +657,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
         if (
           classification.category !== 'BANK_STATEMENT' &&
           !bankStmtResult &&
-          !/kassebeleg|bankbeleg|kontoausz|1200[-_ ]?bank/i.test(originalname)
+          !/(?:kasse|kassen|bank).*(?:beleg|bericht)|kontoausz|1200[-_ ]?bank|belege/i.test(originalname)
         ) {
           const hintYm = googleDriveService.resolveYearAndMonth(
             extracted?.invoice_date,

@@ -118,6 +118,9 @@ foreach ($fp in $files) {
     $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
     $fs.Dispose()
     $text = ($result.Lines | ForEach-Object { $_.Text }) -join "\`n"
+    if ($text) {
+      $text = $text -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ' '
+    }
   } catch {
     $text = ''
   }
@@ -136,7 +139,8 @@ $out | ConvertTo-Json -Depth 4 -Compress
     );
     const trimmed = (stdout || '').trim();
     if (!trimmed) return imgPaths.map((_, idx) => ({ page: idx + 1, text: '', source: 'winrt_ocr' }));
-    const parsed = JSON.parse(trimmed);
+    const sanitized = trimmed.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]+/g, ' ');
+    const parsed = JSON.parse(sanitized);
     const arr = Array.isArray(parsed) ? parsed : [parsed];
     return arr.map((item: any, idx: number) => ({
       page: idx + 1,

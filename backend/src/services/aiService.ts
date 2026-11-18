@@ -309,10 +309,10 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
     const isPdf = pdfExtractor.isPdf(filePath, mimeType);
     const fname = (originalFilename || path.basename(filePath)).toLowerCase();
 
-    // Multi-page batch PDFs (Kassebelege, Bankbelege, Kontoauszug, Kassenbericht) are indexed
+    // Multi-page batch PDFs (Kassebelege, Kassenbelege, Bankbelege, Kontoauszug, Kassenbericht) are indexed
     // deterministically and ultra-fast via offline CPU OCR in belegIndexService (skip heavy Ollama GPU vision loop)
     if (monthlyDocumentRegistry.match(fname)) return [];
-    if (/kassebeleg|bankbeleg|kassenbericht|kontoausz|1200[-_ ]?bank/i.test(fname)) {
+    if (/(?:kasse|kassen|bank).*(?:beleg|bericht)|kontoausz|1200[-_ ]?bank|belege/i.test(fname)) {
       console.log(`[Multi-Bill AI] Skipping heavy per-page vision loop for batch archive "${originalFilename || path.basename(filePath)}" -> handled by fast offline OCR.`);
       return [];
     }
@@ -440,6 +440,8 @@ Return strictly JSON, no markdown:
       }
 
       // Vision fallback only if CPU OCR could not extract multiple bills
+      // Multi-bill vision detection is intended only for single photos/pages (e.g. 1-3 receipt photos).
+      // Multi-page documents (>3 pages) are batch archives already processed by OCR.
       if (collected.length === 0) {
         let images: string[] = [];
         if (isPdf) {
@@ -451,10 +453,14 @@ Return strictly JSON, no markdown:
             images = [];
           }
         }
-        for (let i = 0; i < images.length; i++) {
-          console.log(`[Multi-Bill AI] Scanning page/image ${i + 1}/${images.length} for multiple bills...`);
-          const bills = await runVision(images[i]);
-          collected.push(...bills);
+        if (images.length > 3) {
+          console.log(`[Multi-Bill AI] Document has ${images.length} pages — skipping per-page GPU vision scan to avoid timeouts.`);
+        } else {
+          for (let i = 0; i < images.length; i++) {
+            console.log(`[Multi-Bill AI] Scanning page/image ${i + 1}/${images.length} for multiple bills...`);
+            const bills = await runVision(images[i]);
+            collected.push(...bills);
+          }
         }
       }
     }
