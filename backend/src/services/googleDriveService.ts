@@ -468,24 +468,19 @@ export class GoogleDriveService {
       const fnBankMonth = cleanFn.match(/-(0[1-9]|1[0-2])[\s_-]/);
 
       if (fnMatch) {
-        detectedYear = parseInt(fnMatch[1], 10);
-        detectedMonth = parseInt(fnMatch[2], 10);
+        if (!detectedYear) detectedYear = parseInt(fnMatch[1], 10);
+        if (!detectedMonth) detectedMonth = parseInt(fnMatch[2], 10);
         if (detectedYear === 2016) detectedYear = 2026;
       } else if (fnMmYyyy) {
         // Explicit 2-digit month prefix in filename (e.g. 052026_Bankbelege or 052026_Kassebelege)
-        // MUST ALWAYS override any OCR/vision hallucination
+        // Extract ONLY the month from scanner prefix; NEVER overwrite a valid document year with scanner year (e.g. 2026)!
         detectedMonth = parseInt(fnMmYyyy[1], 10);
-        const parsedYear = parseInt(fnMmYyyy[2], 10);
-        // German dealership QA24 files often have scanner prefix MM2026_ (e.g. 022026_, 052026_, 102026_)
-        // where the fiscal accounting period is 2024
-        if (parsedYear === 2026 && (fallbackYear === 2024 || fallbackYear === '2024' || detectedYear === 2024 || cleanFn.toLowerCase().includes('bankbelege') || cleanFn.toLowerCase().includes('kassebelege'))) {
-          detectedYear = 2024;
-        } else {
-          detectedYear = parsedYear;
+        if (!detectedYear) {
+          detectedYear = (fallbackYear && Number(fallbackYear) >= 2020) ? Number(fallbackYear) : parseInt(fnMmYyyy[2], 10);
         }
       } else if (fnBankMonth) {
         detectedMonth = parseInt(fnBankMonth[1], 10);
-        if (!detectedYear || detectedYear > 2025) {
+        if (!detectedYear) {
           detectedYear = (fallbackYear && Number(fallbackYear) >= 2020) ? Number(fallbackYear) : 2024;
         }
       } else if (!detectedYear || !detectedMonth) {

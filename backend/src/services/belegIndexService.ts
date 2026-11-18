@@ -284,12 +284,10 @@ function extractAmount(text: string): { total: number; net?: number; vatRate?: n
   return { total: 0 };
 }
 
-function extractPartner(text: string, type: BelegRecordType, clientId?: string): string {
-  const lines = text
-    .split(/\r?\n|\|/)
-    .map((l) => l.trim())
-    .filter((l) => l.length >= 3);
-
+function isOwnIssuerText(text: string, clientId?: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const compact = lower.replace(/[^a-z0-9äöüß]/g, '');
   const settings = clientRulesService.getClientSettings(clientId);
   const ownLower = (settings.company_name || '')
     .toLowerCase()
@@ -297,10 +295,32 @@ function extractPartner(text: string, type: BelegRecordType, clientId?: string):
     .trim();
   const ownKeywords = (settings.own_issuer_keywords || []).map((k) => k.toLowerCase());
 
+  if (ownLower.length >= 3 && lower.includes(ownLower)) return true;
+  if (ownKeywords.some((k) => k.length >= 3 && (lower.includes(k) || compact.includes(k.replace(/[^a-z0-9äöüß]/g, ''))))) {
+    return true;
+  }
+
+  // Fuzzy OCR-tolerant anchors for QA24 / configured company letterhead
+  // Handles OCR noise like "QA2QGmbH", "QA2CGmbH", "OA24", "Industrie$tr.32", "S5439", "EIOrsheim"
+  if (ownLower.includes('qa24') || ownKeywords.some((k) => k.includes('qa24') || k.includes('65439'))) {
+    if (/(?:qa2[4qc]|oa24|qa24automotive|65439|06145|industrie|orsheim|flörsheim|florsheim)/i.test(compact)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function extractPartner(text: string, type: BelegRecordType, clientId?: string): string {
+  const lines = text
+    .split(/\r?\n|\|/)
+    .map((l) => l.trim())
+    .filter((l) => l.length >= 3);
+
+  const settings = clientRulesService.getClientSettings(clientId);
+
   const isOwnOrNoise = (line: string): boolean => {
     const l = line.toLowerCase();
-    if (ownLower && ownLower.length >= 3 && l.includes(ownLower)) return true;
-    if (ownKeywords.some((k) => k.length >= 3 && l.includes(k))) return true;
+    if (isOwnIssuerText(line, clientId)) return true;
     return (
       l.includes('iban') ||
       l.includes('bic:') ||
@@ -363,20 +383,15 @@ function extractPartner(text: string, type: BelegRecordType, clientId?: string):
 
 function classifyBelegPage(rawText: string, filename: string, clientId?: string): BelegRecordType {
   const lower = rawText.toLowerCase();
-  const settings = clientRulesService.getClientSettings(clientId);
-  const ownLower = (settings.company_name || '')
-    .toLowerCase()
-    .replace(/\s*(?:gmbh|ug|ag|kg|ohg)\b/gi, '')
-    .trim();
-  const ownKeywords = (settings.own_issuer_keywords || []).map((k) => k.toLowerCase());
-  const isOwnIssuer =
-    (ownLower.length >= 3 && lower.includes(ownLower)) ||
-    ownKeywords.some((k) => k.length >= 3 && lower.includes(k));
+  const isOwnIssuer = isOwnIssuerText(rawText, clientId);
 
   if (/ankaufvertrag|verbindliche\s+bestellung/i.test(lower)) {
     return 'QA24_PURCHASE';
   }
-  if (isOwnIssuer && /(?:kaufvertrag\s+für|rechnung\s+für\s+den\s+(?:ver)?kauf|verkauf\s+nach\s+[§s5]?\s*25a)/i.test(lower)) {
+  if (
+    /(?:verkauf\s+nach\s+[§s5]?\s*25a|rechnung\s+für\s+den\s+(?:ver)?kauf)/i.test(lower) ||
+    (isOwnIssuer && /kaufvertrag\s+für/i.test(lower))
+  ) {
     return 'QA24_SALE';
   }
   // Vehicle purchase invoice issued by a third-party dealer (has VIN + vehicle price >= 3000 EUR + vehicle specs)
@@ -606,6 +621,23 @@ export const belegIndexService = {
    */
   async ensureClientIndexed(clientId: string, allDocs: DocumentRecord[]): Promise<void> {
     const data = loadStore();
+
+    // Build month -> bank statement year map so Belege without an explicit date inherit their statement's year (NEVER filename "062026")
+    const monthToStatementYear = new Map<number, number>();
+    for (const bd of allDocs) {
+      if (clientId && bd.client_id !== clientId) continue;
+      const isStmt = bd.extracted_data?.document_type === 'BANK_STATEMENT' || /kontoauszug|1200[-_ ]?bank/i.test(bd.original_filename || '');
+      if (!isStmt) continue;
+      const ymStmt = (bd.extracted_data?.invoice_date || '').match(/^(\d{4})-(\d{2})/);
+      if (ymStmt) {
+        const sy = parseInt(ymStmt[1], 10);
+        const sm = parseInt(ymStmt[2], 10);
+        if (sy >= 2015 && sy <= 2035 && sm >= 1 && sm <= 12) {
+          monthToStatementYear.set(sm, sy);
+        }
+      }
+    }
+
     for (const d of allDocs) {
       if (clientId && d.client_id !== clientId) continue;
       if (d.is_duplicate) continue;
@@ -618,11 +650,17 @@ export const belegIndexService = {
 
       const dateStr = d.extracted_data?.invoice_date || '';
       const ym = dateStr.match(/^(\d{4})-(\d{2})/);
-      const fnYm = fn.match(/(\d{2})(20\d{2})/) || fn.match(/(20\d{2})[-_](\d{2})/);
-      const parsedFnYear = fnYm ? parseInt(fnYm[1].length === 4 ? fnYm[1] : fnYm[2], 10) : NaN;
-      const parsedFnMonth = fnYm ? parseInt(fnYm[1].length === 4 ? fnYm[2] : fnYm[1], 10) : NaN;
-      const year = ym ? parseInt(ym[1], 10) : !isNaN(parsedFnYear) ? parsedFnYear : new Date().getFullYear();
+      const fnMonthMatch = fn.match(/^(0[1-9]|1[0-2])20\d{2}[\s_-]/) || fn.match(/^20\d{2}[_-]?(0[1-9]|1[0-2])[\s_-]/);
+      const parsedFnMonth = fnMonthMatch ? parseInt(fnMonthMatch[1], 10) : NaN;
       const month = ym ? parseInt(ym[2], 10) : !isNaN(parsedFnMonth) ? parsedFnMonth : 1;
+
+      const pathYearMatch = d.file_path.match(/[\\\/](20[12]\d)[\\\/]/);
+      const pathYear = pathYearMatch ? parseInt(pathYearMatch[1], 10) : NaN;
+      const stmtYear = monthToStatementYear.get(month);
+      const docYear = ym ? parseInt(ym[1], 10) : NaN;
+
+      // Priority: document date year -> same month's bank statement year -> storage folder year -> current year (NEVER filename year!)
+      const year = !isNaN(docYear) ? docYear : stmtYear || (!isNaN(pathYear) ? pathYear : new Date().getFullYear());
 
       await this.indexDocumentFile(d.file_path, d.mime_type || 'application/pdf', {
         clientId: d.client_id || clientId,

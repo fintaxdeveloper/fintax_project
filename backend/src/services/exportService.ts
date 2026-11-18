@@ -616,7 +616,11 @@ export const exportService = {
     const datumBis = `${yearNum}${monthPadded}${String(lastDay).padStart(2, '0')}`;
 
     // Extract client metadata & Mandanten-Nr dynamically from client settings / folder
+    const exportClientRules = clientRulesService.getRules(doc.client_id);
     const clientSettings = clientRulesService.getClientSettings(doc.client_id);
+    console.log(
+      `[ClientRules] Export client_id=${doc.client_id || 'NONE'} -> rules=${exportClientRules?.client_id || 'NONE'} (eu_dealers: ${clientSettings.eu_dealers?.length || 0}, company_name: "${clientSettings.company_name || 'NONE'}")`
+    );
     let mandantenNr = clientSettings.mandanten_nr || '726';
     const cFolder = doc.client_id ? clientFolderService.resolveClientFolderName(doc.client_id) : '';
     const numMatch = cFolder.match(/^(\d{3,6})_/);
@@ -1223,7 +1227,12 @@ export const exportService = {
           }
         }
 
-        // 4. By Payee / Buyer name
+        // 4. By Payee / Buyer name (including direct EU-Dealer check from client rules)
+        if (!resolvedTax) {
+          if (clientRulesService.isEuDealer(doc.client_id, txt)) {
+            resolvedTax = '8125';
+          }
+        }
         if (!resolvedTax) {
           const payee = extractPayeePrefix(item.buchungstext || '');
           if (payee && payeeTaxMap.has(payee)) {
