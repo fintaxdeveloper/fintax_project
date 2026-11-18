@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { ocrService, OcrPage } from './ocrService.js';
 import { clientRulesService } from './clientRulesService.js';
@@ -23,6 +24,7 @@ export interface BelegRecord {
   year: number;
   month: number;
   source_file: string;
+  source_checksum?: string;
   document_id?: string;
   pages: number[];
   type: BelegRecordType;
@@ -47,6 +49,28 @@ export interface BelegRecord {
 const STORAGE_DIR = path.resolve(process.cwd(), '../storage');
 const BELEG_INDEX_FILE = path.join(STORAGE_DIR, 'beleg_index.json');
 
+export function deduplicateBelegRecords(records: BelegRecord[]): BelegRecord[] {
+  const seen = new Set<string>();
+  const out: BelegRecord[] = [];
+  for (const r of records) {
+    const pagesKey = (r.pages || []).slice().sort().join(',');
+    const baseSource = (r.source_file || '').toLowerCase().replace(/\s*\(\d+\)/g, '').trim();
+    const fileId = (r.source_checksum || baseSource).toLowerCase().trim();
+    const primaryKey = `${r.client_id}|${fileId}|p:${pagesKey}`;
+    const invKey = r.invoiceNo && r.invoiceNo.length >= 3 ? `${r.client_id}|inv:${r.invoiceNo.toLowerCase()}|amt:${r.amount}` : '';
+    const partnerKey = r.partner && r.amount ? `${r.client_id}|${r.partner.toLowerCase()}|${r.amount}|p:${pagesKey}` : '';
+
+    if (seen.has(primaryKey) || (invKey && seen.has(invKey)) || (partnerKey && seen.has(partnerKey))) {
+      continue;
+    }
+    seen.add(primaryKey);
+    if (invKey) seen.add(invKey);
+    if (partnerKey) seen.add(partnerKey);
+    out.push(r);
+  }
+  return out;
+}
+
 interface IndexStore {
   indexedFiles: Record<string, string>; // key -> checksum/signature
   records: BelegRecord[];
@@ -62,7 +86,7 @@ function loadStore(): IndexStore {
       if (parsed && Array.isArray(parsed.records)) {
         store = {
           indexedFiles: parsed.indexedFiles || {},
-          records: parsed.records,
+          records: deduplicateBelegRecords(parsed.records),
         };
         return store;
       }
@@ -77,6 +101,9 @@ function loadStore(): IndexStore {
 function saveStore(): void {
   try {
     if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
+    if (store) {
+      store.records = deduplicateBelegRecords(store.records);
+    }
     fs.writeFileSync(BELEG_INDEX_FILE, JSON.stringify(loadStore(), null, 2), 'utf-8');
   } catch (e: any) {
     console.warn('[BelegIndex] Failed to persist index:', e?.message);
@@ -470,7 +497,7 @@ export const belegIndexService = {
    */
   groupAndClassifyPages(
     pages: OcrPage[],
-    meta: { clientId: string; year: number; month: number; filename: string; documentId?: string }
+    meta: { clientId: string; year: number; month: number; filename: string; documentId?: string; checksum?: string }
   ): BelegRecord[] {
     if (!pages || pages.length === 0) return [];
 
@@ -581,6 +608,7 @@ export const belegIndexService = {
         year: recordYear,
         month: meta.month,
         source_file: meta.filename,
+        source_checksum: meta.checksum,
         document_id: meta.documentId,
         pages: g.pageNums,
         type,
@@ -616,23 +644,33 @@ export const belegIndexService = {
   ): Promise<BelegRecord[]> {
     if (!fs.existsSync(filePath)) return [];
     const data = loadStore();
-    const fileKey = `${meta.clientId}|${meta.filename}|${meta.checksum || fs.statSync(filePath).size}`;
-    if (data.indexedFiles[fileKey]) {
-      return data.records.filter(
-        (r) => r.client_id === meta.clientId && r.source_file === meta.filename
-      );
+    const fileChecksum = meta.checksum || crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+    const fileKey = `${meta.clientId}|${meta.filename}|${fileChecksum}`;
+
+    const existing = data.records.filter(
+      (r) =>
+        r.client_id === meta.clientId &&
+        (r.source_checksum === fileChecksum || r.source_file.toLowerCase() === meta.filename.toLowerCase())
+    );
+    if (data.indexedFiles[fileKey] && existing.length > 0) {
+      return deduplicateBelegRecords(existing);
     }
 
-    const pages = await ocrService.extractPages(filePath, mimeType, meta.checksum);
+    const pages = await ocrService.extractPages(filePath, mimeType, fileChecksum);
     if (pages.length === 0) return [];
 
-    const records = this.groupAndClassifyPages(pages, meta);
+    const records = this.groupAndClassifyPages(pages, { ...meta, checksum: fileChecksum });
     if (records.length > 0) {
-      // Remove any stale records for the exact same filename + client before saving
-      data.records = data.records.filter(
-        (r) => !(r.client_id === meta.clientId && r.source_file === meta.filename)
-      );
+      // Re-indexing is IDEMPOTENT: replace existing records for this file/checksum, NEVER append duplicates!
+      const newSourceLower = meta.filename.toLowerCase();
+      data.records = data.records.filter((r) => {
+        if (r.client_id !== meta.clientId) return true;
+        if (fileChecksum && r.source_checksum === fileChecksum) return false;
+        if (r.source_file.toLowerCase() === newSourceLower) return false;
+        return true;
+      });
       data.records.push(...records);
+      data.records = deduplicateBelegRecords(data.records);
       data.indexedFiles[fileKey] = new Date().toISOString();
       saveStore();
       console.log(`[BelegIndex] Indexed ${records.length} document(s) from "${meta.filename}" (Month ${meta.month}/${meta.year})`);

@@ -351,7 +351,8 @@ export const SKR03_RULES: Skr03Rule[] = [
     keywords: [
       'bankgebühr', 'bankgebuhr', 'bankgebühren', 'kontoführung', 'abrechnung kontoführung',
       'nebenkosten des geldverkehrs', 'überweisungsgebühr', 'kartenlesegerät gebühr', 'agenda',
-      'securego', 'entg:', 'entg', 'entgelt echtzeit', 'echtzeit-überweisung', 'echtzeitüberweisung',
+      'securego entgelt', 'securego gebühr', 'securego-gebühr', 'securego 0,80', 'securego 0.80',
+      'entg:', 'entg', 'entgelt echtzeit', 'echtzeit-überweisung', 'echtzeitüberweisung',
       'entgelt fuer echtzeit', 'entgelt für echtzeit',
     ],
     accountCode: '4970',
@@ -381,7 +382,7 @@ export const SKR03_RULES: Skr03Rule[] = [
   {
     keywords: [
       'girocard', 'bscard', 'händlerg.', 'kartenabrechnung', 'geldtransit',
-      'bar-auszahlung', 'pn:5635', 'pn:5705', 'rangrover movik',
+      'bar-auszahlung',
     ],
     accountCode: '1360',
     accountName: 'Geldtransit',

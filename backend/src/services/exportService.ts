@@ -147,6 +147,20 @@ const UNQUOTED_EMPTY_INDICES = new Set([
 ]);
 
 export const exportService = {
+  getExportDir(): string {
+    const candidates = [
+      ...(process.env.FINTAX_STORAGE_DIR ? [path.resolve(process.env.FINTAX_STORAGE_DIR, 'exports')] : []),
+      path.resolve(process.cwd(), 'fintax_project-main/storage/exports'),
+      path.resolve(process.cwd(), 'storage/exports'),
+      path.resolve(process.cwd(), '../storage/exports'),
+      path.resolve(process.cwd(), '../../storage/exports'),
+    ];
+    for (const d of candidates) {
+      if (fs.existsSync(d) || fs.existsSync(path.dirname(d))) return d;
+    }
+    return candidates[1] || path.resolve(process.cwd(), 'storage/exports');
+  },
+
   /**
    * Helper to format any number to German comma decimal (e.g. 2110 or 5,77)
    */
@@ -433,7 +447,7 @@ export const exportService = {
     const csvContent = '\uFEFF' + [line1, line2, ...rows].join('\r\n') + '\r\n';
 
     const fileName = `EXTF_Buchungen_${datePart}_${timePart}_${year}_${parseInt(month, 10)}.csv`;
-    const exportDir = path.resolve(process.cwd(), '../storage/exports');
+    const exportDir = this.getExportDir();
     if (!fs.existsSync(exportDir)) {
       fs.mkdirSync(exportDir, { recursive: true });
     }
@@ -1134,12 +1148,38 @@ export const exportService = {
           document_id: belegMatch.record.document_id,
         };
         if ((!item.belegfeld1 || /^bank/i.test(item.belegfeld1)) && belegMatch.record.invoiceNo) {
-          item.belegfeld1 = belegMatch.record.invoiceNo;
+          const isSaleRecord = belegMatch.record.type === 'QA24_SALE' || belegMatch.record.taxClause === '25a' || belegMatch.record.taxClause === 'EU';
+          if (item.sh === 'H' && isSaleRecord) {
+            // NEVER copy a sales invoice number onto a purchase line (sh === 'H')!
+          } else {
+            item.belegfeld1 = belegMatch.record.invoiceNo;
+          }
         }
       }
 
       const txt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toLowerCase();
-      if (/\b(aral|shell|esso|total|jet|avia|omv|tankstelle|agip|bft|minera|couche-tard|circle k|westfalen|star tankstelle|hem\b|sprint|sb-tank)\b/i.test(txt)) {
+      // Owner transaction check (0730 Verrechnungskonto Gesellschafter, NO BU CODE)
+      if (
+        item.konto === '1200' &&
+        clientRulesService.isOwner(doc.client_id, txt) &&
+        !/\b(lohn|gehalt|stammkapital|stammeinlage)\b/i.test(txt) &&
+        !/debitkarte|bankcard|kreditkarte|kartengebühr|depotgebühr|kontoführung/i.test(txt)
+      ) {
+        item.gegenkonto = '0730';
+        item.buCode = '';
+        console.log(
+          `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
+          `final account: 0730, why: matched owner rule (${doc.client_id})`
+        );
+      } else if (item.konto === '1200' && item.sh === 'H' && (extractAllVins(txt).length > 0 || /(?:XP7|LRW|W0L|WAU|WDD|WVW)[A-Z0-9]{14,}/i.test(txt))) {
+        // Outgoing vehicle purchase payments on bank -> 3200 (no BU)
+        item.gegenkonto = '3200';
+        item.buCode = '';
+        console.log(
+          `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
+          `final account: 3200, why: outgoing VIN purchase payment`
+        );
+      } else if (/\b(aral|shell|esso|total|jet|avia|omv|tankstelle|agip|bft|minera|couche-tard|circle k|westfalen|star tankstelle|hem\b|sprint|sb-tank)\b/i.test(txt)) {
         item.gegenkonto = '4530';
         item.buCode = '9';
       } else if (/\b(arag|signal iduna|allianz|huk|axa|gothaer|provinzial|zurich|lvm|devk|continentale|barmenia|ergo|dkv|debeka|generali|vgh|helvetia|basler|kfz-versicherung|versicherung)\b/i.test(txt) && !/garantie/i.test(txt)) {
@@ -1183,11 +1223,40 @@ export const exportService = {
       } else if (item.sh === 'S' && (item.gegenkonto === '8193' || item.gegenkonto === '8400' || item.gegenkonto === '8125')) {
         const upperTxt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase();
         const vins = extractAllVins(upperTxt);
+
+        // ── RULE 1: Matched Sales Beleg with taxClause ('25a' | '19' | 'EU') is FINAL ──
+        // If matched Beleg has taxClause '25a' | '19' | 'EU' and type QA24_SALE (or CONTRACT/SALE),
+        // use its skr03Account (8193/8400/8125) as FINAL and mark the line resolved.
+        // VIN purchase-register check runs ONLY when no matched Beleg has a taxClause.
+        if (belegMatch) {
+          const r = belegMatch.record;
+          const isSale = r.type === 'QA24_SALE' || r.type === 'CONTRACT' || r.skr03Account === '8193' || r.skr03Account === '8125';
+          if (isSale && (r.taxClause === '25a' || r.taxClause === 'EU' || r.taxClause === '19' || r.skr03Account)) {
+            const finalAccount: '8193' | '8400' | '8125' =
+              r.taxClause === 'EU' || r.skr03Account === '8125' || clientRulesService.isEuDealer(doc.client_id, r.partner || '')
+                ? '8125'
+                : r.taxClause === '25a' || r.skr03Account === '8193'
+                ? '8193'
+                : '8400';
+            item.gegenkonto = finalAccount;
+            item.buCode = '';
+            console.log(
+              `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
+              `match step: ${belegMatch.matchedBy}, record id: ${r.id}, taxClause: ${r.taxClause}, ` +
+              `final account: ${finalAccount}, why: matched QA24_SALE Beleg with taxClause '${r.taxClause}'`
+            );
+            // Resolved as FINAL -> skip VIN purchase-register check!
+            continue;
+          }
+        }
+
         let resolvedTax: '8193' | '8400' | '8125' | undefined;
+        let decisionWhy = '';
 
         // 1. EU dealer registry check (rules/<client>.json)
         if (clientRulesService.isEuDealer(doc.client_id, txt)) {
           resolvedTax = '8125';
+          decisionWhy = 'EU dealer registry';
         }
 
         // 2. By exact 17-char VIN (glued-safe)
@@ -1196,6 +1265,7 @@ export const exportService = {
             const matchedSalesAcc = vinTaxMap.get(vin) || (clientRulesService.lookupVin(doc.client_id, vin)?.taxKey as any);
             if (matchedSalesAcc && matchedSalesAcc !== '3200') {
               resolvedTax = matchedSalesAcc;
+              decisionWhy = `VIN ${vin} mapped to ${matchedSalesAcc}`;
               break;
             }
           }
@@ -1208,6 +1278,7 @@ export const exportService = {
             const matched = clientRulesService.lookupVin(doc.client_id, w);
             if (matched && matched.taxKey !== '3200') {
               resolvedTax = matched.taxKey as any;
+              decisionWhy = `Short VIN ${w} mapped to ${matched.taxKey}`;
               break;
             }
           }
@@ -1218,12 +1289,16 @@ export const exportService = {
           const r = belegMatch.record;
           if (r.taxClause === 'EU' || r.skr03Account === '8125' || clientRulesService.isEuDealer(doc.client_id, r.partner || '')) {
             resolvedTax = '8125';
+            decisionWhy = 'Beleg taxClause EU';
           } else if (r.taxClause === '25a' || (r.type === 'QA24_PURCHASE' && r.taxClause !== '19') || r.skr03Account === '8193') {
             resolvedTax = '8193';
+            decisionWhy = 'Beleg taxClause 25a';
           } else if (r.taxClause === '19') {
             resolvedTax = '8400';
+            decisionWhy = 'Beleg taxClause 19%';
           } else if (r.vin && vinTaxMap.has(r.vin.toUpperCase())) {
             resolvedTax = vinTaxMap.get(r.vin.toUpperCase());
+            decisionWhy = `Beleg VIN ${r.vin} purchase map`;
           }
         }
 
@@ -1231,20 +1306,24 @@ export const exportService = {
         if (!resolvedTax) {
           if (clientRulesService.isEuDealer(doc.client_id, txt)) {
             resolvedTax = '8125';
+            decisionWhy = 'Payee EU dealer';
           }
         }
         if (!resolvedTax) {
           const payee = extractPayeePrefix(item.buchungstext || '');
           if (payee && payeeTaxMap.has(payee)) {
             resolvedTax = payeeTaxMap.get(payee);
+            decisionWhy = `Payee prefix ${payee}`;
           } else {
             const matchedRule = clientRulesService.lookupPayee(doc.client_id, txt);
             if (matchedRule && matchedRule !== '3200') {
               resolvedTax = matchedRule as any;
+              decisionWhy = `Payee rule ${matchedRule}`;
             } else {
               for (const [pKey, targetAcc] of payeeTaxMap.entries()) {
                 if (pKey.length >= 4 && txt.includes(pKey)) {
                   resolvedTax = targetAcc;
+                  decisionWhy = `Payee match ${pKey}`;
                   break;
                 }
               }
@@ -1260,6 +1339,7 @@ export const exportService = {
             const normInv = normalizeKey(rawInv);
             if (invoiceTaxMap.has(normInv)) {
               resolvedTax = invoiceTaxMap.get(normInv);
+              decisionWhy = `Invoice number ${normInv}`;
             }
           }
         }
@@ -1268,14 +1348,21 @@ export const exportService = {
         if (!resolvedTax) {
           if (/(differenzbesteuerung|25a|gebrauchtgegenst|sonderregelung|differenzbesteuert)/i.test(txt)) {
             resolvedTax = '8193';
+            decisionWhy = 'Keyword §25a';
           } else if (/(innergemeinschaftliche|eu-lieferung|steuerfrei\s*§?\s*4|ig\.?\s*lieferung)/i.test(txt)) {
             resolvedTax = '8125';
+            decisionWhy = 'Keyword EU-Lieferung';
           }
         }
 
         if (resolvedTax) {
           item.gegenkonto = resolvedTax;
           item.buCode = '';
+          console.log(
+            `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
+            `match step: ${belegMatch ? belegMatch.matchedBy : 'keyword/vin'}, record id: ${belegMatch?.record?.id || 'none'}, ` +
+            `taxClause: ${belegMatch?.record?.taxClause || 'none'}, final account: ${resolvedTax}, why: ${decisionWhy}`
+          );
         } else if (
           item.gegenkonto === '8193' &&
           /(differenzbesteuerung|25a|gebrauchtgegenst|sonderregelung|differenzbesteuert)/i.test(txt)
@@ -1299,6 +1386,11 @@ export const exportService = {
             (contractOrInvMatch ? `ID:${contractOrInvMatch.toUpperCase()}` : undefined);
           if (!isStornoPair(item) && (Number(item.amount) || 0) >= 500) {
             vinUnresolved.add(item);
+            console.log(
+              `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
+              `match step: ${belegMatch ? belegMatch.matchedBy : 'none'}, record id: ${belegMatch?.record?.id || 'none'}, ` +
+              `taxClause: ${belegMatch?.record?.taxClause || 'none'}, final account: 8400 (provisional), why: VIN purchase-register check -> VIN not found in purchase history`
+            );
           }
         }
       } else if (
@@ -1365,6 +1457,13 @@ export const exportService = {
             extractPayeePrefix(other.buchungstext || '') === prefix
         );
         if (linkedSaleIsCertain) vinUnresolved.delete(item);
+      }
+    }
+
+    // Tax-exempt and non-deductible accounts (4970, 0730, 3200, 8125, etc.) must NEVER have a BU code!
+    for (const item of allMonthlyItems) {
+      if (['4970', '0730', '3200', '8125', '8193', '4520', '4510', '4910', '4390', '4210'].includes(item.gegenkonto)) {
+        item.buCode = '';
       }
     }
 
@@ -1581,7 +1680,7 @@ export const exportService = {
 
     // Save the 3 EXTF CSV files to local storage/exports
     if (opts.writeFiles !== false) {
-      const exportDir = path.resolve(process.cwd(), '../storage/exports');
+      const exportDir = this.getExportDir();
       if (!fs.existsSync(exportDir)) {
         fs.mkdirSync(exportDir, { recursive: true });
       }

@@ -10,7 +10,7 @@ import { mathCrossValidationService } from './mathCrossValidationService.js';
 import { supplierMemoryService } from './supplierMemoryService.js';
 import { clientRulesService } from './clientRulesService.js';
 import { ocrService } from './ocrService.js';
-import { belegIndexService } from './belegIndexService.js';
+import { belegIndexService, extractVinFromText } from './belegIndexService.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -1699,8 +1699,15 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
           /(?:kaufvertrag|anzahlung|rechnung).*(?:storno|rückzahlung|rueckzahlung|überzahlung|ueberzahlung)/i.test(lower)
         );
 
-      // 4. Cash transit (Bar-Auszahlung, Geldautomat, etc. - NEVER match Bank11 or financing payouts!)
+      // 4. Cash transit (Bar-Auszahlung, Geldautomat, etc. - NEVER match Bank11, financing, or vehicle purchases!)
+      const extractedVin = extractVinFromText(combined);
+      const hasVinInText =
+        Boolean(extractedVin) ||
+        /(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])/i.test(combined) ||
+        /(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{3}[A-HJ-NPR-Z0-9]{8}\d{6}(?![0-9])/i.test(combined);
+
       const isCashTransit =
+        !hasVinInText &&
         !/bank11|finanzierung|darlehen|auszahlung fuer|auszahlung für/i.test(lower) && (
           /bar-auszahlung|auszahlung girocard|bareinzahlung|geldautomat\b|bargeldeinzahlung|barauszahlung/i.test(tx.type) ||
           /bar-auszahlung|bareinzahlung|geldautomat\b/i.test(counterparty) ||
@@ -1709,12 +1716,11 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         );
 
       // 5. Vehicle purchases & sales (for automotive dealership)
-      const hasVinInText = /(?<![A-Z0-9])[A-HJ-NPR-Z]{3}[A-HJ-NPR-Z0-9]{8}\d{6}(?![0-9])/i.test(combined);
       const isVehiclePurchase =
         /\b(kauf|anzahlung|restzahlung|differenzbetrag|fahrzeug|auto|pkw|kfz|polo|tesla|adam|vito|fiat|golf|corsa|astra|passat|audi|bmw|mercedes|opel|volkswagen|cupra|skoda|seat|porsche|land rover|range rover)\b/i.test(lower) ||
         hasVinInText ||
         /auto-|kfz-|car-/i.test(lower) ||
-        clientRulesService.isEuDealer(undefined, lower);
+        clientRulesService.isEuDealer(clientId, lower);
 
       // 6. Bank statement fees & separate bank fee VAT breakdown (Anlage 1 PN:905)
       // IMPORTANT: Do NOT trigger bank fee on large car purchase / vendor payments that happen to have instant transfer fee text
@@ -1774,20 +1780,23 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         sh === 'S' && /\b(bank11|santander|bdk|autofinanzierung)\b/i.test(lower);
 
       // 15. EU tax-free cross-border automotive trading (from client rules config) -> 8125 / 3200
-      const isEuCarDealer = clientRulesService.isEuDealer(undefined, lower);
+      const isEuCarDealer = clientRulesService.isEuDealer(clientId, lower);
 
       // 16. Used vehicle purchase under § 25a Differenzbesteuerung -> 3200
       const isUsedCarPurchase =
         sh === 'H' && (
           /\b(kauf tesla|kauf audi|kauf vw|kauf bmw|kauf pkw|fahrzeugankauf|ankaufvertrag)\b/i.test(lower) ||
-          clientRulesService.lookupPayee(undefined, lower) === '3200' ||
-          (/\b(kauf|anzahlung|restzahlung)\b/i.test(lower) && hasVinInText)
+          clientRulesService.lookupPayee(clientId, lower) === '3200' ||
+          (/\b(kauf|anzahlung|restzahlung)\b/i.test(lower) && hasVinInText) ||
+          (hasVinInText && /pn:\d+/i.test(lower)) ||
+          (/(?:XP7|LRW|W0L|WAU|WDD|WVW)[A-Z0-9]{14,}/i.test(combined) && !clientRulesService.isOwner(clientId, lower))
         );
 
       // 17. Owner / Shareholder transactions (loaded from client settings config) -> 0730 / 1530
       const isOwnerPrivate =
-        clientRulesService.isOwner(undefined, lower) &&
-        !/\b(lohn|gehalt|stammkapital|stammeinlage)\b/i.test(lower);
+        clientRulesService.isOwner(clientId, lower) &&
+        !/\b(lohn|gehalt|stammkapital|stammeinlage)\b/i.test(lower) &&
+        !/debitkarte|bankcard|kreditkarte|kartengebühr|depotgebühr|kontoführung/i.test(lower);
 
       // 18. Fuel & service stations -> 4530 BU 9
       const isFuel = /\b(aral|shell|esso|total|jet|avia|omv|tankstelle|agip|bft|minera|kraftstoff|couche-tard|circle k|westfalen|star tankstelle|hem\b|sprint|sb-tank)\b/i.test(lower);
@@ -1851,13 +1860,13 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         buCode = '';
       } else if (
         sh === 'S' &&
-        (/siehe anlage 1/i.test(lower) || /differenzbesteuerung/i.test(lower) || /25a/i.test(lower) || clientRulesService.lookupPayee(undefined, lower) === '8193')
+        (/siehe anlage 1/i.test(lower) || /differenzbesteuerung/i.test(lower) || /25a/i.test(lower) || clientRulesService.lookupPayee(clientId, lower) === '8193')
       ) {
         // §25a used car sale / customer deposit (Differenzbesteuerung) -> 8193
         gegenkonto = '8193';
         buCode = '';
-      } else if (clientRulesService.matchVendorRule(undefined, lower, tx.amount)) {
-        const vRule = clientRulesService.matchVendorRule(undefined, lower, tx.amount)!;
+      } else if (clientRulesService.matchVendorRule(clientId, lower, tx.amount)) {
+        const vRule = clientRulesService.matchVendorRule(clientId, lower, tx.amount)!;
         gegenkonto = vRule.account;
         buCode = vRule.buCode;
       } else if (isBankFeeVat) {
@@ -1938,7 +1947,7 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
           buCode = learned.buSchluessel || '';
         } else if (generalMatch && generalMatch.code && !['1000', '1200', '1400', '1600', '4900'].includes(generalMatch.code)) {
           gegenkonto = generalMatch.code;
-          buCode = generalMatch.code.startsWith('4') ? '9' : '';
+          buCode = generalMatch.code.startsWith('4') && !['4970', '4520', '4510', '4910', '4390', '4210'].includes(generalMatch.code) ? '9' : '';
         } else if (sh === 'H') {
           // Outgoing payment fallback: Safe general expense 4900 (without tax key to avoid unlawful Vorsteuer deductions)
           gegenkonto = '4900';
@@ -1948,6 +1957,11 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
           gegenkonto = '8400';
           buCode = '';
         }
+      }
+
+      // Safeguard: 4970 (Nebenkosten des Geldverkehrs), 0730, and other exempt accounts must NEVER have a BU code!
+      if (['4970', '0730', '0800', '1360', '3200', '8125', '8193', '4520', '4510', '4910', '4390', '4210'].includes(gegenkonto)) {
+        buCode = '';
       }
 
       // Extract invoice / reference number for Belegfeld 1 with robust clean-up
