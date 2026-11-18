@@ -1719,7 +1719,9 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       // 6. Bank statement fees & separate bank fee VAT breakdown (Anlage 1 PN:905)
       // IMPORTANT: Do NOT trigger bank fee on large car purchase / vendor payments that happen to have instant transfer fee text
       const isBankFeeVat =
-        (/^siehe anlage/i.test(lower) || /pn:905/i.test(lower) || /entgeltabrechnung/i.test(lower)) && tx.amount < 25;
+        (/^siehe anlage/i.test(lower) || (/pn:905/i.test(lower) && !/abschluss/i.test(lower)) || /entgeltabrechnung/i.test(lower)) &&
+        !/abschluss/i.test(lower) &&
+        tx.amount < 25;
       const isBankFee =
         (
           /abschluss|kontoführung|bankgebühr|depotgebühr|jahrespreis|bankcard|debitkarte|kreditkarte|kartengebühr\b/i.test(tx.type.toLowerCase()) ||

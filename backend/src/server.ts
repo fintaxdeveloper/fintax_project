@@ -28,6 +28,7 @@ import { monthlyDocumentRegistry } from './services/monthlyDocumentRegistry.js';
 import { reviewService, ReviewReport, ReviewAction } from './services/reviewService.js';
 import { aiCacheService } from './services/aiCacheService.js';
 import { skr03Mapper } from './services/skr03Mapper.js';
+import { pdfExtractor } from './services/pdfExtractor.js';
 import { belegIndexService, extractVinFromText } from './services/belegIndexService.js';
 import { clientRulesService } from './services/clientRulesService.js';
 import { DocumentRecord, ExtractedInvoiceData, BookingItem } from './types/document.js';
@@ -556,54 +557,77 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       if (cachedAi) {
         extracted = cachedAi.extracted;
       } else if (classification.category === 'BANK_STATEMENT') {
-        console.log(`[Fast-Track] Direct bank statement processing for "${originalname}" via bankStatementService...`);
+        console.log(`[Fast-Track] Direct deterministic bank statement parsing for "${originalname}" via aiService.parseGermanBankStatement...`);
+        let extractedBank: ExtractedInvoiceData | null = null;
         try {
-          bankStmtResult = await bankStatementService.processBankStatement(storedPath, mimetype, docId);
-        } catch (bsErr) {
-          console.warn('[Upload] Bank statement processing error:', bsErr);
+          const pdfText = await pdfExtractor.extractText(storedPath);
+          if (pdfText && pdfText.trim().length > 30) {
+            extractedBank = aiService.parseGermanBankStatement(pdfText, originalname, clientId);
+          }
+        } catch (parseErr) {
+          console.warn('[Upload] Deterministic bank parse notice:', parseErr);
         }
 
-        const stmtYear = bankStmtResult?.period_year || 2024;
-        const stmtMonth = String(bankStmtResult?.period_month || 1).padStart(2, '0');
-        const txBookings = ((bankStmtResult?.transactions || []) as any[])
-          .map((tx: any) => {
-            const amt = Number(tx.credit || tx.debit || 0);
-            if (amt <= 0) return null;
-            const isCredit = Number(tx.credit || 0) > 0;
-            const desc = String(tx.description || bankStmtResult?.bank_name || 'Bankbuchung').trim();
-            const suggested = skr03Mapper.suggestAccount(bankStmtResult?.bank_name || 'Bank', desc, 19);
-            const txDateParts = String(tx.date || `${stmtYear}-${stmtMonth}-28`).split('-');
-            const bd = txDateParts.length === 3 ? `${txDateParts[2]}${txDateParts[1]}` : `28${stmtMonth}`;
-            return {
-              amount: amt,
-              sh: isCredit ? ('S' as const) : ('H' as const),
-              konto: '1200',
-              gegenkonto: isCredit ? '8400' : (suggested.code || '4900'),
-              buCode: '',
-              belegdatum: bd,
-              belegfeld1: `BANK-${stmtYear}-${stmtMonth}`,
-              buchungstext: desc.slice(0, 60),
-              currency: bankStmtResult?.currency || 'EUR',
-            };
-          })
-          .filter(Boolean) as BookingItem[];
+        if (extractedBank && extractedBank.bookings && extractedBank.bookings.length > 0) {
+          console.log(`[Fast-Track] ⚡ Parsed ${extractedBank.bookings.length} bank bookings deterministically for ${originalname} (Date: ${extractedBank.invoice_date})`);
+          extracted = extractedBank;
+        } else {
+          // Fallback to bankStatementService if deterministic parse returned no bookings
+          try {
+            bankStmtResult = await bankStatementService.processBankStatement(storedPath, mimetype, docId);
+          } catch (bsErr) {
+            console.warn('[Upload] Bank statement processing error:', bsErr);
+          }
 
-        const totalSum = txBookings.reduce((s: number, b: any) => s + b.amount, 0);
-        extracted = {
-          document_type: 'BANK_STATEMENT',
-          supplier_name: `${bankStmtResult?.bank_name || 'Bank'} Kontoauszug (${bankStmtResult?.statement_period || `${stmtMonth}/${stmtYear}`})`,
-          supplier_tax_id: '',
-          invoice_number: bankStmtResult?.account_number || '',
-          invoice_date: `${stmtYear}-${stmtMonth}-28`,
-          currency: 'EUR',
-          net_amount: parseFloat((totalSum / 1.19).toFixed(2)),
-          vat_rate_percent: 19,
-          vat_amount: parseFloat((totalSum - totalSum / 1.19).toFixed(2)),
-          total_amount: parseFloat(totalSum.toFixed(2)),
-          confidence_score: 0.99,
-          skr03_account_code: '1200',
-          bookings: txBookings,
-        };
+          const stmtYear = bankStmtResult?.period_year;
+          const stmtMonth = bankStmtResult?.period_month ? String(bankStmtResult.period_month).padStart(2, '0') : null;
+
+          if (!stmtYear || !stmtMonth) {
+            throw new Error(`Monat nicht erkannt für Kontoauszug "${originalname}". Bitte Dateinamen oder Monatsangabe prüfen.`);
+          }
+
+          const txBookings = ((bankStmtResult?.transactions || []) as any[])
+            .map((tx: any) => {
+              const amt = Number(tx.credit || tx.debit || 0);
+              if (amt <= 0) return null;
+              const isCredit = Number(tx.credit || 0) > 0;
+              const desc = String(tx.description || bankStmtResult?.bank_name || 'Bankbuchung').trim();
+              const suggested = skr03Mapper.suggestAccount(bankStmtResult?.bank_name || 'Bank', desc, 19);
+              const txDateParts = String(tx.date || '').split('-');
+              const bd = txDateParts.length === 3 ? `${txDateParts[2]}${txDateParts[1]}` : `28${stmtMonth}`;
+              return {
+                amount: amt,
+                sh: isCredit ? ('S' as const) : ('H' as const),
+                konto: '1200',
+                gegenkonto: isCredit ? (suggested.code || '8400') : (suggested.code || '4900'),
+                buCode: '',
+                belegdatum: bd,
+                belegfeld1: `BANK-${stmtYear}-${stmtMonth}`,
+                buchungstext: desc.slice(0, 60),
+                currency: bankStmtResult?.currency || 'EUR',
+              };
+            })
+            .filter(Boolean) as BookingItem[];
+
+          const totalSum = txBookings.reduce((s: number, b: any) => s + b.amount, 0);
+          const lastDayDate = new Date(stmtYear, parseInt(stmtMonth, 10), 0);
+          const lastDay = String(lastDayDate.getDate()).padStart(2, '0');
+          extracted = {
+            document_type: 'BANK_STATEMENT',
+            supplier_name: `${bankStmtResult?.bank_name || 'Bank'} Kontoauszug (${bankStmtResult?.statement_period || `${stmtMonth}/${stmtYear}`})`,
+            supplier_tax_id: '',
+            invoice_number: bankStmtResult?.account_number || '',
+            invoice_date: `${stmtYear}-${stmtMonth}-${lastDay}`,
+            currency: 'EUR',
+            net_amount: parseFloat(totalSum.toFixed(2)),
+            vat_rate_percent: 0,
+            vat_amount: 0,
+            total_amount: parseFloat(totalSum.toFixed(2)),
+            confidence_score: 0.99,
+            skr03_account_code: '1200',
+            bookings: txBookings,
+          };
+        }
         aiCacheService.set(checksum, originalname, extracted, []);
       } else {
         extracted = await aiService.processInvoice(storedPath, mimetype, clientId);

@@ -478,24 +478,45 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
             )}
 
             {openIssues.length === 0 ? (
-              <div
-                style={{
-                  background: 'rgba(16, 185, 129, 0.08)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  borderRadius: 14,
-                  padding: '28px',
-                  textAlign: 'center',
-                  color: '#34d399',
-                }}
-              >
-                <div style={{ fontSize: '2rem', marginBottom: 8 }}>🎉</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>
-                  {isDe ? 'Alle Positionen sind eindeutig zugeordnet!' : 'All transactions verified!'}
+              report.blocked ? (
+                <div
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: 14,
+                    padding: '24px',
+                    textAlign: 'center',
+                    color: '#f87171',
+                  }}
+                >
+                  <div style={{ fontSize: '1.8rem', marginBottom: 6 }}>🔒</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700 }}>
+                    {isDe ? 'DATEV-Export gesperrt' : 'DATEV Export Blocked'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 4 }}>
+                    {report.block_reasons[0] || (isDe ? 'Bitte Kontroll-Prüfungen oben beachten.' : 'Please resolve the integrity checks above.')}
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 4 }}>
-                  {isDe ? 'Keine offenen Zweifel. Die DATEV EXTF CSV-Dateien sind exportbereit.' : 'No open doubts. DATEV CSV is ready for download.'}
+              ) : (
+                <div
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: 14,
+                    padding: '28px',
+                    textAlign: 'center',
+                    color: '#34d399',
+                  }}
+                >
+                  <div style={{ fontSize: '2rem', marginBottom: 8 }}>🎉</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+                    {isDe ? 'Alle Positionen sind eindeutig zugeordnet!' : 'All transactions verified!'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 4 }}>
+                    {isDe ? 'Keine offenen Zweifel. Die DATEV EXTF CSV-Dateien sind exportbereit.' : 'No open doubts. DATEV CSV is ready for download.'}
+                  </div>
                 </div>
-              </div>
+              )
             ) : displayedIssues.length === 0 ? (
               <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.88rem' }}>
                 {isDe ? 'Keine offenen Punkte in dieser Kategorie.' : 'No open items in this category.'}
