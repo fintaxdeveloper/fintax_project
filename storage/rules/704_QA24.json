@@ -7,6 +7,13 @@
     "user_client_1"
   ],
   "client_settings": {
+    "client_ids": [
+      "704_QA24",
+      "user_1794302469947_o180",
+      "user_qa24_704",
+      "user_17",
+      "user_client_1"
+    ],
     "mandanten_nr": "726",
     "berater_name": "niazi",
     "company_name": "QA24 GmbH",

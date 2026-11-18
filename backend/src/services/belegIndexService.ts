@@ -196,7 +196,12 @@ function extractInvoiceNumber(text: string): string | null {
   // Priority 1: Vehicle invoice number e.g. "Rechnungsnummer: 26/2024" or "54/2024"
   const carInv = text.match(/Rechnungs-?nummer\s*[:.]?\s*(\d{1,4}\/\d{4}|[A-Za-z0-9][A-Za-z0-9/-]{2,20})/i);
   if (carInv) {
-    const candidate = carInv[1].replace(/^(\d{1,3})1?(20\d{2})$/, '$1/$2').trim();
+    // OCR often reads the "/" in "37/2024" as "1" -> "3712024", or drops it -> "262024".
+    // Lazy prefix (min 2 digits) keeps the shortest invoice number: 3712024 -> 37/2024 (not 371/2024).
+    const rawInv = carInv[1].trim();
+    const candidate = /^(\d{2,3}?)1(20\d{2})$/.test(rawInv)
+      ? rawInv.replace(/^(\d{2,3}?)1(20\d{2})$/, '$1/$2')
+      : rawInv.replace(/^(\d{1,3})(20\d{2})$/, '$1/$2');
     if (candidate.length >= 2 && !/^(datum|betrag|eur)$/i.test(candidate)) return candidate;
   }
   // Priority 2: Standard supplier invoice numbers

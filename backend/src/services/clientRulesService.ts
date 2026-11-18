@@ -18,6 +18,7 @@ export interface VendorAccountRule {
 }
 
 export interface ClientSettings {
+  client_ids?: string[];
   mandanten_nr?: string;
   berater_name?: string;
   company_name?: string;
@@ -68,7 +69,7 @@ class ClientRulesService {
               const content = fs.readFileSync(fullPath, 'utf-8');
               const rules: ClientRules = JSON.parse(content);
               const key = rules.client_id || path.basename(file, '.json');
-              const keysToMap = [key, ...(rules.client_aliases || [])];
+              const keysToMap = [key, ...(rules.client_aliases || []), ...(rules.client_settings?.client_ids || [])];
               for (const k of keysToMap) {
                 const lower = k.toLowerCase();
                 const alpha = lower.replace(/[^a-z0-9]/g, '');
@@ -92,13 +93,15 @@ class ClientRulesService {
     }
   }
 
+  /**
+   * Returns ONLY the rules explicitly mapped to this client (via client_id, client_aliases or client_settings.client_ids).
+   * No cross-client fallback: a client without its own rules file gets null (never another client's rules).
+   */
   public getRules(clientId?: string): ClientRules | null {
-    if (!clientId) {
-      return this.rulesCache.get('704_qa24') || this.rulesCache.get('704qa24') || null;
-    }
+    if (!clientId) return null;
     const cleanId = clientId.toLowerCase();
     const cleanAlpha = cleanId.replace(/[^a-z0-9]/g, '');
-    return this.rulesCache.get(cleanId) || this.rulesCache.get(cleanAlpha) || this.rulesCache.get('704_qa24') || null;
+    return this.rulesCache.get(cleanId) || this.rulesCache.get(cleanAlpha) || null;
   }
 
   public getClientSettings(clientId?: string): ClientSettings {
@@ -216,16 +219,34 @@ class ClientRulesService {
     return null;
   }
 
+  /**
+   * Returns this client's own rules, creating an empty rules object (own file) on first save.
+   * Never borrows another client's rules.
+   */
+  private ensureRules(clientId?: string): ClientRules | null {
+    if (!clientId) return null;
+    const existing = this.getRules(clientId);
+    if (existing) return existing;
+    const fresh: ClientRules = { client_id: clientId, client_settings: { client_ids: [clientId] } };
+    const lower = clientId.toLowerCase();
+    const safeName = clientId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const defaultRulesDir =
+      this.rulesDirCandidates.find((d) => fs.existsSync(d)) || path.resolve(process.cwd(), '../storage/rules');
+    this.rulesCache.set(lower, fresh);
+    this.filePaths.set(lower, path.join(defaultRulesDir, `${safeName}.json`));
+    return fresh;
+  }
+
   private persistRules(clientId?: string): void {
     const rules = this.getRules(clientId);
-    if (!rules) return;
-    const key = (clientId || rules.client_id || '704_qa24').toLowerCase();
+    if (!rules || !clientId) return;
+    const key = clientId.toLowerCase();
     const defaultRulesDir =
       this.rulesDirCandidates.find((d) => fs.existsSync(d)) || path.resolve(process.cwd(), '../storage/rules');
     const fp =
       this.filePaths.get(key) ||
-      this.filePaths.get('704_qa24') ||
-      path.join(defaultRulesDir, `${rules.client_id || 'client'}.json`);
+      this.filePaths.get(key.replace(/[^a-z0-9]/g, '')) ||
+      path.join(defaultRulesDir, `${(rules.client_id || clientId).replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
     try {
       const dir = path.dirname(fp);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -236,7 +257,7 @@ class ClientRulesService {
   }
 
   public saveVinRule(clientId: string | undefined, vin: string, taxKey: '8193' | '8400' | '8125' | '3200', meta?: { model?: string; customer?: string }): void {
-    const rules = this.getRules(clientId);
+    const rules = this.ensureRules(clientId);
     if (!rules || !vin || vin.length < 7) return;
     rules.vehicle_registry = rules.vehicle_registry || {};
     rules.vehicle_registry[vin.toUpperCase()] = {
@@ -249,7 +270,7 @@ class ClientRulesService {
   }
 
   public savePayeeRule(clientId: string | undefined, payee: string, taxKey: '8193' | '8400' | '8125' | '3200'): void {
-    const rules = this.getRules(clientId);
+    const rules = this.ensureRules(clientId);
     if (!rules || !payee || payee.trim().length < 4) return;
     rules.payee_tax_mappings = rules.payee_tax_mappings || {};
     rules.payee_tax_mappings[payee.toLowerCase().trim()] = taxKey;
@@ -257,7 +278,7 @@ class ClientRulesService {
   }
 
   public saveVendorRule(clientId: string | undefined, pattern: string, account: string, buCode: string): void {
-    const rules = this.getRules(clientId);
+    const rules = this.ensureRules(clientId);
     if (!rules || !pattern || pattern.trim().length < 4) return;
     const escaped = pattern.toLowerCase().trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     rules.vendor_account_rules = rules.vendor_account_rules || [];

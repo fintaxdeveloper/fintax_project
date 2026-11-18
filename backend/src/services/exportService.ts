@@ -415,8 +415,10 @@ export const exportService = {
     const datumVon = `${year}${month}01`;
     const lastDayOfMonth = new Date(year, now.getMonth() + 1, 0).getDate();
     const datumBis = `${year}${month}${String(lastDayOfMonth).padStart(2, '0')}`;
-    const mandantenNr = clientRulesService.getClientSettings(undefined).mandanten_nr || '710';
-    const beraterName = clientRulesService.getClientSettings(undefined).berater_name || process.env.DEFAULT_BERATER_NAME || 'berater';
+    const exportClientId = documents.find((d) => d.client_id)?.client_id;
+    const exportSettings = clientRulesService.getClientSettings(exportClientId);
+    const mandantenNr = exportSettings.mandanten_nr || '710';
+    const beraterName = exportSettings.berater_name || process.env.DEFAULT_BERATER_NAME || 'berater';
 
     // LINE 1: Agenda / DATEV EXTF Header (Version 700 / 12)
     const line1 = `"EXTF";700;21;"Buchungsstapel";12;${timestamp};;"AG";"${beraterName}";;1;${mandantenNr};${year}0101;4;${datumVon};${datumBis};;;;1;;;"EUR"`;

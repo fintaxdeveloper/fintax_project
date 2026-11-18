@@ -188,8 +188,8 @@ export const authService = {
       console.warn('[PostgreSQL] Login query fallback check:', (e as any)?.message || e);
     }
 
-    // Fallback demo users ONLY in non-production environments if DB is offline or empty
-    if (!dbUser && process.env.NODE_ENV !== 'production') {
+    // Fallback demo users ONLY when NODE_ENV is explicitly 'development' (unset NODE_ENV = disabled)
+    if (!dbUser && process.env.NODE_ENV === 'development') {
       const fallbackUsers = [
         { id: 'user_admin_1', email: 'admin@fintax.de', password_hash: this.hashPassword('admin123'), name: 'Dr. Michael von FinTax', role: 'ADMIN', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },
         { id: 'user_admin_2', email: 'partner@fintax.de', password_hash: this.hashPassword('admin123'), name: 'Sarah Lindemann (Partnerin)', role: 'ADMIN', client_number: '', is_active: true, first_login_done: true, privacy_accepted: true },

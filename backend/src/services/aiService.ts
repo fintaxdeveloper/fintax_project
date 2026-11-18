@@ -63,10 +63,10 @@ export const aiService = {
     if (extractedText) {
       // Deterministic Multi-Transaction German Bank Statement (Kontoauszug) Parser
       // Handles Volksbank, Sparkasse, VR-Bank, Commerzbank statements
-      const parsedBankStatement = this.parseGermanBankStatement(extractedText, filename);
+      const parsedBankStatement = this.parseGermanBankStatement(extractedText, filename, clientId);
       if (parsedBankStatement) {
         if (AI_PROVIDER === 'ollama' && parsedBankStatement.bookings?.length) {
-          await this.enrichUnknownBankLinesWithOllama(parsedBankStatement.bookings);
+          await this.enrichUnknownBankLinesWithOllama(parsedBankStatement.bookings, clientId);
         }
         console.log(
           `[AI Service] Parsed German Bank Statement "${filename}" -> Date: ${parsedBankStatement.invoice_date}, Bookings: ${parsedBankStatement.bookings?.length || 0}, Total Volume: ${parsedBankStatement.total_amount} EUR`
@@ -255,7 +255,7 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
 
         if (parsed && (parsed.total_amount || parsed.supplier_name || parsed.line_items || parsed.line_items_summary)) {
           console.log('[Local AI] Successfully parsed accounting data with local Ollama!');
-          return this.sanitizeOutput(parsed, filename, extractedText);
+          return this.sanitizeOutput(parsed, filename, extractedText, clientId);
         }
       } catch (ollamaErr: any) {
         console.warn(`[Local AI] Ollama processing warning:`, ollamaErr);
@@ -285,7 +285,7 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
           const responseText = result.response.text();
           if (responseText) {
             const parsed = JSON.parse(responseText);
-            return this.sanitizeOutput(parsed, filename, extractedText);
+            return this.sanitizeOutput(parsed, filename, extractedText, clientId);
           }
         } catch (err: any) {
           console.warn(`Gemini model ${modelName} failed:`, err?.message);
@@ -511,7 +511,8 @@ Return strictly JSON, no markdown:
           payment_method: 'bank_transfer',
         },
         '',
-        ''
+        '',
+        clientId
       );
       sanitized.invoice_date = b._iso; // guarantee the bill date (never due date / today)
       return sanitized;
@@ -528,8 +529,10 @@ Return strictly JSON, no markdown:
    * Resolves the accurate YYYY-MM-DD invoice/document date from AI output, OCR text, and filename
    * without digit permutation errors.
    */
-  resolveDocumentDate(parsed: any, extractedText = '', filename = '', summary = '', supplier = ''): string {
+  resolveDocumentDate(parsed: any, extractedText = '', filename = '', summary = '', supplier = '', fallbackYear?: number): string {
     const todayIso = new Date().toISOString().split('T')[0];
+    const fnYearHit = String(filename || '').match(/(20[1-3][0-9])/);
+    const defaultYear = String(fallbackYear || (fnYearHit ? fnYearHit[1] : new Date().getFullYear()));
     const monthsMap: Record<string, string> = {
       jan: '01', january: '01', januar: '01',
       feb: '02', february: '02', februar: '02',
@@ -585,7 +588,7 @@ Return strictly JSON, no markdown:
       if (myName) {
         const mKey = myName[1].toLowerCase();
         const m = monthsMap[mKey] || monthsMap[mKey.substring(0, 3)] || '01';
-        const y = myName[2] || '2026';
+        const y = myName[2] || defaultYear;
         return `${y}-${m}-28`;
       }
       const myNum = s.match(/\b(0[1-9]|1[0-2])\s*[./-]\s*(20[1-3][0-9])\b/);
@@ -640,7 +643,7 @@ Return strictly JSON, no markdown:
       if (fromFn) return fromFn;
       const fnPrefix = filename.match(/^0?([1-9]|1[0-2])[_-\s]/);
       if (fnPrefix) {
-        return `2026-${fnPrefix[1].padStart(2, '0')}-28`;
+        return `${defaultYear}-${fnPrefix[1].padStart(2, '0')}-28`;
       }
     }
 
@@ -749,7 +752,7 @@ Return strictly JSON, no markdown:
   /**
    * Sanitizes and validates extracted AI data to ensure strict GoBD & SKR03 compliance
    */
-  sanitizeOutput(parsed: any, filename = '', extractedText = ''): ExtractedInvoiceData {
+  sanitizeOutput(parsed: any, filename = '', extractedText = '', clientId?: string): ExtractedInvoiceData {
     // 1. Line items summary & array extraction
     let summary = '';
     const rawItems: any[] = Array.isArray(parsed.line_items)
@@ -872,7 +875,18 @@ Return strictly JSON, no markdown:
     // 5. Deterministic Fact-to-SKR03 Rules Engine (Qwen extracts facts; code assigns SKR03 deterministically)
     const aiCategory = String(parsed.category || '').toLowerCase().trim();
     const aiTaxRegime = String(parsed.tax_regime || '').toLowerCase().trim();
-    const isOwnSeller = Boolean(parsed.is_own_company_seller) || (/\bqa24\b/i.test(String(parsed.seller_name || '')) && !/\bankauf/i.test(extractedText));
+    const ownSettings = clientRulesService.getClientSettings(clientId);
+    const ownCompanyCore = (ownSettings.company_name || '')
+      .toLowerCase()
+      .replace(/\s*(?:gmbh|ug|ag|kg|ohg)\b/gi, '')
+      .trim();
+    const ownKeywords = [ownCompanyCore, ...(ownSettings.own_issuer_keywords || []).map((k) => k.toLowerCase())].filter(
+      (k) => k.length >= 3
+    );
+    const sellerLower = String(parsed.seller_name || '').toLowerCase();
+    const isOwnSeller =
+      Boolean(parsed.is_own_company_seller) ||
+      (ownKeywords.some((k) => sellerLower.includes(k)) && !/\bankauf/i.test(extractedText));
     const isSummaryStmt = Boolean(parsed.is_summary_statement) || aiCategory === 'summary_list';
     const aiVin = String(parsed.vin || '').replace(/[^A-HJ-NPR-Z0-9]/gi, '').toUpperCase();
 
@@ -1379,7 +1393,7 @@ Return strictly JSON:
    * that fell back to 4900, so new German vendor names (e.g. Signal Iduna, Couche-Tard) are
    * categorized automatically without hardcoding every vendor name.
    */
-  async enrichUnknownBankLinesWithOllama(bookings: BookingItem[]): Promise<void> {
+  async enrichUnknownBankLinesWithOllama(bookings: BookingItem[], clientId?: string): Promise<void> {
     const unknownIndices: number[] = [];
     for (let i = 0; i < bookings.length; i++) {
       if (bookings[i].gegenkonto === '4900' && (bookings[i].buchungstext || '').trim().length > 2) {
@@ -1400,7 +1414,8 @@ Return strictly JSON:
       'telecom', 'rent', 'legal_tax', 'office', 'refund', 'other',
     ];
 
-    const prompt = `You are a German SKR03 bookkeeper for a car dealership (QA24 GmbH).
+    const ownCompanyName = clientRulesService.getClientSettings(clientId).company_name;
+    const prompt = `You are a German SKR03 bookkeeper for a car dealership${ownCompanyName ? ` (${ownCompanyName})` : ''}.
 Classify each unknown bank statement transaction below into ONE category:
 - "fuel": Petrol / gas station (e.g. Couche-Tard, Circle K, HEM, Westfalen, Tankstelle)
 - "insurance": Insurance company (e.g. Signal Iduna, Continentale, Barmenia, ARAG, HUK, Allianz)
@@ -1492,7 +1507,7 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
    * Deterministic parser for German Bank Statements (Kontoauszug - Volksbank, Sparkasse, VR Bank, etc.)
    * Extracts every transaction line, exact statement month/year, and maps each transaction to SKR03 Konto 1200 + Gegenkonto + BU-Schlüssel.
    */
-  parseGermanBankStatement(extractedText: string, filename: string = ''): ExtractedInvoiceData | null {
+  parseGermanBankStatement(extractedText: string, filename: string = '', clientId?: string): ExtractedInvoiceData | null {
     if (!extractedText) return null;
 
     const lines = extractedText
@@ -1519,7 +1534,16 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
     let currentTx: RawBankTx | null = null;
 
     const ignoreDetailPattern =
-      /^(Übertrag|Kontostand|aktueller Kontostand|alter Kontostand|neue[rn]?\s+Kontostand|Gesamtumsatz|Bitte beachten|Freundliche Grüße|Mit freundlichen|QA24 GmbH|Rüsselsheimer Str|65428 Rüsselsheim|Seite \d+ von \d+|Konto-Nr\.|BLZ |BIC |IBAN |Auszug Nr\.|Frankfurter Volksbank|Postfach |www\.|Telefon |Anlage \d|Buchungstag:|UMSATZSTEUER)/i;
+      /^(Übertrag|Kontostand|aktueller Kontostand|alter Kontostand|neue[rn]?\s+Kontostand|Gesamtumsatz|Bitte beachten|Freundliche Grüße|Mit freundlichen|Seite \d+ von \d+|Konto-Nr\.|BLZ |BIC |IBAN |Auszug Nr\.|Postfach |www\.|Telefon |Anlage \d|Buchungstag:|UMSATZSTEUER)/i;
+    // Account holder's own letterhead/address lines come from storage/rules/<client>.json (never hardcoded)
+    const ownStmtSettings = clientRulesService.getClientSettings(clientId);
+    const ownHeaderTokens = [ownStmtSettings.company_name || '', ...(ownStmtSettings.own_issuer_keywords || [])]
+      .map((k) => k.toLowerCase().trim())
+      .filter((k) => k.length >= 4);
+    const isOwnHeaderLine = (line: string): boolean => {
+      const l = line.toLowerCase();
+      return ownHeaderTokens.some((k) => l.startsWith(k));
+    };
 
     for (const line of lines) {
       const m = line.match(txRegex);
@@ -1536,7 +1560,7 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
           details: [],
         };
       } else if (currentTx) {
-        if (ignoreDetailPattern.test(line)) {
+        if (ignoreDetailPattern.test(line) || isOwnHeaderLine(line)) {
           txs.push(currentTx);
           currentTx = null;
         } else if (currentTx.details.length < 5) {
