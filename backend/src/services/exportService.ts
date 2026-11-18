@@ -702,11 +702,31 @@ export const exportService = {
         (/kasse/i.test(d.original_filename || '') || d.extracted_data?.payment_method === 'cash');
 
       const rawBankDocs = monthDocs.filter(isBankStmt);
-      // Keep only the latest copy of each bank statement filename so re-uploads never duplicate 1200
+      // Deduplicate bank statements by content signature (checksum, opening/closing balance + row count,
+      // first/last transaction signature, or normalized filename without "(1)" / "(2)" suffixes)
+      // so uploading "Kontoauszug (1).pdf" and "Kontoauszug (2).pdf" never double-counts balances or rows.
+      const getBankDocDedupKey = (bd: DocumentRecord): string => {
+        if (bd.file_checksum) return `chk:${bd.file_checksum}`;
+        const ext = bd.extracted_data;
+        const bks = extractDocItems(bd);
+        if (typeof ext?.opening_balance === 'number' && typeof ext?.closing_balance === 'number') {
+          return `bal:${ext.opening_balance.toFixed(2)}|${ext.closing_balance.toFixed(2)}|${bks.length}`;
+        }
+        if (bks.length > 0) {
+          const first = bks[0];
+          const last = bks[bks.length - 1];
+          return `tx:${bks.length}|${first.belegdatum}|${Number(first.amount).toFixed(2)}|${last.belegdatum}|${Number(last.amount).toFixed(2)}`;
+        }
+        const cleanFn = (bd.original_filename || bd.id)
+          .toLowerCase()
+          .replace(/\s*\(\d+\)\s*(?=\.[a-z0-9]+$|$)/gi, '')
+          .replace(/[_\s-]+copy(?=\.[a-z0-9]+$|$)/gi, '')
+          .trim();
+        return `fn:${cleanFn}`;
+      };
       const bankDocsMap = new Map<string, DocumentRecord>();
       for (const bd of rawBankDocs) {
-        const key = (bd.original_filename || bd.id).toLowerCase().trim();
-        bankDocsMap.set(key, bd);
+        bankDocsMap.set(getBankDocDedupKey(bd), bd);
       }
       const bankDocs = Array.from(bankDocsMap.values());
       const kasseDocs = monthDocs.filter(isKasseDoc);
@@ -808,15 +828,25 @@ export const exportService = {
 
         allMonthlyItems.push(...bankItems);
 
-        // Collect all 17-char VINs (including glued VINs) already present on Bank (1200) this month so Kasse never double-books them
+        // Collect all 17-char VINs (including glued VINs, excluding IBANs) already present on Bank (1200) this month so Kasse never double-books them
         const bankVins = new Set<string>();
-        const vinExtractRegex = /([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})/g;
+        const stripIbans = (s: string) =>
+          (s || '')
+            .toUpperCase()
+            .replace(/\bIBAN\s*[:.]?\s*[A-Z]{2}\s*\d{2}(?:\s*[A-Z0-9]){11,30}/g, ' ')
+            .replace(/\b[A-Z]{2}\d{2}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{0,4}\b/g, ' ')
+            .replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g, (m) => (m.length !== 17 || /^[A-Z]{2}\d{15}$/.test(m) ? ' ' : m));
+        const vinExtractRegex = /(?<![A-Z0-9])([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})(?![0-9])/g;
         for (const b of bankItems) {
           const bTxt = `${b.buchungstext || ''} ${b.belegfeld1 || ''}`;
           const v1 = extractVinFromText(bTxt);
           if (v1) bankVins.add(v1);
-          const matches = bTxt.toUpperCase().match(vinExtractRegex);
-          if (matches) matches.forEach((v) => bankVins.add(v));
+          const matches = stripIbans(bTxt).match(vinExtractRegex);
+          if (matches) {
+            matches.forEach((v) => {
+              if (!/^[A-Z]{2}\d{15}$/.test(v) && !/^DE\d{8}/.test(v)) bankVins.add(v);
+            });
+          }
         }
 
         // Track 3: Add genuine Cash/Kasse (1000) items that are NOT already bank transfers, NOT card/SEPA payments, NOT on bank by VIN, and NOT summary/merged lists
@@ -834,7 +864,7 @@ export const exportService = {
 
             // VIN duplicate guard: if this car's VIN already has a bank booking this month, never book in Kasse
             const kFull = `${kText} ${kItem.belegfeld1 || ''}`;
-            const kVins = new Set<string>(kFull.toUpperCase().match(vinExtractRegex) || []);
+            const kVins = new Set<string>(stripIbans(kFull).match(vinExtractRegex) || []);
             const kv1 = extractVinFromText(kFull);
             if (kv1) kVins.add(kv1);
             if ([...kVins].some((v) => bankVins.has(v))) continue;
@@ -902,17 +932,26 @@ export const exportService = {
       }
     }
 
-    // Build rich VIN & Invoice tax-regime intelligence from all client documents (3200 / privat -> 8193, 3400/19% -> 8400, EU -> 8125)
+    // Build rich VIN & Invoice tax-regime intelligence from genuine Beleg documents (NEVER from BANK_STATEMENT docs!)
     const vinTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const invoiceTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const payeeTaxMap = new Map<string, '8193' | '8400' | '8125'>();
-    const vinRegex = /([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})/g;
+    const vinRegex = /(?<![A-Z0-9])([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})(?![0-9])/g;
     const extractAllVins = (s: string): string[] => {
       const set = new Set<string>();
       const v = extractVinFromText(s);
       if (v) set.add(v);
-      const m = (s || '').toUpperCase().match(vinRegex);
-      if (m) m.forEach((x) => set.add(x));
+      const cleaned = (s || '')
+        .toUpperCase()
+        .replace(/\bIBAN\s*[:.]?\s*[A-Z]{2}\s*\d{2}(?:\s*[A-Z0-9]){11,30}/g, ' ')
+        .replace(/\b[A-Z]{2}\d{2}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{0,4}\b/g, ' ')
+        .replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g, (m) => (m.length !== 17 || /^[A-Z]{2}\d{15}$/.test(m) ? ' ' : m));
+      const m = cleaned.match(vinRegex);
+      if (m) {
+        m.forEach((x) => {
+          if (!/^[A-Z]{2}\d{15}$/.test(x) && !/^DE\d{8}/.test(x)) set.add(x);
+        });
+      }
       return [...set];
     };
 
@@ -927,24 +966,34 @@ export const exportService = {
     for (const d of allDocs) {
       if (doc.client_id && d.client_id !== doc.client_id) continue;
       const ext = d.extracted_data;
+      // Bug 1 Fix: NEVER derive tax maps from BANK_STATEMENT documents (one EU line on a bank statement must never taint other VINs on that statement)
+      const isBankStmtDoc =
+        ext?.document_type === 'BANK_STATEMENT' ||
+        /bankstatement|kontoauszug|1200[-_ ]?bank|bank[-_]\d+/i.test(d.original_filename || '');
+      if (isBankStmtDoc) continue;
+
       const dBookings = extractDocItems(d);
       const allText = `${d.original_filename || ''} ${ext?.supplier_name || ''} ${ext?.line_items_summary || ''} ${JSON.stringify(ext?.bookings || [])}`;
-      const has3200Purchase = dBookings.some((b) => b.gegenkonto === '3200');
-      const has19CarDoc = dBookings.some((b) => b.gegenkonto === '3400' || b.gegenkonto === '8400');
+      const has3200Purchase = dBookings.some((b) => b.konto !== '1200' && b.gegenkonto === '3200');
+      const hasExplicit19PurchaseOrInvoice =
+        dBookings.some((b) => b.konto !== '1200' && b.gegenkonto === '3400') ||
+        (Number(ext?.vat_rate_percent) === 19 &&
+          Number(ext?.vat_amount) > 0 &&
+          /(?:19\s*[,.]?\s*0{0,2}\s*%|mwst|mehrwertsteuer|umsatzsteuer)/i.test(allText));
       const isExplicit25a =
         (ext as any)?.tax_regime === 'margin_25a' ||
         has3200Purchase ||
         /(?:§\s*25a|differenzbesteuerung|gebrauchtgegenstände|sonderregelung)/i.test(allText);
       const isEuSale =
         (ext as any)?.tax_regime === 'eu_b2b_0' ||
-        dBookings.some((b) => b.gegenkonto === '8125') ||
         /(?:innergemeinschaftliche|eu-lieferung)/i.test(allText);
 
+      // Bug 2 Fix: Provisional 8400 bookings must NEVER confirm themselves in vinTaxMap
       const targetAccount: '8193' | '8400' | '8125' | undefined = isEuSale
         ? '8125'
         : isExplicit25a
         ? '8193'
-        : has19CarDoc
+        : hasExplicit19PurchaseOrInvoice
         ? '8400'
         : undefined;
 
@@ -963,9 +1012,10 @@ export const exportService = {
         }
       }
 
-      // Also scan individual vehicle bookings across all months
+      // Only scan confirmed non-bank purchase/sale Beleg bookings (never provisional 8400 or bank 1200 lines)
       for (const b of dBookings) {
-        if (!['8125', '3200', '8193', '3400', '8400'].includes(b.gegenkonto)) continue;
+        if (b.konto === '1200') continue;
+        if (!['8125', '3200', '8193', '3400'].includes(b.gegenkonto)) continue;
         const bText = `${b.buchungstext || ''} ${b.belegfeld1 || ''}`;
         const bVins = extractAllVins(bText);
         if (bVins.length > 0) {
@@ -1313,12 +1363,20 @@ export const exportService = {
     const priorBankVinsByMonth = new Map<number, Set<string>>();
     const priorBankAmountsByMonth = new Map<number, number[]>();
     const priorBankTransitByMonth = new Map<number, number>();
+    const seenPriorBankStmts = new Set<string>();
     for (const d of allDocs) {
       if (doc.client_id && d.client_id !== doc.client_id) continue;
       const dMeta = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
       if (Number(dMeta.year) !== yearNum) continue;
       const isStmt = d.extracted_data?.document_type === 'BANK_STATEMENT' || /bankstatement|kontoauszug|1200-bank/i.test(d.original_filename || '');
       if (!isStmt) continue;
+      const stmtDedupKey = d.file_checksum
+        ? `chk:${d.file_checksum}`
+        : typeof d.extracted_data?.opening_balance === 'number' && typeof d.extracted_data?.closing_balance === 'number'
+        ? `bal:${d.extracted_data.opening_balance.toFixed(2)}|${d.extracted_data.closing_balance.toFixed(2)}`
+        : (d.original_filename || d.id).toLowerCase().replace(/\s*\(\d+\)\s*(?=\.[a-z0-9]+$|$)/gi, '').trim();
+      if (seenPriorBankStmts.has(stmtDedupKey)) continue;
+      seenPriorBankStmts.add(stmtDedupKey);
       for (const b of extractDocItems(d)) {
         const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10) || Number(dMeta.monthNum);
         if (!(bMonth > 0 && bMonth < monthNum)) continue;

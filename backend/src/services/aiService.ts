@@ -25,7 +25,7 @@ export const aiService = {
    * Processes an invoice, receipt, or handwritten accounting note using local Ollama (RTX A3000 GPU)
    * with automatic German SKR03 chart-of-accounts mapping.
    */
-  async processInvoice(filePath: string, mimeType: string): Promise<ExtractedInvoiceData> {
+  async processInvoice(filePath: string, mimeType: string, clientId?: string): Promise<ExtractedInvoiceData> {
     const isPdf = pdfExtractor.isPdf(filePath, mimeType);
     let extractedText = '';
 
@@ -80,11 +80,11 @@ export const aiService = {
       try {
         const cpuPages = await ocrService.extractPages(filePath, mimeType);
         if (cpuPages.length > 0) {
-          const mFn = filename.match(/(\d{2})(202\d)/);
-          const estMonth = mFn ? parseInt(mFn[1], 10) : 1;
-          const estYear = mFn ? 2024 : new Date().getFullYear();
+          const mFn = filename.match(/(\d{2})(20\d{2})/) || filename.match(/(20\d{2})[-_](\d{2})/);
+          const estYear = mFn ? parseInt(mFn[1].length === 4 ? mFn[1] : mFn[2], 10) : new Date().getFullYear();
+          const estMonth = mFn ? parseInt(mFn[1].length === 4 ? mFn[2] : mFn[1], 10) : new Date().getMonth() + 1;
           const indexed = await belegIndexService.indexDocumentFile(filePath, mimeType, {
-            clientId: '704_QA24',
+            clientId: clientId || 'user_client_1',
             year: estYear,
             month: estMonth,
             filename,
@@ -305,7 +305,7 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
    *
    * Returns an empty array when the file contains only a single bill (caller keeps the normal flow).
    */
-  async extractMultipleBills(filePath: string, mimeType: string, originalFilename = ''): Promise<ExtractedInvoiceData[]> {
+  async extractMultipleBills(filePath: string, mimeType: string, originalFilename = '', clientId?: string): Promise<ExtractedInvoiceData[]> {
     const isPdf = pdfExtractor.isPdf(filePath, mimeType);
     const fname = (originalFilename || path.basename(filePath)).toLowerCase();
 
@@ -404,11 +404,11 @@ Return strictly JSON, no markdown:
       try {
         const cpuPages = await ocrService.extractPages(filePath, mimeType);
         if (cpuPages.length > 0) {
-          const mFn = fname.match(/(\d{2})(202\d)/);
-          const estMonth = mFn ? parseInt(mFn[1], 10) : 1;
-          const estYear = mFn ? 2024 : new Date().getFullYear();
+          const mFn = fname.match(/(\d{2})(20\d{2})/) || fname.match(/(20\d{2})[-_](\d{2})/);
+          const estYear = mFn ? parseInt(mFn[1].length === 4 ? mFn[1] : mFn[2], 10) : new Date().getFullYear();
+          const estMonth = mFn ? parseInt(mFn[1].length === 4 ? mFn[2] : mFn[1], 10) : new Date().getMonth() + 1;
           const indexed = await belegIndexService.indexDocumentFile(filePath, mimeType, {
-            clientId: '704_QA24',
+            clientId: clientId || 'user_client_1',
             year: estYear,
             month: estMonth,
             filename: originalFilename || path.basename(filePath),

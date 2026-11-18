@@ -599,7 +599,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
         };
         aiCacheService.set(checksum, originalname, extracted, []);
       } else {
-        extracted = await aiService.processInvoice(storedPath, mimetype);
+        extracted = await aiService.processInvoice(storedPath, mimetype, clientId);
       }
 
       // Ensure booking month (DDMM e.g. 3006 -> Month 06 June) refines invoice_date if needed
@@ -616,7 +616,9 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
         const mm = bd.slice(2, 4);
         const mmNum = parseInt(mm, 10);
         if (mmNum >= 1 && mmNum <= 12) {
-          extracted.invoice_date = `2026-${mm}-${dd}`;
+          const fnYearMatch = originalname.match(/(20\d{2})/);
+          const fallbackYr = Number(req.body?.year) || (fnYearMatch ? Number(fnYearMatch[1]) : new Date().getFullYear());
+          extracted.invoice_date = `${fallbackYr}-${mm}-${dd}`;
         }
       }
 
@@ -628,7 +630,7 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       } else {
         if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
           try {
-            splitBills = await aiService.extractMultipleBills(storedPath, mimetype, originalname);
+            splitBills = await aiService.extractMultipleBills(storedPath, mimetype, originalname, clientId);
           } catch (mbErr) {
             console.warn('[Upload] Multi-bill detection notice:', mbErr);
             splitBills = [];
@@ -639,8 +641,9 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       }
 
       // Offline CPU OCR Beleg Index (multi-page grouping + cross-month matching)
-      if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
-        try {
+      try {
+        await belegIndexService.ensureClientIndexed(clientId, dbService.getAll());
+        if (classification.category !== 'BANK_STATEMENT' && !bankStmtResult) {
           const hintYm = googleDriveService.resolveYearAndMonth(
             extracted?.invoice_date,
             originalname,
@@ -655,9 +658,9 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
             documentId: docId,
             checksum,
           });
-        } catch (idxErr) {
-          console.warn('[Upload] Beleg index notice:', idxErr);
         }
+      } catch (idxErr) {
+        console.warn('[Upload] Beleg index notice:', idxErr);
       }
 
       // Only use the user-selected month/year as a fallback when the document itself has no readable date
@@ -1197,7 +1200,7 @@ const buildReviewReportForScope = (clientId: string, year: number, monthNum: num
 };
 
 // 4d. Get Review Report for a specific document (or its month)
-app.get('/api/documents/:id/review-report', (req: AuthenticatedRequest, res) => {
+app.get('/api/documents/:id/review-report', async (req: AuthenticatedRequest, res) => {
   try {
     const doc = dbService.getById(String(req.params.id));
     if (!doc) {
@@ -1211,6 +1214,7 @@ app.get('/api/documents/:id/review-report', (req: AuthenticatedRequest, res) => 
       doc.original_filename
     );
     const clientId = doc.client_id || 'user_client_1';
+    await belegIndexService.ensureClientIndexed(clientId, dbService.getAll());
     const csvData = buildReviewReportForScope(clientId, Number(year), monthNum);
     return res.json({
       scope: csvData.reviewReport.scope,
@@ -1225,7 +1229,7 @@ app.get('/api/documents/:id/review-report', (req: AuthenticatedRequest, res) => 
 });
 
 // 4e. Query Review Report by Year / Month / Client
-app.get('/api/review-report', (req: AuthenticatedRequest, res) => {
+app.get('/api/review-report', async (req: AuthenticatedRequest, res) => {
   try {
     const requestedClientId = String(req.query.client_id || 'user_client_1');
     if (!canAccessClient(req, requestedClientId)) {
@@ -1234,6 +1238,7 @@ app.get('/api/review-report', (req: AuthenticatedRequest, res) => {
     const clientId = req.user?.role === 'CLIENT' ? req.user.id : requestedClientId;
     const year = Number(req.query.year) || new Date().getFullYear();
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    await belegIndexService.ensureClientIndexed(clientId, dbService.getAll());
     const csvData = buildReviewReportForScope(clientId, year, month);
     return res.json({
       scope: csvData.reviewReport.scope,
@@ -1533,10 +1538,10 @@ const handleServeDocumentFile = (req: AuthenticatedRequest, res: express.Respons
 app.get('/api/documents/:id/file', handleServeDocumentFile);
 app.get('/api/documents/:id/view', handleServeDocumentFile);
 
-// 6. Staff Review & Approval
-app.put('/api/documents/:id/review', (req, res) => {
+// 6. Staff Review & Approval (STAFF and ADMIN only — clients may not approve accounting records)
+app.put('/api/documents/:id/review', requireRole('ADMIN', 'STAFF'), (req: AuthenticatedRequest, res) => {
   const { extracted_data, staff_notes, approve, status: requestedStatus } = req.body;
-  const doc = dbService.getById(req.params.id);
+  const doc = dbService.getById(String(req.params.id));
 
   if (!doc) {
     return res.status(404).json({ error: 'Dokument nicht gefunden.' });
@@ -1550,13 +1555,13 @@ app.put('/api/documents/:id/review', (req, res) => {
   const { issues } = validationService.validate(updatedExtracted);
   const isApproved = approve === true || requestedStatus === 'APPROVED';
 
-  const updated = dbService.update(req.params.id, {
+  const updated = dbService.update(String(req.params.id), {
     extracted_data: updatedExtracted,
     validation_issues: issues,
     staff_notes: staff_notes || doc.staff_notes,
     status: isApproved ? 'APPROVED' : issues.length > 0 ? 'NEEDS_ATTENTION' : 'READY_FOR_REVIEW',
     reviewed_at: new Date().toISOString(),
-    reviewed_by: 'FinTax Staff',
+    reviewed_by: req.user?.email || 'FinTax Staff',
   });
 
   res.json({
@@ -1773,15 +1778,31 @@ app.delete('/api/documents/:id', (req, res) => {
 });
 
 // 8. Generate & Download Agenda SKR03 EXTF CSV (Official German DATEV/Agenda Format)
-const handleAgendaExport = (req: any, res: any) => {
-  const allDocs = dbService.getAll();
+const handleAgendaExport = (req: AuthenticatedRequest, res: any) => {
+  let allDocs = dbService.getAll();
   const singleDocId = req.params?.id || req.query?.docId || req.query?.document_id;
+  const requestedClientId = (req.query?.client_id || req.body?.client_id) as string | undefined;
+
+  if (requestedClientId && !canAccessClient(req, String(requestedClientId))) {
+    return res.status(403).json({ error: 'Zugriff verweigert (Client isolation).' });
+  }
+  if (req.user?.role === 'CLIENT') {
+    allDocs = allDocs.filter((d) => d.client_id === req.user!.id);
+  } else if (requestedClientId) {
+    allDocs = allDocs.filter((d) => d.client_id === requestedClientId);
+  }
 
   let exportDocs: DocumentRecord[] = [];
 
   if (singleDocId) {
-    const single = allDocs.find((d) => d.id === singleDocId);
-    if (single && single.extracted_data) {
+    const single = dbService.getById(String(singleDocId));
+    if (!single) {
+      return res.status(404).json({ error: 'Dokument nicht gefunden.' });
+    }
+    if (!canAccessClient(req, single.client_id || 'user_client_1')) {
+      return res.status(403).json({ error: 'Zugriff verweigert (Client isolation).' });
+    }
+    if (single.extracted_data) {
       exportDocs = [single];
     }
   } else {
@@ -2405,6 +2426,11 @@ app.listen(PORT, async () => {
   await payrollService.initTables();
   await adminService.initTables();
   try {
+    const allDocsOnStartup = dbService.getAll();
+    const clientIds = Array.from(new Set(allDocsOnStartup.map((d) => d.client_id).filter(Boolean))) as string[];
+    for (const cid of clientIds) {
+      await belegIndexService.ensureClientIndexed(cid, allDocsOnStartup);
+    }
     const count = await syncAllDocumentsToInboxStructure();
     console.log(`[Startup Sync] Synced ${count} documents into Shared with me > _INBOX > 01_Clients hierarchy.`);
   } catch (syncErr) {

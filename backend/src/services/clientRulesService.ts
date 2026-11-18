@@ -21,6 +21,8 @@ export interface ClientSettings {
   mandanten_nr?: string;
   berater_name?: string;
   company_name?: string;
+  own_issuer_keywords?: string[];
+  supplier_headers?: Record<string, string>;
   owners?: string[];
   eu_dealers?: string[];
   foreign_client_keywords?: string[];
@@ -43,11 +45,10 @@ class ClientRulesService {
   private rulesCache: Map<string, ClientRules> = new Map();
   private filePaths: Map<string, string> = new Map();
   private rulesDirCandidates: string[] = [
+    ...(process.env.FINTAX_STORAGE_DIR ? [path.resolve(process.env.FINTAX_STORAGE_DIR, 'rules')] : []),
     path.resolve(process.cwd(), 'storage/rules'),
     path.resolve(process.cwd(), '../storage/rules'),
     path.resolve(process.cwd(), '../../storage/rules'),
-    'C:/Users/sh/Desktop/fintax_project-main/fintax_project-main/storage/rules',
-    'C:/Users/sh/Desktop/fintax_project-main/storage/rules',
   ];
 
   constructor() {
@@ -219,10 +220,12 @@ class ClientRulesService {
     const rules = this.getRules(clientId);
     if (!rules) return;
     const key = (clientId || rules.client_id || '704_qa24').toLowerCase();
+    const defaultRulesDir =
+      this.rulesDirCandidates.find((d) => fs.existsSync(d)) || path.resolve(process.cwd(), '../storage/rules');
     const fp =
       this.filePaths.get(key) ||
       this.filePaths.get('704_qa24') ||
-      'C:/Users/sh/Desktop/fintax_project-main/fintax_project-main/storage/rules/704_QA24.json';
+      path.join(defaultRulesDir, `${rules.client_id || 'client'}.json`);
     try {
       const dir = path.dirname(fp);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

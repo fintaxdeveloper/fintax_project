@@ -22,9 +22,9 @@ class MonthlyDocumentRegistry {
 
   private loadExternalFixtures() {
     const candidates = [
+      ...(process.env.FINTAX_STORAGE_DIR ? [path.resolve(process.env.FINTAX_STORAGE_DIR, 'rules/fixtures')] : []),
       path.resolve(process.cwd(), 'storage/rules/fixtures'),
       path.resolve(process.cwd(), '../storage/rules/fixtures'),
-      'C:/Users/sh/Desktop/fintax_project-main/fintax_project-main/storage/rules/fixtures',
     ];
     for (const dir of candidates) {
       if (!fs.existsSync(dir)) continue;

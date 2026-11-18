@@ -865,8 +865,9 @@ let cachedReferenceSachkonten: Array<[string, string]> | null = null;
 function loadReferenceSachkonten(): Array<[string, string]> {
   if (cachedReferenceSachkonten) return cachedReferenceSachkonten;
   const candidateDirs = [
-    'C:/Users/sh/Desktop/Project - Dubai-20261103T125443Z-1-001/Project - Dubai/Accounting Project/Documents January - June 2026/CSVs',
-    'C:/Users/sh/Desktop/Project - Dubai/Accounting Project/Documents January - June 2026/CSVs',
+    ...(process.env.FINTAX_STORAGE_DIR ? [path.resolve(process.env.FINTAX_STORAGE_DIR, 'templates')] : []),
+    path.resolve(process.cwd(), '../storage/templates'),
+    path.resolve(process.cwd(), 'storage/templates'),
   ];
   for (const dir of candidateDirs) {
     try {

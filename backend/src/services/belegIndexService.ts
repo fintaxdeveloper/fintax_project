@@ -89,7 +89,15 @@ function saveStore(): void {
  */
 export function extractVinFromText(text: string): string | null {
   if (!text) return null;
-  const upper = text.toUpperCase();
+  // Strip IBANs first so 22-char German/EU IBANs (e.g. DE2050070024...) are never mistaken for 17-char VINs
+  const upper = text
+    .toUpperCase()
+    .replace(/\bIBAN\s*[:.]?\s*[A-Z]{2}\s*\d{2}(?:\s*[A-Z0-9]){11,30}/g, ' ')
+    .replace(/\b[A-Z]{2}\d{2}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{0,4}\b/g, ' ')
+    .replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g, (m) => (m.length !== 17 || /^[A-Z]{2}\d{15}$/.test(m) ? ' ' : m));
+
+  const isPlausibleVin = (v: string): boolean =>
+    v.length === 17 && !/^\d+$/.test(v) && !/^[A-Z]{2}\d{15}$/.test(v) && !/^DE\d{8}/.test(v);
 
   // First check explicitly labeled VIN lines (allows spaces/OCR O/I inside VIN)
   const labelMatch = upper.match(/(?:FAHRGESTELLNUMMER|FAHRZEUG-IDENT(?:\.-?NR)?|FZG-?IDENT(?:\.?-?NR)?|FIN)\s*[:.]?\s*([A-Z0-9\s-]{15,24})/i);
@@ -100,25 +108,25 @@ export function extractVinFromText(text: string): string | null {
       .replace(/O/g, '0')
       .replace(/I/g, '1')
       .replace(/Q/g, '0');
-    if (cleaned.length === 17 && /^[A-HJ-NPR-Z0-9]{11}\d{4,6}$/.test(cleaned)) {
+    if (isPlausibleVin(cleaned) && /^[A-HJ-NPR-Z0-9]{11}\d{4,6}$/.test(cleaned)) {
       return cleaned;
     }
   }
 
-  // Fallback: scan any 17-char sequence ending in 4+ digits (tolerates glued text like ...52639ZAHLUNG)
-  const directMatches = upper.matchAll(/(?<![A-Z0-9])([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})/g);
+  // Fallback: scan any 17-char sequence ending in 5-6 digits (tolerates glued text like ...52639ZAHLUNG, blocks trailing digits)
+  const directMatches = upper.matchAll(/(?<![A-Z0-9])([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})(?![0-9])/g);
   for (const m of directMatches) {
     const candidate = m[1].slice(0, 17);
-    if (candidate.length === 17 && !/^\d+$/.test(candidate)) {
+    if (isPlausibleVin(candidate)) {
       return candidate;
     }
   }
 
-  // Normalized OCR scan (allow O/I in first 11 chars if followed by 6 digits)
-  const ocrMatches = upper.matchAll(/(?<![A-Z0-9])([A-Z0-9]{11}\d{6})/g);
+  // Normalized OCR scan (allow O/I in first 11 chars if followed by 6 digits and not followed by more digits)
+  const ocrMatches = upper.matchAll(/(?<![A-Z0-9])([A-Z0-9]{11}\d{6})(?![0-9])/g);
   for (const m of ocrMatches) {
     const norm = m[1].replace(/O/g, '0').replace(/I/g, '1').replace(/Q/g, '0');
-    if (norm.length === 17 && /^[A-HJ-NPR-Z]/.test(norm)) {
+    if (isPlausibleVin(norm) && /^[A-HJ-NPR-Z]/.test(norm)) {
       return norm;
     }
   }
@@ -167,7 +175,7 @@ function extractDateFromText(text: string, fallbackYear: number, fallbackMonth: 
   const preferredMatch = text.match(monthRegex);
   const anyDateMatch =
     preferredMatch ||
-    text.match(/(?:Flörsheim|Florsheim|Datum|Belegdatum|Rechnungsdatum)[^0-9]{0,12}(\d{1,2})[.,/\s]+(\d{2})[.,/\s]*(20\d{2}|\d{2})\b/i) ||
+    text.match(/(?:Datum|Belegdatum|Rechnungsdatum|den)[^0-9]{0,12}(\d{1,2})[.,/\s]+(\d{2})[.,/\s]*(20\d{2}|\d{2})\b/i) ||
     text.match(/\b(0?[1-9]|[12]\d|3[01])[.](0?[1-9]|1[0-2])[.](202\d|902\d|\d{2})\b/);
 
   if (anyDateMatch) {
@@ -188,7 +196,7 @@ function extractInvoiceNumber(text: string): string | null {
   // Priority 1: Vehicle invoice number e.g. "Rechnungsnummer: 26/2024" or "54/2024"
   const carInv = text.match(/Rechnungs-?nummer\s*[:.]?\s*(\d{1,4}\/\d{4}|[A-Za-z0-9][A-Za-z0-9/-]{2,20})/i);
   if (carInv) {
-    const candidate = carInv[1].replace(/^3712024$/, '37/2024').replace(/^262024$/, '26/2024').replace(/^542024$/, '54/2024').trim();
+    const candidate = carInv[1].replace(/^(\d{1,3})1?(20\d{2})$/, '$1/$2').trim();
     if (candidate.length >= 2 && !/^(datum|betrag|eur)$/i.test(candidate)) return candidate;
   }
   // Priority 2: Standard supplier invoice numbers
@@ -260,26 +268,28 @@ function extractAmount(text: string): { total: number; net?: number; vatRate?: n
   return { total: 0 };
 }
 
-function extractPartner(text: string, type: BelegRecordType, companyName?: string): string {
+function extractPartner(text: string, type: BelegRecordType, clientId?: string): string {
   const lines = text
     .split(/\r?\n|\|/)
     .map((l) => l.trim())
     .filter((l) => l.length >= 3);
 
-  const ownLower = (companyName || 'QA24').toLowerCase().replace(/\s*gmbh/i, '').trim();
+  const settings = clientRulesService.getClientSettings(clientId);
+  const ownLower = (settings.company_name || '')
+    .toLowerCase()
+    .replace(/\s*(?:gmbh|ug|ag|kg|ohg)\b/gi, '')
+    .trim();
+  const ownKeywords = (settings.own_issuer_keywords || []).map((k) => k.toLowerCase());
+
   const isOwnOrNoise = (line: string): boolean => {
     const l = line.toLowerCase();
+    if (ownLower && ownLower.length >= 3 && l.includes(ownLower)) return true;
+    if (ownKeywords.some((k) => k.length >= 3 && l.includes(k))) return true;
     return (
-      l.includes(ownLower) ||
-      l.includes('oa24') ||
-      l.includes('qa 24') ||
-      l.includes('industr') ||
-      l.includes('flörsheim') ||
-      l.includes('florsheim') ||
-      l.includes('frankfurter volksbank') ||
       l.includes('iban') ||
       l.includes('bic:') ||
       l.includes('tele:') ||
+      l.includes('tel.:') ||
       l.includes('fax:') ||
       l.includes('www.') ||
       l.includes('rechnungsnummer') ||
@@ -300,44 +310,31 @@ function extractPartner(text: string, type: BelegRecordType, companyName?: strin
     }
   }
 
-  // Known German receipt/supplier headers
-  const headerMatchers: Array<[RegExp, string]> = [
-    [/Heinrich\s*G[öo]bel/i, 'Heinrich Göbel GmbH'],
-    [/EHA\s*Autoschilder/i, 'EHA Autoschilder GmbH'],
-    [/Buffalo\s*GmbH/i, 'Buffalo GmbH'],
-    [/Roth-?Tankstelle|Adolf\s*Roth/i, 'Roth-Tankstelle'],
-    [/BIRLIK\s*SUPERMARKT/i, 'BIRLIK MARKT'],
-    [/Landeshauptstadt\s*Mainz/i, 'Landeshauptstadt Mainz'],
-    [/Main[—\s-]+Taunus[—\s-]+Kreis/i, 'Main-Taunus-Kreis'],
-    [/Kreisverwaltung\s*Gro[ßs]?e?-?Gerau|Der\s*Kreis\s*Gro/i, 'Kreisverwaltung Groß-Gerau'],
-    [/FSP\s*GmbH/i, 'FSP GmbH & Co KG'],
-    [/Getriebe\s*Service\s*Sur/i, 'Getriebe Service Sur'],
-    [/canis\s*lupus/i, 'canis lupus GmbH'],
-    [/G\s*\+\s*K\s*Automobile|K\s*Automobile\s*Eschborn/i, 'G + K Automobile Eschborn GmbH'],
-    [/G[öo]thling\s*&\s*Kaufmann/i, 'Göthling & Kaufmann Automobile GmbH'],
-    [/STAHLGRUBER/i, 'STAHLGRUBER GmbH'],
-    [/Aral\s*Tankstelle|ARAL\s*AG/i, 'Aral Tankstelle'],
-    [/SHELL\s*STATION|Shell\s*Tankshop/i, 'Shell Station'],
-    [/ESSO\s*Station/i, 'ESSO Station'],
-    [/AVIA\s*TANK/i, 'AVIA Tankstelle'],
-    [/macOIL/i, 'macOIL / Mr. Wash'],
-    [/Deutsche\s*Post/i, 'Deutsche Post AG'],
-    [/mobile\.de|mobile-de/i, 'mobile.de GmbH'],
-    [/Vattenfall/i, 'Vattenfall Europe Sales GmbH'],
-    [/EnBW/i, 'EnBW Energie Baden-Württemberg AG'],
-    [/eBay\s*GmbH/i, 'eBay GmbH'],
-    [/ACS\s*Trade\s*GmbH/i, 'ACS Trade GmbH'],
-    [/Autoteile\s*Center\s*Gehlsen/i, 'Autoteile Center Gehlsen GmbH'],
-    [/auto-teile-de/i, 'auto-teile-de'],
-    [/Villmar/i, 'Villmar & Pflug OHG'],
-    [/CarDeluxe/i, 'CarDeluxe GmbH & Co. KG'],
-    [/PENNY/i, 'PENNY-MARKT GmbH'],
-    [/Auto\s*Voit/i, 'Auto Voit GmbH'],
-    [/Avalon\s*Premium\s*Cars/i, 'Avalon Premium Cars GmbH'],
-    [/Transgourm/i, 'Transgourmet Deutschland GmbH'],
-  ];
-  for (const [re, name] of headerMatchers) {
-    if (re.test(text)) return name;
+  // 1. Check client-configured supplier header patterns from storage/rules/<client>.json
+  if (settings.supplier_headers) {
+    for (const [pattern, canonicalName] of Object.entries(settings.supplier_headers)) {
+      try {
+        if (new RegExp(pattern, 'i').test(text)) {
+          return canonicalName;
+        }
+      } catch {
+        if (text.toLowerCase().includes(pattern.toLowerCase())) {
+          return canonicalName;
+        }
+      }
+    }
+  }
+
+  // 2. Generic German legal entity / business header detection
+  for (const line of lines.slice(0, 12)) {
+    if (isOwnOrNoise(line)) continue;
+    if (
+      /\b(GmbH|AG|KG|OHG|UG|GbR|e\.?\s*K\.?|Tankstelle|Station|Supermarkt|Markt|Autohaus|Automobile|Autoschilder|Kreisverwaltung|Landeshauptstadt|Stadtkasse)\b/i.test(
+        line
+      )
+    ) {
+      return line.slice(0, 60);
+    }
   }
 
   for (const line of lines.slice(0, 8)) {
@@ -350,16 +347,31 @@ function extractPartner(text: string, type: BelegRecordType, companyName?: strin
 
 function classifyBelegPage(rawText: string, filename: string, clientId?: string): BelegRecordType {
   const lower = rawText.toLowerCase();
-  const isOwnIssuer = /qa24|oa24|06145\/59\s*68|65439\s*fl[öo]rsheim/i.test(rawText);
+  const settings = clientRulesService.getClientSettings(clientId);
+  const ownLower = (settings.company_name || '')
+    .toLowerCase()
+    .replace(/\s*(?:gmbh|ug|ag|kg|ohg)\b/gi, '')
+    .trim();
+  const ownKeywords = (settings.own_issuer_keywords || []).map((k) => k.toLowerCase());
+  const isOwnIssuer =
+    (ownLower.length >= 3 && lower.includes(ownLower)) ||
+    ownKeywords.some((k) => k.length >= 3 && lower.includes(k));
 
   if (/ankaufvertrag|verbindliche\s+bestellung/i.test(lower)) {
     return 'QA24_PURCHASE';
   }
-  if (/acs\s*trade\s*gmbh.*range\s*rover/i.test(lower)) {
-    return 'QA24_PURCHASE';
-  }
   if (isOwnIssuer && /(?:kaufvertrag\s+für|rechnung\s+für\s+den\s+(?:ver)?kauf|verkauf\s+nach\s+[§s5]?\s*25a)/i.test(lower)) {
     return 'QA24_SALE';
+  }
+  // Vehicle purchase invoice issued by a third-party dealer (has VIN + vehicle price >= 3000 EUR + vehicle specs)
+  if (
+    !isOwnIssuer &&
+    /rechnung|invoice/i.test(lower) &&
+    /fahrgestellnummer|fahrzeug-ident|erstzulassung|kilometerstand|laufleistung/i.test(lower) &&
+    extractVinFromText(rawText) &&
+    extractAmount(rawText).total >= 3000
+  ) {
+    return 'QA24_PURCHASE';
   }
   if (/(?:girocard|ec-chip|kundenbeleg|tankstelle|super\s*fuel|super\s*e10|diesel|einzahlquittung|kassenbon|summe\s+ec-cash|mastercard)/i.test(lower)) {
     return 'RECEIPT';
@@ -373,7 +385,6 @@ function classifyBelegPage(rawText: string, filename: string, clientId?: string)
   if (/bankbeleg|kassebeleg/i.test(filename.toLowerCase())) {
     return 'RECEIPT';
   }
-  void clientId;
   return 'OTHER';
 }
 
@@ -424,18 +435,36 @@ export const belegIndexService = {
       }
     }
 
-    const companyName = clientRulesService.getClientSettings(meta.clientId).company_name;
     const records: BelegRecord[] = [];
+    // Detect dominant 4-digit year from actual printed dates inside the document pages
+    // so a misnamed file (e.g. "062026_Kassebelege.pdf" containing 2024 receipts) uses the real document year.
+    const yearCounts = new Map<number, number>();
+    for (const g of groups) {
+      for (const ymMatch of g.rawText.matchAll(/\b(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-](20\d{2})\b/g)) {
+        const y = parseInt(ymMatch[1], 10);
+        if (y >= 2015 && y <= 2035) yearCounts.set(y, (yearCounts.get(y) || 0) + 1);
+      }
+    }
+    let effectiveYear = meta.year;
+    let bestCount = 0;
+    for (const [y, cnt] of yearCounts.entries()) {
+      if (cnt > bestCount) {
+        bestCount = cnt;
+        effectiveYear = y;
+      }
+    }
 
     for (const g of groups) {
       const raw = g.rawText;
       const lower = raw.toLowerCase();
       const type = classifyBelegPage(raw, meta.filename, meta.clientId);
-      const partner = extractPartner(raw, type, companyName);
+      const partner = extractPartner(raw, type, meta.clientId);
       const invoiceNo = extractInvoiceNumber(raw);
       const vin = extractVinFromText(raw);
       const amtInfo = extractAmount(raw);
-      const { iso: date, belegdatum } = extractDateFromText(raw, meta.year, meta.month);
+      const { iso: date, belegdatum } = extractDateFromText(raw, effectiveYear, meta.month);
+      const parsedDocYear = parseInt(date.slice(0, 4), 10);
+      const recordYear = parsedDocYear >= 2000 && parsedDocYear <= 2100 ? parsedDocYear : effectiveYear;
 
       // Determine tax clause
       let taxClause: BelegTaxClause = null;
@@ -494,7 +523,7 @@ export const belegIndexService = {
       records.push({
         id: uuidv4(),
         client_id: meta.clientId,
-        year: meta.year,
+        year: recordYear,
         month: meta.month,
         source_file: meta.filename,
         document_id: meta.documentId,
@@ -573,9 +602,11 @@ export const belegIndexService = {
 
       const dateStr = d.extracted_data?.invoice_date || '';
       const ym = dateStr.match(/^(\d{4})-(\d{2})/);
-      const fnYm = fn.match(/(\d{2})(202\d)/);
-      const year = ym ? parseInt(ym[1], 10) : fnYm ? 2024 : 2024;
-      const month = ym ? parseInt(ym[2], 10) : fnYm ? parseInt(fnYm[1], 10) : 1;
+      const fnYm = fn.match(/(\d{2})(20\d{2})/) || fn.match(/(20\d{2})[-_](\d{2})/);
+      const parsedFnYear = fnYm ? parseInt(fnYm[1].length === 4 ? fnYm[1] : fnYm[2], 10) : NaN;
+      const parsedFnMonth = fnYm ? parseInt(fnYm[1].length === 4 ? fnYm[2] : fnYm[1], 10) : NaN;
+      const year = ym ? parseInt(ym[1], 10) : !isNaN(parsedFnYear) ? parsedFnYear : new Date().getFullYear();
+      const month = ym ? parseInt(ym[2], 10) : !isNaN(parsedFnMonth) ? parsedFnMonth : 1;
 
       await this.indexDocumentFile(d.file_path, d.mime_type || 'application/pdf', {
         clientId: d.client_id || clientId,
