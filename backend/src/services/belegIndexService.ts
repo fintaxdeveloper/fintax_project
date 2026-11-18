@@ -172,12 +172,33 @@ function amountExistsInText(amount: number, text: string): boolean {
 
 function extractDateFromText(text: string, fallbackYear: number, fallbackMonth: number): { iso: string; belegdatum: string } {
   const mPadded = String(fallbackMonth).padStart(2, '0');
+
+  // 1. Text with city/location e.g. "Flörsheim, 04.03.2024" or "Florsheim, 04039024"
+  const cityDateMatch = text.match(/(?:Flörsheim|Florsheim|Frankfurt|Mainz|Berlin|den|am)[,\s]*(\d{1,2})[.,\s]*(\d{2})[.,\s]*(20\d{2}|90\d{2})\b/i);
+  if (cityDateMatch) {
+    const day = parseInt(cityDateMatch[1], 10);
+    const mon = parseInt(cityDateMatch[2], 10);
+    let yr = parseInt(cityDateMatch[3].replace(/^90/, '20'), 10);
+    if (yr < 100) yr += 2000;
+    if (day >= 1 && day <= 31 && mon >= 1 && mon <= 12) {
+      const dStr = String(day).padStart(2, '0');
+      const mStr = String(mon).padStart(2, '0');
+      return { iso: `${yr}-${mStr}-${dStr}`, belegdatum: `${dStr}${mStr}` };
+    }
+  }
+
+  // Strip lines that start with Erstzulassung or Geburtsdatum to prevent matching car manufacture or birthday
+  const cleanTextForDate = text
+    .split(/\r?\n/)
+    .filter((line) => !/^(?:Erstzulassung|Geburt|Geb\.|EZ\b)/i.test(line.trim()))
+    .join('\n');
+
   const monthRegex = new RegExp(`(\\d{1,2})[.,/]\\s*(0?${fallbackMonth})[.,/\\s]*(202[0-9]|902[0-9]|24|25|26)\\b`, 'i');
-  const preferredMatch = text.match(monthRegex);
+  const preferredMatch = cleanTextForDate.match(monthRegex);
   const anyDateMatch =
     preferredMatch ||
-    text.match(/(?:Datum|Belegdatum|Rechnungsdatum|den)[^0-9]{0,12}(\d{1,2})[.,/\s]+(\d{2})[.,/\s]*(20\d{2}|\d{2})\b/i) ||
-    text.match(/\b(0?[1-9]|[12]\d|3[01])[.](0?[1-9]|1[0-2])[.](202\d|902\d|\d{2})\b/);
+    cleanTextForDate.match(/(?:Datum|Belegdatum|Rechnungsdatum|den)[^0-9]{0,12}(\d{1,2})[.,/\s]+(\d{2})[.,/\s]*(20\d{2}|\d{2})\b/i) ||
+    cleanTextForDate.match(/\b(0?[1-9]|[12]\d|3[01])[.](0?[1-9]|1[0-2])[.](202\d|902\d|\d{2})\b/);
 
   if (anyDateMatch) {
     const day = parseInt(anyDateMatch[1], 10);
@@ -495,7 +516,10 @@ export const belegIndexService = {
       const amtInfo = extractAmount(raw);
       const { iso: date, belegdatum } = extractDateFromText(raw, effectiveYear, meta.month);
       const parsedDocYear = parseInt(date.slice(0, 4), 10);
-      const recordYear = parsedDocYear >= 2000 && parsedDocYear <= 2100 ? parsedDocYear : effectiveYear;
+      const recordYear =
+        parsedDocYear >= effectiveYear - 1 && parsedDocYear <= effectiveYear + 1
+          ? parsedDocYear
+          : effectiveYear;
 
       // Determine tax clause
       let taxClause: BelegTaxClause = null;
