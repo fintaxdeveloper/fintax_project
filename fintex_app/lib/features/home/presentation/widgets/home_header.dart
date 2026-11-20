@@ -121,7 +121,7 @@ class _UserAvatar extends StatelessWidget {
                 width: 50,
                 height: 50,
                 child: Image.network(
-                  'https://png.pngtree.com/png-clipart/20230927/original/pngtree-man-avatar-image-for-profile-png-image_13001879.png',
+                  'https://i.pravatar.cc/300?img=12',
                   fit: BoxFit.cover,
                   loadingBuilder: (context, child, progress) => progress == null ? child : fallback,
                   errorBuilder: (context, error, stackTrace) => fallback,
