@@ -19,6 +19,11 @@ import {
   Plus,
   ArrowRight,
   Info,
+  LayoutDashboard,
+  Users,
+  FolderTree,
+  Landmark,
+  ShieldAlert,
 } from 'lucide-react';
 import { translations, type Language } from './translations';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -87,12 +92,18 @@ interface CorrespondenceItem {
   original_filename?: string;
 }
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE =
+  typeof window !== 'undefined' &&
+  window.location.hostname !== 'localhost' &&
+  window.location.hostname !== '127.0.0.1'
+    ? '/api'
+    : 'http://localhost:5000/api';
 
 function MainAppContent() {
   const { user, activePortal } = useAuth();
   const { success, error } = useSnackbar();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [adminNavTab, setAdminNavTab] = useState<'USERS' | 'ASSIGNMENTS' | 'DELETIONS' | 'FOLDERS' | 'AUDIT'>('USERS');
   const [clientNavTab, setClientNavTab] = useState<ClientTabType>('OVERVIEW');
   const [lang, setLang] = useState<Language>(() => {
@@ -499,30 +510,41 @@ function MainAppContent() {
   });
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', background: '#f8fafc', color: '#0f172a' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', background: '#f8fafc', color: '#0f172a', position: 'relative' }}>
+      {/* Mobile Drawer Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="fintax-mobile-backdrop"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* ── Left Sidebar Navigation (Admin, Staff & Client) ── */}
       {user && (
         <Sidebar
           lang={lang}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          mobileOpen={mobileMenuOpen}
+          onCloseMobile={() => setMobileMenuOpen(false)}
           adminTab={adminNavTab}
-          onAdminTabChange={setAdminNavTab}
+          onAdminTabChange={(tab) => { setAdminNavTab(tab); setMobileMenuOpen(false); }}
           staffTab={staffTab}
-          onStaffTabChange={setStaffTab}
+          onStaffTabChange={(tab) => { setStaffTab(tab); setMobileMenuOpen(false); }}
           clientTab={clientNavTab}
-          onClientTabChange={setClientNavTab}
+          onClientTabChange={(tab) => { setClientNavTab(tab); setMobileMenuOpen(false); }}
           pendingReviewCount={stats.needsReview}
         />
       )}
 
       {/* ── Right Content Area ── */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto' }}>
+      <div style={{ flex: 1, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto', overflowX: 'hidden' }}>
         {/* Top Navbar */}
         <Navbar
           lang={lang}
           onLanguageChange={handleLangChange}
           onOpenLogin={() => setShowLoginModal(true)}
+          onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
         />
 
         {/* Login Modal (if requested or not logged in) */}
@@ -565,9 +587,9 @@ function MainAppContent() {
 
         {/* PORTAL VIEW 3: STAFF / ACCOUNTANT REVIEW PORTAL */}
         {user && activePortal === 'STAFF' && (
-          <main style={{ maxWidth: 1440, margin: '0 auto', width: '100%', padding: '24px 20px', flex: 1 }}>
+          <main className="fintax-portal-container" style={{ maxWidth: 1440, margin: '0 auto', width: '100%', padding: '24px 20px', flex: 1 }}>
             {/* Header Banner */}
-            <div style={{
+            <div className="fintax-hero-banner" style={{
               background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #0f172a 100%)',
               padding: '1.5rem 2rem',
               borderRadius: '1rem',
@@ -615,7 +637,7 @@ function MainAppContent() {
             </div>
 
             {/* Sub Navigation: Invoices vs Bank Statements */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="fintax-tabs-bar" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setStaffTab('INVOICES')}
@@ -738,7 +760,7 @@ function MainAppContent() {
           {staffTab === 'INVOICES' && (
             <>
               {/* Statistics Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+              <div className="fintax-staff-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
                 <div className="glass-panel" style={{ padding: 20 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontWeight: 600 }}>{t.totalDocs}</span>
@@ -1669,9 +1691,10 @@ function MainAppContent() {
             </div>
 
             {/* Modal Body: Split Screen */}
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            <div className="fintax-split-modal-body" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
               {/* Left Pane: Original Document Preview */}
               <div
+                className="fintax-split-modal-preview"
                 style={{
                   flex: 1.2,
                   borderRight: '1px solid var(--border-subtle)',
@@ -1711,6 +1734,7 @@ function MainAppContent() {
 
               {/* Right Pane: AI-Extracted Editable Form */}
               <div
+                className="fintax-split-modal-form"
                 style={{
                   flex: 1,
                   padding: '24px 28px',
@@ -1759,7 +1783,7 @@ function MainAppContent() {
                 })()}
 
                 {/* Form Fields */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div className="fintax-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   <div style={{ gridColumn: 'span 2' }}>
                     <label className="form-label">{t.fieldSupplier}</label>
                     <input
@@ -2033,7 +2057,7 @@ function MainAppContent() {
               })()}
 
               {/* Detail Fields Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div className="fintax-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <DetailField label={t.corrDetailSender} value={selectedCorr.sender} icon={<Mail size={14} color="#fb923c" />} />
                 <DetailField label={t.corrDetailType} value={selectedCorr.letter_type} icon={<FileText size={14} color="#60a5fa" />} />
                 <DetailField label={t.corrDetailTaxNo} value={selectedCorr.tax_number || '—'} icon={<Info size={14} color="#94a3b8" />} />
@@ -2097,6 +2121,130 @@ function MainAppContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── NATIVE-STYLE MOBILE BOTTOM NAVIGATION BAR (≤ 768px) ── */}
+      {user && (
+        <nav className="fintax-mobile-bottom-nav" aria-label="Mobile Navigation">
+          {activePortal === 'CLIENT' && (
+            <>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${clientNavTab === 'OVERVIEW' ? 'active' : ''}`}
+                onClick={() => setClientNavTab('OVERVIEW')}
+              >
+                <LayoutDashboard size={20} />
+                <span>{lang === 'de' ? 'Start' : 'Home'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${clientNavTab === 'ACCOUNTING' ? 'active' : ''}`}
+                onClick={() => setClientNavTab('ACCOUNTING')}
+              >
+                <Receipt size={20} />
+                <span>{lang === 'de' ? 'FiBu' : 'FiBu'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${clientNavTab === 'PAYROLL' ? 'active' : ''}`}
+                onClick={() => setClientNavTab('PAYROLL')}
+              >
+                <Users size={20} />
+                <span>{lang === 'de' ? 'Lohn' : 'Payroll'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${clientNavTab === 'CORRESPONDENCE' ? 'active' : ''}`}
+                onClick={() => setClientNavTab('CORRESPONDENCE')}
+              >
+                <Mail size={20} />
+                <span>{lang === 'de' ? 'Briefe' : 'Letters'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${clientNavTab === 'VAULT' ? 'active' : ''}`}
+                onClick={() => setClientNavTab('VAULT')}
+              >
+                <FolderTree size={20} />
+                <span>{lang === 'de' ? 'Archiv' : 'Vault'}</span>
+              </button>
+            </>
+          )}
+
+          {activePortal === 'ADMIN' && (
+            <>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${adminNavTab === 'USERS' ? 'active' : ''}`}
+                onClick={() => setAdminNavTab('USERS')}
+              >
+                <Users size={20} />
+                <span>{lang === 'de' ? 'Nutzer' : 'Users'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${adminNavTab === 'ASSIGNMENTS' ? 'active' : ''}`}
+                onClick={() => setAdminNavTab('ASSIGNMENTS')}
+              >
+                <ShieldCheck size={20} />
+                <span>{lang === 'de' ? 'Zuteilung' : 'Assign'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${adminNavTab === 'FOLDERS' ? 'active' : ''}`}
+                onClick={() => setAdminNavTab('FOLDERS')}
+              >
+                <FolderTree size={20} />
+                <span>{lang === 'de' ? 'Ordner' : 'Folders'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${adminNavTab === 'DELETIONS' ? 'active' : ''}`}
+                onClick={() => setAdminNavTab('DELETIONS')}
+              >
+                <ShieldAlert size={20} />
+                <span>{lang === 'de' ? 'Freigabe' : 'Approve'}</span>
+              </button>
+            </>
+          )}
+
+          {activePortal === 'STAFF' && (
+            <>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${staffTab === 'INVOICES' ? 'active' : ''}`}
+                onClick={() => setStaffTab('INVOICES')}
+              >
+                <Receipt size={20} />
+                <span>{lang === 'de' ? 'Belege' : 'Invoices'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${staffTab === 'BANK' ? 'active' : ''}`}
+                onClick={() => setStaffTab('BANK')}
+              >
+                <Landmark size={20} />
+                <span>{lang === 'de' ? 'Bank' : 'Bank'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${staffTab === 'CORR' ? 'active' : ''}`}
+                onClick={() => setStaffTab('CORR')}
+              >
+                <Mail size={20} />
+                <span>{lang === 'de' ? 'Briefe' : 'Letters'}</span>
+              </button>
+              <button
+                type="button"
+                className={`fintax-bottom-nav-item ${staffTab === 'VAULT' ? 'active' : ''}`}
+                onClick={() => setStaffTab('VAULT')}
+              >
+                <FolderTree size={20} />
+                <span>{lang === 'de' ? 'Archiv' : 'Vault'}</span>
+              </button>
+            </>
+          )}
+        </nav>
       )}
       </div>
     </div>

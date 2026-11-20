@@ -919,3 +919,684 @@ input::placeholder, textarea::placeholder {
   27% { opacity: 0; transform: translateY(6px); }
   30%, 100% { opacity: 1; transform: translateY(0); }
 }
+
+/* ═══════════════════════════════════════════════════
+   Mobile Responsive Navigation & Native App Layout Engine
+   ═══════════════════════════════════════════════════ */
+
+/* Mobile Backdrop for Sidebar Drawer */
+.fintax-mobile-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 95;
+  animation: fadeInBackdrop 0.2s ease forwards;
+}
+
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Mobile Drawer Hamburger & Close Buttons */
+.fintax-mobile-menu-btn {
+  display: none;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 7px 9px;
+  color: #334155;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.fintax-mobile-menu-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.fintax-mobile-close-btn {
+  display: none;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px;
+  color: #64748b;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.fintax-mobile-close-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+  border-color: #fca5a5;
+}
+
+/* Native-style Mobile Bottom Navigation Bar (hidden on desktop) */
+.fintax-mobile-bottom-nav {
+  display: none;
+}
+
+/* CRITICAL: Prevent wide tables from ever blowing out portal width beyond 100vw */
+.fintax-portal-container,
+.fintax-client-workspace {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.fintax-portal-container > *,
+.fintax-client-workspace > * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure every overflow-x table container stays strictly inside its card */
+.fintax-portal-container div[style*="overflow-x: auto"],
+.fintax-client-workspace div[style*="overflow-x: auto"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Document List Row: Clean wrapping at ALL screen widths (Desktop, Laptop, Tablet, Mobile) */
+.fintax-doc-row {
+  flex-wrap: wrap !important;
+  gap: 12px 16px !important;
+  overflow: hidden !important;
+}
+
+.fintax-doc-info {
+  flex: 1 1 280px !important;
+  min-width: min(100%, 260px) !important;
+}
+
+.fintax-doc-pills {
+  flex-wrap: wrap !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  gap: 6px !important;
+}
+
+.fintax-doc-pills > span {
+  max-width: 100% !important;
+}
+
+.fintax-doc-amount {
+  min-width: 120px !important;
+  flex-shrink: 0 !important;
+}
+
+.fintax-doc-actions {
+  flex-wrap: wrap !important;
+  flex-shrink: 0 !important;
+  gap: 6px !important;
+}
+
+/* ── Tablet & Small Laptops (<= 1024px) ── */
+@media (max-width: 1024px) {
+  .fintax-mobile-menu-btn {
+    display: inline-flex !important;
+  }
+  .fintax-mobile-close-btn {
+    display: inline-flex !important;
+  }
+  .fintax-desktop-collapse-btn {
+    display: none !important;
+  }
+
+  /* Sidebar turns into off-canvas drawer */
+  .fintax-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 285px !important;
+    max-width: 85vw !important;
+    height: 100vh !important;
+    z-index: 110 !important;
+    transform: translateX(-105%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s !important;
+    box-shadow: none !important;
+  }
+
+  .fintax-sidebar.mobile-open {
+    transform: translateX(0) !important;
+    box-shadow: 14px 0 35px rgba(15, 23, 42, 0.28) !important;
+  }
+
+  .fintax-portal-container {
+    padding: 1.25rem 1rem !important;
+  }
+
+  .fintax-client-workspace {
+    padding: 1.25rem 1rem 3rem !important;
+  }
+
+  /* 4-column grids cleanly become 2x2 on tablets */
+  .fintax-kpi-grid,
+  .fintax-services-grid,
+  .fintax-admin-stats,
+  .fintax-staff-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  /* Split-screen Staff Review Modal stacks cleanly on tablets & mobile */
+  .fintax-split-modal-body {
+    flex-direction: column !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .fintax-split-modal-preview {
+    flex: none !important;
+    height: 40vh !important;
+    min-height: 240px !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+  }
+
+  .fintax-split-modal-form {
+    flex: none !important;
+    overflow-y: visible !important;
+    padding: 18px 16px !important;
+  }
+
+  /* FileExplorer Drive grid on tablets */
+  .fintax-drive-header,
+  .fintax-drive-row {
+    grid-template-columns: 1fr 110px 100px 100px !important;
+    padding-left: 0.9rem !important;
+    padding-right: 0.9rem !important;
+  }
+
+  /* Switch Admin Users/Employees table to native cards on Tablet (2-col) & Mobile (1-col) */
+  .fintax-desktop-table {
+    display: none !important;
+  }
+  .fintax-mobile-cards {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  /* Smooth horizontal touch scroll for all Admin & Staff tables */
+  div[style*="overflow-x: auto"],
+  div[style*="overflowX"] {
+    -webkit-overflow-scrolling: touch !important;
+  }
+  div[style*="overflow-x: auto"] > table {
+    min-width: 680px;
+  }
+}
+
+/* ── Login Modal Responsive (<= 900px: hide heavy poster, sleek single mobile card) ── */
+@media (max-width: 900px) {
+  .fintax-assign-form select,
+  .fintax-assign-form button {
+    width: 100% !important;
+  }
+
+  .fintax-assign-form select,
+  .fintax-assign-form button {
+    width: 100% !important;
+  }
+
+  .fintax-login-backdrop {
+    padding: 1rem 0.75rem !important;
+    align-items: flex-start !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .fintax-login-card {
+    margin: auto !important;
+    max-width: 440px !important;
+    border-radius: 24px !important;
+    min-height: auto !important;
+    flex-direction: column !important;
+  }
+
+  .fintax-login-poster-col {
+    display: none !important;
+  }
+
+  .fintax-login-form-col {
+    padding: 2.25rem 1.35rem 1.75rem !important;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+  }
+}
+
+/* ── Mobile App Experience (<= 768px) ── */
+@media (max-width: 768px) {
+  /* Native App Top Header */
+  .fintax-navbar {
+    padding: 0 0.75rem !important;
+    height: 58px !important;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04) !important;
+  }
+
+  .fintax-navbar-title,
+  .fintax-navbar-divider {
+    display: none !important;
+  }
+
+  .fintax-navbar-logo {
+    height: 26px !important;
+  }
+
+  .fintax-server-badge {
+    display: none !important;
+  }
+
+  .fintax-lang-switcher {
+    padding: 2px !important;
+    gap: 1px !important;
+  }
+  .fintax-lang-globe {
+    display: none !important;
+  }
+  .fintax-lang-switcher button {
+    padding: 0.22rem 0.42rem !important;
+    font-size: 0.6875rem !important;
+  }
+
+  .fintax-user-profile-meta {
+    display: none !important;
+  }
+
+  /* Native-style Bottom App Bar */
+  .fintax-mobile-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid #e2e8f0;
+    box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.06);
+    z-index: 90;
+    align-items: center;
+    justify-content: space-around;
+    padding: 4px 6px env(safe-area-inset-bottom, 6px);
+  }
+
+  .fintax-bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    color: #64748b;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 6px 4px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .fintax-bottom-nav-item.active {
+    color: #2563eb;
+    background: #eff6ff;
+    font-weight: 700;
+  }
+
+  /* Workspace spacing (leave room for bottom nav bar) */
+  .fintax-portal-container,
+  .fintax-client-workspace {
+    padding: 12px 12px 86px !important;
+  }
+
+  /* Client Greeting Banner */
+  .fintax-greeting-card {
+    padding: 16px !important;
+    border-radius: 18px !important;
+    gap: 14px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .fintax-greeting-card h1 {
+    font-size: 1.15rem !important;
+  }
+
+  .fintax-greeting-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .fintax-greeting-actions button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px 10px !important;
+    font-size: 0.78rem !important;
+    white-space: nowrap !important;
+  }
+
+  /* ── 4 Bento KPI Cards: Crisp 2x2 App Dashboard Grid (NO OVERLAP!) ── */
+  .fintax-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .fintax-kpi-grid > div {
+    padding: 14px 12px !important;
+    border-radius: 16px !important;
+    flex-direction: column-reverse !important;
+    align-items: flex-start !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .fintax-kpi-grid > div > div:first-child {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .fintax-kpi-grid > div > div:last-child {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 10px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .fintax-kpi-grid > div > div:first-child > div:nth-child(1) {
+    font-size: 0.68rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .fintax-kpi-grid > div > div:first-child > div:nth-child(2) {
+    font-size: 1.45rem !important;
+    margin-top: 2px !important;
+  }
+
+  .fintax-kpi-grid > div > div:first-child > div:nth-child(3) {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+    margin-top: 6px !important;
+  }
+
+  /* Quick Dropzone */
+  .fintax-dropzone {
+    padding: 18px 14px !important;
+    border-radius: 16px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .fintax-dropzone > div:nth-child(2) {
+    font-size: 0.9rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .fintax-dropzone p {
+    font-size: 0.76rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .fintax-dropzone button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px 14px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Section Header */
+  .fintax-section-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 3px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .fintax-section-header h2 {
+    font-size: 1rem !important;
+  }
+
+  .fintax-section-header span {
+    font-size: 0.75rem !important;
+  }
+
+  /* ── 4 Service Module Cards: Clean 2x2 App Tiles (NO COLLISION!) ── */
+  .fintax-services-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .fintax-services-grid > div {
+    padding: 14px 12px !important;
+    border-radius: 16px !important;
+    min-height: 140px !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .fintax-services-grid > div > div:first-child > div:first-child {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .fintax-services-grid > div > div:first-child > div:nth-child(2) {
+    font-size: 0.88rem !important;
+    line-height: 1.25 !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+  }
+
+  .fintax-services-grid > div > div:first-child > div:nth-child(3) {
+    font-size: 0.72rem !important;
+    line-height: 1.35 !important;
+  }
+
+  /* 3-col and 2-col grids stack cleanly on mobile */
+  .fintax-grid-3,
+  .fintax-grid-2,
+  .fintax-mobile-cards {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Admin & Staff Hero Banner */
+  .fintax-hero-banner {
+    padding: 1.25rem 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  .fintax-hero-metrics {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  .fintax-hero-metrics > div {
+    min-width: 0 !important;
+    padding: 0.65rem 0.75rem !important;
+  }
+
+  .fintax-hero-banner h1 {
+    font-size: 1.25rem !important;
+  }
+
+  .fintax-hero-banner p {
+    font-size: 0.8rem !important;
+  }
+
+  /* Admin & Staff Stats Grid: 2x2 on mobile */
+  .fintax-admin-stats,
+  .fintax-staff-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .fintax-admin-stats > div,
+  .fintax-staff-stats > div {
+    padding: 12px !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* FileExplorer Drive View on Mobile: clean Name + Action 2-col app list */
+  .fintax-drive-header,
+  .fintax-drive-row {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    padding: 0.65rem 0.8rem !important;
+  }
+
+  .fintax-drive-header > div:nth-child(2),
+  .fintax-drive-header > div:nth-child(3),
+  .fintax-drive-row > div:nth-child(2),
+  .fintax-drive-row > div:nth-child(3) {
+    display: none !important;
+  }
+
+  .fintax-drive-row > div:first-child {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .fintax-drive-row > div:first-child span {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  /* Horizontal scrollable native pill tabs */
+  .fintax-tabs-bar {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    padding-bottom: 8px !important;
+    gap: 6px !important;
+  }
+  .fintax-tabs-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .fintax-tabs-bar button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    padding: 0.5rem 0.9rem !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Filter Search Bar reset span */
+  .fintax-filter-search {
+    grid-column: span 1 !important;
+  }
+
+  /* ── Document Submissions List Cards (Native Fintech App Card Style) ── */
+  .fintax-doc-search-wrap {
+    width: 100% !important;
+  }
+
+  .fintax-doc-filter-tabs {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+  }
+  .fintax-doc-filter-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .fintax-doc-filter-tabs button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    font-size: 0.74rem !important;
+    padding: 6px 10px !important;
+  }
+
+  .fintax-doc-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 14px !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+  }
+
+  .fintax-doc-info {
+    flex: none !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  .fintax-doc-pills {
+    flex-wrap: wrap !important;
+    flex-shrink: 1 !important;
+    width: 100% !important;
+    gap: 6px !important;
+  }
+
+  .fintax-doc-pills > span {
+    font-size: 0.7rem !important;
+    padding: 3px 8px !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    max-width: 100% !important;
+  }
+
+  .fintax-doc-amount {
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    padding-top: 8px !important;
+    border-top: 1px solid #f1f5f9 !important;
+  }
+
+  .fintax-doc-amount > div:last-child {
+    margin-top: 0 !important;
+  }
+
+  .fintax-doc-actions {
+    width: 100% !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
+    gap: 6px !important;
+    padding-top: 6px !important;
+    border-top: 1px dashed #e2e8f0 !important;
+  }
+
+  /* Ensure smooth horizontal table scroll on touch */
+  .fintax-table-wrapper,
+  .overflow-x-auto,
+  table {
+    max-width: 100%;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+
+/* ── Very Narrow Smartphones (<= 380px) ── */
+@media (max-width: 380px) {
+  .fintax-greeting-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .fintax-services-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

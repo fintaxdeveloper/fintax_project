@@ -42,6 +42,13 @@ const DEMO_CREDENTIALS: Record<UserRole, { identifier: string; pass: string }> =
   ADMIN: { identifier: 'admin@fintax.de', pass: 'admin123' },
 };
 
+const API_BASE =
+  typeof window !== 'undefined' &&
+  window.location.hostname !== 'localhost' &&
+  window.location.hostname !== '127.0.0.1'
+    ? '/api'
+    : 'http://127.0.0.1:5000/api';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('fintax_user');
@@ -64,7 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (identifier: string, password: string): Promise<LoginResult> => {
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/auth/login', {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, password }),
@@ -101,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyOtp = async (tempToken: string, otp: string) => {
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/auth/verify-otp', {
+      const res = await fetch(`${API_BASE}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tempToken, otp }),
@@ -126,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const resendOtp = async (tempToken: string) => {
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/auth/resend-otp', {
+      const res = await fetch(`${API_BASE}/auth/resend-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tempToken }),
@@ -151,7 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshProfile = async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`http://127.0.0.1:5000/api/auth/profile?userId=${encodeURIComponent(user.id)}`);
+      const res = await fetch(`${API_BASE}/auth/profile?userId=${encodeURIComponent(user.id)}`);
       if (res.ok) {
         const data = await res.json();
         setUser((prev) => {

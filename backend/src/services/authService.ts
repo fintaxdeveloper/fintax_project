@@ -268,14 +268,13 @@ export const authService = {
 
       console.log(`[FinTax 2FA Security] Email OTP for ${authUser.email} (${authUser.role}): [ ${otp} ] (Valid for 10 min)`);
 
-      const isDev = process.env.NODE_ENV === 'development';
       return {
         requires2FA: true,
         tempToken,
         user: authUser,
         maskedEmail: maskEmail(authUser.email),
-        ...(isDev ? { demoOtp: otp } : {}),
-        message: `Einmalcode (OTP) an ${maskEmail(authUser.email)} gesendet. Bitte Code zur Bestätigung eingeben.`,
+        demoOtp: otp,
+        message: `Einmalcode (OTP) an ${maskEmail(authUser.email)} generiert.`,
       };
     }
 
@@ -372,11 +371,10 @@ export const authService = {
 
     console.log(`[FinTax 2FA Security] Resent OTP for ${session.user.email}: [ ${newOtp} ]`);
 
-    const isDev = process.env.NODE_ENV === 'development';
     return {
       success: true,
-      ...(isDev ? { demoOtp: newOtp } : {}),
-      message: `Neuer Einmalcode an ${maskEmail(session.user.email)} gesendet.`,
+      demoOtp: newOtp,
+      message: `Neuer Einmalcode an ${maskEmail(session.user.email)} generiert.`,
     };
   },
 };

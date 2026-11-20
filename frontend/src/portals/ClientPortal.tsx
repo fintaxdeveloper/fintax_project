@@ -34,7 +34,12 @@ import {
 } from 'lucide-react';
 import { openAuthenticatedFileInNewTab, downloadAuthenticatedFile } from '../utils/authFile';
 
-const API_BASE = 'http://127.0.0.1:5000/api';
+const API_BASE =
+  typeof window !== 'undefined' &&
+  window.location.hostname !== 'localhost' &&
+  window.location.hostname !== '127.0.0.1'
+    ? '/api'
+    : 'http://127.0.0.1:5000/api';
 
 interface DocumentRecord {
   id: string;
@@ -959,7 +964,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
   return (
     <div style={{ minHeight: '100%', background: '#f8fafc', color: '#0f172a' }}>
       {/* ── MAIN WORKSPACE ── */}
-      <div style={{ maxWidth: 1380, margin: '0 auto', padding: '24px 28px 60px' }}>
+      <div className="fintax-client-workspace" style={{ maxWidth: 1380, margin: '0 auto', padding: '24px 28px 60px' }}>
 
         {/* ── TOP BREADCRUMB BAR (SHOWN WHEN IN FORMATION VIEW) ── */}
         {activeInternalTab === 'FORMATION' && (
@@ -1039,7 +1044,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
             />
 
             {/* ── 1. MODERN EXECUTIVE GREETING & ACTION BAR (LIGHT LUXURY) ── */}
-            <div style={{
+            <div className="fintax-greeting-card" style={{
               background: '#ffffff',
               borderRadius: 20,
               padding: '24px 30px',
@@ -1141,7 +1146,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
               </div>
 
               {/* Right Quick Actions */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div className="fintax-greeting-actions" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={() => openModal('CORRESPONDENCE')}
@@ -1200,7 +1205,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
             </div>
 
             {/* ── 2. FOUR ELEGANT BENTO KPI WIDGETS (HORIZONTAL ROW) ── */}
-            <div style={{
+            <div className="fintax-kpi-grid" style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
               gap: 16,
@@ -1428,6 +1433,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
 
             {/* ── 3. SMART DRAG & DROP QUICK-DROPZONE (DIRECT ON DASHBOARD) ── */}
             <div
+              className="fintax-dropzone"
               onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
               onDragLeave={() => setIsDragOver(false)}
               onDrop={handleQuickDrop}
@@ -1509,7 +1515,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
 
             {/* ── 4. FOUR STREAMLINED KANZLEI-MODULES (MODERN TILES) ── */}
             <div style={{ marginBottom: 28 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div className="fintax-section-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
                   {isDe ? 'Kanzlei-Services & Einreichungsbereiche' : 'Client Accounting Services & Portals'}
                 </h2>
@@ -1518,7 +1524,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 </span>
               </div>
 
-              <div style={{
+              <div className="fintax-services-grid" style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
                 gap: 14,
@@ -2252,7 +2258,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
             </div>
 
             {/* 3 Interactive KPI Filter Cards Row */}
-            <div style={{
+            <div className="fintax-grid-3" style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
               gap: 16,
@@ -2373,7 +2379,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 gap: 12,
               }}>
                 {/* Search input */}
-                <div style={{
+                <div className="fintax-doc-search-wrap" style={{
                   position: 'relative',
                   width: 340,
                   maxWidth: '100%',
@@ -2419,7 +2425,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 </div>
 
                 {/* Status Filter Buttons */}
-                <div style={{ display: 'flex', gap: 6, background: '#f1f5f9', padding: 3, borderRadius: 10 }}>
+                <div className="fintax-doc-filter-tabs" style={{ display: 'flex', gap: 6, background: '#f1f5f9', padding: 3, borderRadius: 10 }}>
                   {[
                     { key: 'ALL', label: isDe ? 'Alle Belege' : 'All', count: userDocs.length },
                     { key: 'ATTENTION', label: isDe ? 'In Prüfung' : 'Needs Attention', count: stats.needsReview, color: '#f59e0b' },
@@ -2505,6 +2511,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                     return (
                       <div
                         key={doc.id}
+                        className="fintax-doc-row"
                         style={{
                           background: '#ffffff',
                           borderRadius: 12,
@@ -2529,7 +2536,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                         }}
                       >
                         {/* 1. DOCUMENT INFO & CLEAN PARTNER */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: '1 1 320px' }}>
+                        <div className="fintax-doc-info" style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: '1 1 320px' }}>
                           <div
                             style={{
                               width: 42,
@@ -2600,7 +2607,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                         </div>
 
                         {/* 2. VAULT & SKR03 PILLS (NO WRAP) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <div className="fintax-doc-pills" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                           {/* Payment Channel Badge (Requirement 4) */}
                           {(() => {
                             const rawCh = doc.paymentChannel || (
@@ -2700,7 +2707,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                         </div>
 
                         {/* 3. AMOUNT & STATUS PILL */}
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 140, flexShrink: 0 }}>
+                        <div className="fintax-doc-amount" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 140, flexShrink: 0 }}>
                           <div
                             style={{
                               fontWeight: 800,
@@ -2744,7 +2751,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                         </div>
 
                         {/* 4. ACTIONS (EXCEL PREVIEW / REVIEW / VIEW) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <div className="fintax-doc-actions" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                           {(doc.category === '01_FiBu' || doc.extracted_data?.skr03_account_code) && (
                             <>
                               <button
@@ -4087,7 +4094,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e40af', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>🤖 Automatic AI Accounting Pipeline (OCR ➔ Ollama ➔ SKR03 CSV ➔ Year/Month Folder)</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, fontSize: '0.74rem', color: '#334155' }}>
+                <div className="fintax-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, fontSize: '0.74rem', color: '#334155' }}>
                   <div style={{ background: '#ffffff', padding: '6px 10px', borderRadius: 6, border: '1px solid #dbeafe' }}>
                     <strong>1.</strong> PDF / Image Upload
                   </div>
@@ -4112,7 +4119,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
 
             {/* Month & Year Selectors (For Payroll, Accounting, Correspondence) */}
             {currentConfig.hasMonthYear && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+              <div className="fintax-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginBottom: 6, letterSpacing: '0.04em' }}>
                     {isDe ? 'MONAT' : 'MONTH'}
@@ -4171,7 +4178,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                 {isDe ? 'ART DER UNTERLAGEN' : 'DOCUMENT TYPES'}
               </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="fintax-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {/* Column 1 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {currentConfig.col1.map((item) => {

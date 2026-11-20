@@ -485,6 +485,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ lang, onClose }) => {
 
   return (
     <div
+      className="fintax-login-backdrop"
       style={{
         position: 'fixed',
         inset: 0,
@@ -502,6 +503,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ lang, onClose }) => {
     >
       {/* ── MAIN 2-COLUMN MODAL CARD ── */}
       <div
+        className="fintax-login-card"
         style={{
           background: '#ffffff',
           borderRadius: 32,
@@ -555,6 +557,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ lang, onClose }) => {
 
         {/* ── LEFT COLUMN: LOGIN FORM ── */}
         <div
+          className="fintax-login-form-col"
           style={{
             flex: '1 1 380px',
             padding: '3rem 3rem 2.5rem',
@@ -797,17 +800,20 @@ export const LoginModal: React.FC<LoginModalProps> = ({ lang, onClose }) => {
                   textAlign: 'center',
                 }}
               >
-                <div style={{ fontSize: '1.5rem', marginBottom: 4 }}>📧</div>
+                <div style={{ fontSize: '1.5rem', marginBottom: 4 }}>🔑</div>
                 <div style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 700 }}>
-                  {lang === 'de' ? 'Einmalcode generiert' : 'Security Code Sent'}
+                  {lang === 'de' ? '2FA Sicherheitscode (Einmal-OTP)' : '2FA Security Code (One-Time OTP)'}
                 </div>
-                <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: '#15803d' }}>
-                  {demoOtp && (
-                    <span style={{ fontWeight: 700 }}>
-                      🔑 Demo OTP: <span style={{ letterSpacing: '0.2em' }}>{demoOtp}</span>
-                    </span>
+                <div style={{ margin: '8px 0 0', fontSize: '0.85rem', color: '#15803d' }}>
+                  {demoOtp ? (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#dcfce7', border: '1px solid #86efac', padding: '4px 12px', borderRadius: 8 }}>
+                      <span>{lang === 'de' ? 'Generierter Code:' : 'Generated Code:'}</span>
+                      <strong style={{ letterSpacing: '0.25em', fontSize: '1.15rem', color: '#14532d' }}>{demoOtp}</strong>
+                    </div>
+                  ) : (
+                    <span>{lang === 'de' ? 'Einmalcode generiert' : 'Security code generated'}</span>
                   )}
-                </p>
+                </div>
               </div>
 
               <div>
@@ -901,6 +907,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ lang, onClose }) => {
 
         {/* ── RIGHT COLUMN: POSTER CAROUSEL ── */}
         <div
+          className="fintax-login-poster-col"
           style={{
             flex: '1 1 420px',
             padding: '1.25rem',

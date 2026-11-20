@@ -3,14 +3,21 @@ import { useAuth } from '../context/AuthContext';
 import type { UserRole } from '../context/AuthContext';
 import type { Language } from '../translations';
 import fintaxLogo from '../assets/fintax_logo.jpeg';
+import { Menu } from 'lucide-react';
 
 interface NavbarProps {
   lang: Language;
   onLanguageChange: (l: Language) => void;
   onOpenLogin: () => void;
+  onToggleMobileMenu?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLogin }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  lang,
+  onLanguageChange,
+  onOpenLogin,
+  onToggleMobileMenu,
+}) => {
   const { user, activePortal, logout } = useAuth();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -26,16 +33,19 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
   };
 
   return (
-    <header style={{
-      background: '#ffffff',
-      borderBottom: '1px solid #e2e8f0',
-      position: 'sticky',
-      top: 0,
-      zIndex: 80,
-      padding: '0 1.5rem',
-      height: '64px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-    }}>
+    <header
+      className="fintax-navbar"
+      style={{
+        background: '#ffffff',
+        borderBottom: '1px solid #e2e8f0',
+        position: 'sticky',
+        top: 0,
+        zIndex: 80,
+        padding: '0 1.25rem',
+        height: '64px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+      }}
+    >
       <div style={{
         maxWidth: '100%',
         margin: '0 auto',
@@ -43,10 +53,22 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
         alignItems: 'center',
         justifyContent: 'space-between',
         height: '100%',
-        gap: '1rem',
+        gap: '0.75rem',
       }}>
-        {/* ── Left Area: Search / Brand / Breadcrumb ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        {/* ── Left Area: Hamburger / Brand / Breadcrumb ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
+          {user && onToggleMobileMenu && (
+            <button
+              type="button"
+              className="fintax-mobile-menu-btn"
+              onClick={onToggleMobileMenu}
+              title={lang === 'de' ? 'Menü öffnen' : 'Toggle menu'}
+              aria-label="Toggle navigation menu"
+            >
+              <Menu size={20} />
+            </button>
+          )}
+
           {!user && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <img
@@ -73,23 +95,31 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
           )}
 
           {user && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
               <img
                 src={fintaxLogo}
                 alt="FinTax Consulting"
+                className="fintax-navbar-logo"
                 style={{
                   height: '30px',
                   width: 'auto',
                   objectFit: 'contain',
                   display: 'block',
+                  flexShrink: 0,
                 }}
               />
-              <span style={{ color: '#cbd5e1' }}>/</span>
-              <span style={{
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                color: '#64748b',
-              }}>
+              <span className="fintax-navbar-divider" style={{ color: '#cbd5e1' }}>/</span>
+              <span
+                className="fintax-navbar-title"
+                style={{
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: '#64748b',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
                 {activePortal === 'ADMIN' ? 'Administrator Portal' : activePortal === 'STAFF' ? 'Kanzlei & Prüfer Portal' : 'Mandantenportal'}
               </span>
             </div>
@@ -97,20 +127,24 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
         </div>
 
         {/* ── Right Controls ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
           {/* Compliance & Server Badge */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '0.3rem 0.65rem',
-            background: '#ecfdf5',
-            border: '1px solid #a7f3d0',
-            borderRadius: '9999px',
-            fontSize: '0.6875rem',
-            color: '#065f46',
-            fontWeight: 700,
-          }}>
+          <div
+            className="fintax-server-badge"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.3rem 0.65rem',
+              background: '#ecfdf5',
+              border: '1px solid #a7f3d0',
+              borderRadius: '9999px',
+              fontSize: '0.6875rem',
+              color: '#065f46',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+            }}
+          >
             <span style={{
               width: '6px',
               height: '6px',
@@ -118,20 +152,23 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
               background: '#10b981',
               boxShadow: '0 0 6px rgba(16, 185, 129, 0.8)',
             }} />
-            <span>Server: Frankfurt (DSGVO)</span>
+            <span className="fintax-server-text">Server: Frankfurt (DSGVO)</span>
           </div>
 
           {/* ── Language Toggle (EN, DE, FA, AR) ── */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            background: '#f1f5f9',
-            padding: '3px',
-            borderRadius: '9999px',
-            border: '1px solid #e2e8f0',
-            gap: '2px',
-          }}>
-            <span style={{ fontSize: '0.8rem', marginLeft: '6px', marginRight: '2px' }}>🌐</span>
+          <div
+            className="fintax-lang-switcher"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: '#f1f5f9',
+              padding: '3px',
+              borderRadius: '9999px',
+              border: '1px solid #e2e8f0',
+              gap: '2px',
+            }}
+          >
+            <span className="fintax-lang-globe" style={{ fontSize: '0.8rem', marginLeft: '6px', marginRight: '2px' }}>🌐</span>
             {(['en', 'de', 'fa', 'ar'] as const).map((l) => {
               const isActive = lang === l;
               return (
@@ -201,7 +238,7 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
                 }}>
                   {user.name.charAt(0).toUpperCase()}
                 </div>
-                <div style={{ textAlign: 'left' }}>
+                <div className="fintax-user-profile-meta" style={{ textAlign: 'left' }}>
                   <div style={{
                     fontSize: '0.8125rem',
                     fontWeight: 700,
@@ -224,7 +261,7 @@ export const Navbar: React.FC<NavbarProps> = ({ lang, onLanguageChange, onOpenLo
                     {getRoleBadge(user.role).label}
                   </div>
                 </div>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ marginLeft: '0.25rem', opacity: 0.5, transition: 'transform 0.2s', transform: showProfileMenu ? 'rotate(180deg)' : 'rotate(0)' }}>
+                <svg className="fintax-user-profile-meta" width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ marginLeft: '0.25rem', opacity: 0.5, transition: 'transform 0.2s', transform: showProfileMenu ? 'rotate(180deg)' : 'rotate(0)' }}>
                   <path d="M3 4.5L6 7.5L9 4.5" stroke="#0f172a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>

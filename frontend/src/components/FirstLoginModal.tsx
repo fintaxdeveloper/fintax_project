@@ -2,7 +2,12 @@ import React, { useState } from 'react';
 import type { Language } from '../translations';
 import { useAuth } from '../context/AuthContext';
 
-const API_BASE = 'http://127.0.0.1:5000/api';
+const API_BASE =
+  typeof window !== 'undefined' &&
+  window.location.hostname !== 'localhost' &&
+  window.location.hostname !== '127.0.0.1'
+    ? '/api'
+    : 'http://127.0.0.1:5000/api';
 
 interface FirstLoginModalProps {
   lang: Language;

@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import type { Language } from '../translations';
 
-const API_BASE = 'http://127.0.0.1:5000/api';
+const API_BASE =
+  typeof window !== 'undefined' &&
+  window.location.hostname !== 'localhost' &&
+  window.location.hostname !== '127.0.0.1'
+    ? '/api'
+    : 'http://127.0.0.1:5000/api';
 
 export interface FolderNode {
   name: string;
@@ -507,6 +512,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
           <div>
             {/* Table Column Header like Google Drive */}
             <div
+              className="fintax-drive-header"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 140px 120px 130px',
@@ -532,6 +538,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                 return (
                   <div
                     key={item.path}
+                    className="fintax-drive-row"
                     onClick={() => {
                       if (isDir) openFolderInDriveView(item);
                     }}

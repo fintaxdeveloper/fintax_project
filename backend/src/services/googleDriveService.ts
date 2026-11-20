@@ -64,6 +64,22 @@ export class GoogleDriveService {
       }
     }
 
+    // Resilient server & local fallback: If no desktop drive is mounted, use configured or storage/google_drive directory
+    if (activeBases.length === 0) {
+      const defaultSyncBase = process.env.GOOGLE_DRIVE_PATH || path.resolve(process.cwd(), '../storage/google_drive');
+      try {
+        if (!fs.existsSync(defaultSyncBase)) {
+          fs.mkdirSync(defaultSyncBase, { recursive: true });
+        }
+        activeBases.push(defaultSyncBase);
+        if (!this.driveBasePath) {
+          this.driveBasePath = defaultSyncBase;
+        }
+      } catch (err) {
+        console.warn('[Google Drive] Notice initializing Google Drive sync base:', err);
+      }
+    }
+
     const clientRootsSet = new Set<string>();
 
     // Scan G:\.shortcut-targets-by-id for shared _INBOX or 01_Clients folders

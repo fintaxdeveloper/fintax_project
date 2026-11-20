@@ -29,7 +29,12 @@ import {
   Clock,
 } from 'lucide-react';
 
-const API_BASE = 'http://127.0.0.1:5000/api';
+const API_BASE =
+  typeof window !== 'undefined' &&
+  window.location.hostname !== 'localhost' &&
+  window.location.hostname !== '127.0.0.1'
+    ? '/api'
+    : 'http://127.0.0.1:5000/api';
 
 interface UserItem {
   id: string;
@@ -548,7 +553,7 @@ export const AdminPortal: React.FC<{
     const processingDocsCount = currentClientDocs.filter((d) => d.status === 'PROCESSING').length;
 
     return (
-      <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="fintax-portal-container" style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {/* Navigation Breadcrumb Bar */}
         <div style={{
           display: 'flex',
@@ -629,7 +634,7 @@ export const AdminPortal: React.FC<{
         </div>
 
         {/* Dedicated Client Hero Banner */}
-        <div style={{
+        <div className="fintax-hero-banner" style={{
           background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1d4ed8 100%)',
           color: '#ffffff',
           borderRadius: '1.25rem',
@@ -695,7 +700,7 @@ export const AdminPortal: React.FC<{
           </div>
 
           {/* 4 Summary Metric Tiles */}
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div className="fintax-hero-metrics" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
             <div style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(8px)', padding: '0.75rem 1.125rem', borderRadius: '0.75rem', border: '1px solid rgba(255, 255, 255, 0.15)', minWidth: '110px' }}>
               <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <FileText size={12} />
@@ -792,7 +797,7 @@ export const AdminPortal: React.FC<{
           {/* Filter Inputs Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'center' }}>
             {/* Search Input */}
-            <div style={{ position: 'relative', gridColumn: 'span 2' }}>
+            <div className="fintax-filter-search" style={{ position: 'relative', gridColumn: 'span 2' }}>
               <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="text"
@@ -1381,9 +1386,9 @@ export const AdminPortal: React.FC<{
   // VIEW MODE B: MAIN ADMIN PORTAL DASHBOARD (Users list, Tabs, Deletions, Folders, Audit)
   // =========================================================================
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="fintax-portal-container" style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Header Banner */}
-      <div style={{
+      <div className="fintax-hero-banner" style={{
         background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #0f172a 100%)',
         color: '#ffffff',
         padding: '2rem',
@@ -1435,7 +1440,7 @@ export const AdminPortal: React.FC<{
       </div>
 
       {/* Overview Metric Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+      <div className="fintax-admin-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
         <div style={{ background: '#ffffff', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid #e2e8f0' }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
             {isDe ? 'Datenbank-Status' : 'Database Status'}
@@ -1487,7 +1492,7 @@ export const AdminPortal: React.FC<{
       </div>
 
       {/* Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
+      <div className="fintax-tabs-bar" style={{ display: 'flex', gap: '0.5rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => setActiveTab('USERS')}
@@ -1632,7 +1637,7 @@ export const AdminPortal: React.FC<{
             </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
+          <div className="fintax-desktop-table" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', textAlign: 'left' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
@@ -1783,6 +1788,169 @@ export const AdminPortal: React.FC<{
               </tbody>
             </table>
           </div>
+
+          {/* Mobile & Tablet Native Card List for Users / Employees */}
+          <div className="fintax-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '0.75rem' }}>
+            {users.map((u) => {
+              const clientDocs = getClientDocs(u);
+              const docCount = clientDocs.length;
+              const resolvedNum = getClientNumber(u);
+              return (
+                <div
+                  key={`card_${u.id}`}
+                  onClick={() => {
+                    setSelectedClientForDocs(u);
+                    resetDocFilters();
+                  }}
+                  style={{
+                    background: '#ffffff',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: '14px',
+                    padding: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    boxShadow: '0 2px 6px rgba(15, 23, 42, 0.03)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {/* Top Row: Avatar, Name/Email, Status */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                      <div style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 12,
+                        background: u.role === 'ADMIN'
+                          ? 'linear-gradient(135deg, #be185d, #ec4899)'
+                          : u.role === 'STAFF'
+                          ? 'linear-gradient(135deg, #1d4ed8, #3b82f6)'
+                          : 'linear-gradient(135deg, #059669, #10b981)',
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.95rem',
+                        flexShrink: 0,
+                      }}>
+                        {(u.name || 'U').charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1d4ed8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {u.name}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {u.email}
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{
+                      padding: '3px 9px',
+                      borderRadius: '999px',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      flexShrink: 0,
+                      background: u.is_active ? '#dcfce7' : '#fee2e2',
+                      color: u.is_active ? '#15803d' : '#b91c1c',
+                    }}>
+                      {u.is_active ? (isDe ? 'Aktiv' : 'Active') : (isDe ? 'Gesperrt' : 'Disabled')}
+                    </span>
+                  </div>
+
+                  {/* Middle Row: Role, Client #, Docs */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+                    <span style={{
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      background: u.role === 'ADMIN' ? '#fdf2f8' : u.role === 'STAFF' ? '#eff6ff' : '#f0fdf4',
+                      color: u.role === 'ADMIN' ? '#be185d' : u.role === 'STAFF' ? '#1d4ed8' : '#15803d',
+                    }}>
+                      {u.role} {u.role !== 'CLIENT' && '🔒 2FA'}
+                    </span>
+                    {resolvedNum !== '—' && (
+                      <span style={{
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        background: '#f0f9ff',
+                        color: '#0284c7',
+                        border: '1px solid #bae6fd',
+                      }}>
+                        #{resolvedNum}
+                      </span>
+                    )}
+                    <span style={{
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      background: docCount > 0 ? '#eff6ff' : '#f8fafc',
+                      color: docCount > 0 ? '#1d4ed8' : '#64748b',
+                      border: docCount > 0 ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}>
+                      <FileText size={12} />
+                      {docCount} {isDe ? (docCount === 1 ? 'Beleg' : 'Belege') : (docCount === 1 ? 'Doc' : 'Docs')}
+                    </span>
+                  </div>
+
+                  {/* Bottom Row: Action Buttons */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedClientForDocs(u);
+                        resetDocFilters();
+                      }}
+                      style={{
+                        background: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '5px',
+                      }}
+                    >
+                      <Eye size={14} />
+                      {isDe ? 'Belege' : 'View Docs'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleUserStatus(u);
+                      }}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                        color: u.is_active ? '#b91c1c' : '#15803d',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {u.is_active ? (isDe ? 'Deaktivieren' : 'Deactivate') : (isDe ? 'Aktivieren' : 'Activate')}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1792,7 +1960,7 @@ export const AdminPortal: React.FC<{
           <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: '0 0 1rem 0' }}>
             🔗 {isDe ? 'Kanzlei-Zuweisungen (Mandant zu Sachbearbeiter)' : 'Firm Assignments (Client to Staff)'}
           </h2>
-          <form onSubmit={handleAssignClient} style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <form className="fintax-assign-form" onSubmit={handleAssignClient} style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
             <select
               value={selectedStaffId}
               onChange={(e) => setSelectedStaffId(e.target.value)}

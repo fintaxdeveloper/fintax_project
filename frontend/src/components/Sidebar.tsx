@@ -16,6 +16,7 @@ import {
   ChevronRight,
   LayoutDashboard,
   Building2,
+  X,
 } from 'lucide-react';
 
 export type ClientTabType = 'OVERVIEW' | 'FORMATION' | 'ACCOUNTING' | 'PAYROLL' | 'CORRESPONDENCE' | 'VAULT';
@@ -24,6 +25,9 @@ interface SidebarProps {
   lang: Language;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  // Mobile drawer support
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
   // Admin navigation state
   adminTab?: 'USERS' | 'ASSIGNMENTS' | 'DELETIONS' | 'FOLDERS' | 'AUDIT';
   onAdminTabChange?: (tab: 'USERS' | 'ASSIGNMENTS' | 'DELETIONS' | 'FOLDERS' | 'AUDIT') => void;
@@ -42,6 +46,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   lang,
   collapsed,
   onToggleCollapse,
+  mobileOpen = false,
+  onCloseMobile,
   adminTab = 'USERS',
   onAdminTabChange,
   staffTab = 'INVOICES',
@@ -61,8 +67,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
     CLIENT: { label: lang === 'de' ? 'Mandant' : 'Client', bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' },
   }[user.role];
 
+  const handlePortalSwitch = (portal: 'CLIENT' | 'STAFF' | 'ADMIN') => {
+    switchPortal(portal);
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  const handleAdminTab = (tab: 'USERS' | 'ASSIGNMENTS' | 'DELETIONS' | 'FOLDERS' | 'AUDIT') => {
+    if (onAdminTabChange) onAdminTabChange(tab);
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  const handleStaffTab = (tab: 'INVOICES' | 'BANK' | 'CORR' | 'PAYROLL' | 'VAULT') => {
+    if (onStaffTabChange) onStaffTabChange(tab);
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  const handleClientTab = (tab: ClientTabType) => {
+    if (onClientTabChange) onClientTabChange(tab);
+    if (onCloseMobile) onCloseMobile();
+  };
+
   return (
     <aside
+      className={`fintax-sidebar ${mobileOpen ? 'mobile-open' : ''}`}
       style={{
         width: collapsed ? '80px' : '260px',
         backgroundColor: '#ffffff',
@@ -148,27 +175,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '6px',
-              padding: '6px',
-              color: '#64748b',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s',
-            }}
-            title={lang === 'de' ? 'Seitenleiste einklappen' : 'Collapse sidebar'}
-          >
-            <ChevronLeft size={16} />
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          {/* Mobile close button (only visible on mobile drawer) */}
+          {onCloseMobile && (
+            <button
+              type="button"
+              className="fintax-mobile-close-btn"
+              onClick={onCloseMobile}
+              title={lang === 'de' ? 'Menü schließen' : 'Close menu'}
+            >
+              <X size={18} />
+            </button>
+          )}
+
+          {!collapsed && (
+            <button
+              type="button"
+              className="fintax-desktop-collapse-btn"
+              onClick={onToggleCollapse}
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                padding: '6px',
+                color: '#64748b',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              title={lang === 'de' ? 'Seitenleiste einklappen' : 'Collapse sidebar'}
+            >
+              <ChevronLeft size={16} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Role & Portal Switcher ── */}
@@ -185,7 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <button
               type="button"
-              onClick={() => switchPortal('CLIENT')}
+              onClick={() => handlePortalSwitch('CLIENT')}
               style={{
                 flex: 1,
                 padding: '5px 8px',
@@ -204,7 +246,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => switchPortal('STAFF')}
+              onClick={() => handlePortalSwitch('STAFF')}
               style={{
                 flex: 1,
                 padding: '5px 8px',
@@ -224,7 +266,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {user.role === 'ADMIN' && (
               <button
                 type="button"
-                onClick={() => switchPortal('ADMIN')}
+                onClick={() => handlePortalSwitch('ADMIN')}
                 style={{
                   flex: 1,
                   padding: '5px 8px',
@@ -275,21 +317,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
               label={lang === 'de' ? 'Benutzerverwaltung' : 'User Management'}
               active={adminTab === 'USERS'}
               collapsed={collapsed}
-              onClick={() => onAdminTabChange && onAdminTabChange('USERS')}
+              onClick={() => handleAdminTab('USERS')}
             />
             <NavItem
               icon={<UserCog size={18} />}
               label={lang === 'de' ? 'Zuweisungen' : 'Assignments'}
               active={adminTab === 'ASSIGNMENTS'}
               collapsed={collapsed}
-              onClick={() => onAdminTabChange && onAdminTabChange('ASSIGNMENTS')}
+              onClick={() => handleAdminTab('ASSIGNMENTS')}
             />
             <NavItem
               icon={<FolderTree size={18} />}
               label={lang === 'de' ? 'Ordner-Struktur' : 'Folder Templates'}
               active={adminTab === 'FOLDERS'}
               collapsed={collapsed}
-              onClick={() => onAdminTabChange && onAdminTabChange('FOLDERS')}
+              onClick={() => handleAdminTab('FOLDERS')}
             />
             <NavItem
               icon={<ShieldAlert size={18} />}
@@ -298,14 +340,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               badge={pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined}
               badgeColor="#ef4444"
               collapsed={collapsed}
-              onClick={() => onAdminTabChange && onAdminTabChange('DELETIONS')}
+              onClick={() => handleAdminTab('DELETIONS')}
             />
             <NavItem
               icon={<FileCheck2 size={18} />}
               label={lang === 'de' ? 'DSGVO Audit-Log' : 'Audit Trail'}
               active={adminTab === 'AUDIT'}
               collapsed={collapsed}
-              onClick={() => onAdminTabChange && onAdminTabChange('AUDIT')}
+              onClick={() => handleAdminTab('AUDIT')}
             />
           </>
         )}
@@ -320,35 +362,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
               badge={pendingReviewCount > 0 ? pendingReviewCount : undefined}
               badgeColor="#f59e0b"
               collapsed={collapsed}
-              onClick={() => onStaffTabChange && onStaffTabChange('INVOICES')}
+              onClick={() => handleStaffTab('INVOICES')}
             />
             <NavItem
               icon={<Landmark size={18} />}
               label={lang === 'de' ? 'Kontoauszüge' : 'Bank Statements'}
               active={staffTab === 'BANK'}
               collapsed={collapsed}
-              onClick={() => onStaffTabChange && onStaffTabChange('BANK')}
+              onClick={() => handleStaffTab('BANK')}
             />
             <NavItem
               icon={<Mail size={18} />}
               label={lang === 'de' ? 'Finanzamt-Briefe' : 'Tax Correspondence'}
               active={staffTab === 'CORR'}
               collapsed={collapsed}
-              onClick={() => onStaffTabChange && onStaffTabChange('CORR')}
+              onClick={() => handleStaffTab('CORR')}
             />
             <NavItem
               icon={<Users size={18} />}
               label={lang === 'de' ? 'Lohnbuchhaltung' : 'Payroll (LoBu)'}
               active={staffTab === 'PAYROLL'}
               collapsed={collapsed}
-              onClick={() => onStaffTabChange && onStaffTabChange('PAYROLL')}
+              onClick={() => handleStaffTab('PAYROLL')}
             />
             <NavItem
               icon={<FolderTree size={18} />}
               label={lang === 'de' ? 'Mandanten-Vault' : 'Client Vault'}
               active={staffTab === 'VAULT'}
               collapsed={collapsed}
-              onClick={() => onStaffTabChange && onStaffTabChange('VAULT')}
+              onClick={() => handleStaffTab('VAULT')}
             />
           </>
         )}
@@ -361,28 +403,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
               label={lang === 'de' ? 'Übersicht & Dashboard' : 'Overview & Dashboard'}
               active={clientTab === 'OVERVIEW' || clientTab === 'DOCS' || !clientTab}
               collapsed={collapsed}
-              onClick={() => onClientTabChange && onClientTabChange('OVERVIEW')}
+              onClick={() => handleClientTab('OVERVIEW')}
             />
             <NavItem
               icon={<Building2 size={18} />}
               label={lang === 'de' ? 'Gründungsunterlagen' : 'Formation Documents'}
               active={clientTab === 'FORMATION'}
               collapsed={collapsed}
-              onClick={() => onClientTabChange && onClientTabChange('FORMATION')}
+              onClick={() => handleClientTab('FORMATION')}
             />
             <NavItem
               icon={<Receipt size={18} />}
               label={lang === 'de' ? 'Finanzbuchhaltung' : 'Financial Accounting'}
               active={clientTab === 'ACCOUNTING'}
               collapsed={collapsed}
-              onClick={() => onClientTabChange && onClientTabChange('ACCOUNTING')}
+              onClick={() => handleClientTab('ACCOUNTING')}
             />
             <NavItem
               icon={<Users size={18} />}
               label={lang === 'de' ? 'Lohn & Personal' : 'Payroll Documents'}
               active={clientTab === 'PAYROLL'}
               collapsed={collapsed}
-              onClick={() => onClientTabChange && onClientTabChange('PAYROLL')}
+              onClick={() => handleClientTab('PAYROLL')}
             />
             <NavItem
               icon={<Mail size={18} />}
@@ -391,14 +433,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               collapsed={collapsed}
               badge={lang === 'de' ? 'Neu' : 'New'}
               badgeColor="#d4a359"
-              onClick={() => onClientTabChange && onClientTabChange('CORRESPONDENCE')}
+              onClick={() => handleClientTab('CORRESPONDENCE')}
             />
             <NavItem
               icon={<FolderTree size={18} />}
               label={lang === 'de' ? 'Mandanten-Archiv (00-03)' : 'My Vault Folders'}
               active={clientTab === 'VAULT'}
               collapsed={collapsed}
-              onClick={() => onClientTabChange && onClientTabChange('VAULT')}
+              onClick={() => handleClientTab('VAULT')}
             />
           </>
         )}
