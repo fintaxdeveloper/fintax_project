@@ -1,96 +1,116 @@
 import fs from 'fs';
-import path from 'path';
-import { exportService } from '../src/services/exportService.js';
-import { dbService } from '../src/services/dbService.js';
-import { belegIndexService } from '../src/services/belegIndexService.js';
+import { GoldenFile, compareLines, computeMonth, goldenPath, listGoldenNames } from './goldenLib.js';
 
 /**
- * Test harness: Validates accounting integrity and export readiness across test months 06-09/2024.
+ * npm run test:months
+ * Re-processes EVERY month that has a golden file (testdata/golden/<year>_<month>.json) with the current
+ * code and rules and compares Umsatz, S/H, Konto, Gegenkonto, BU and Datum line by line.
+ * Any difference, missing or extra line = FAIL.
  */
-async function main() {
+function main() {
   console.log('====================================================');
-  console.log(' FinTax Accounting Engine Multi-Month Verification');
-  console.log('====================================================\n');
+  console.log(' FinTax golden month check (npm run test:months)');
+  console.log('====================================================');
 
-  const targetClientId = 'user_1794302469947_o180';
-  const allDocs = dbService.getAll();
-  const clientDocs = allDocs.filter((d) => d.client_id === targetClientId);
-  console.log(`Loaded ${allDocs.length} total doc(s), ${clientDocs.length} for ${targetClientId}.`);
+  const names = listGoldenNames();
+  if (names.length === 0) {
+    console.log('No golden files found in testdata/golden/. Nothing to check.');
+    process.exitCode = 1;
+    return;
+  }
 
-  console.log('Ensuring offline CPU OCR BelegIndex is warm for client...');
-  await belegIndexService.ensureClientIndexed(targetClientId, clientDocs);
-  const idxRecords = belegIndexService.getClientIndex(targetClientId, 2024, 9, 12);
-  console.log(`BelegIndex ready: ${idxRecords.length} grouped receipt/contract/invoice records.`);
+  const quiet = console.log;
+  let allPass = true;
+  const summary: string[] = [];
+  const accuracyReports: NonNullable<ReturnType<typeof computeMonth>['accuracy']>[] = [];
+  const evaluatedPeriods = new Set<string>();
 
-  const monthsToTest = [6, 7, 8, 9];
-  const year = 2024;
-  let allCriticalPassed = true;
-
-  for (const m of monthsToTest) {
-    const mPadded = String(m).padStart(2, '0');
-    console.log(`\n--- Testing Month ${mPadded}/${year} ---`);
-
-    const primaryDoc =
-      clientDocs.find((d) => {
-        const fn = (d.original_filename || '').toLowerCase();
-        return fn.includes(`bank-${mPadded}`) || fn.includes(`_${mPadded}`) || fn.includes(`-${mPadded}`) || fn.includes(`${mPadded}2026`) || fn.includes(`${mPadded}2024`);
-      }) || clientDocs[0];
-
-    if (!primaryDoc) {
-      console.log(`No documents found for Month ${mPadded}. Skipping.`);
-      continue;
+  for (const name of names) {
+    const golden: GoldenFile = JSON.parse(fs.readFileSync(goldenPath(name), 'utf-8'));
+    let problems: string[] = [];
+    let info = '';
+    try {
+      // The engine prints decision traces while it works – keep them out of the result table
+      console.log = () => {};
+      const res = computeMonth(golden.client_id, golden.year, golden.month);
+      console.log = quiet;
+      if (res.accuracy) {
+        accuracyReports.push(res.accuracy);
+        evaluatedPeriods.add(`${golden.client_id}|${golden.year}_${String(golden.month).padStart(2, '0')}`);
+      }
+      problems = compareLines(golden.bookings, res.lines);
+      for (const fc of res.failedChecks) problems.push(`CONTROL CHECK FAILED  ${fc.id}: ${fc.value} (expected ${fc.expected})`);
+      info = `${res.lines.length} lines, open critical ${res.openCritical}, warnings ${res.openWarnings}, gate ${res.blocked ? 'BLOCKED' : 'OPEN'}`;
+    } catch (err: any) {
+      console.log = quiet;
+      problems.push(`ERROR  ${err.message}`);
     }
 
+    const pass = problems.length === 0;
+    if (!pass) allPass = false;
+    console.log(`\n--- ${name} (${golden.client_id}) : ${pass ? 'PASS ✅' : 'FAIL ❌'} ${info ? '— ' + info : ''}`);
+    for (const p of problems) console.log('   ' + p);
+    summary.push(`${name}: ${pass ? 'PASS' : 'FAIL'}`);
+  }
+
+  // Also refresh & include accuracy reports for active QA24 & Pizza Amore months
+  for (const [cid, yr, mo] of [
+    ['user_qa24_704', 2024, 2],
+    ['user_qa24_704', 2024, 3],
+    ['user_qa24_704', 2024, 4],
+    ['user_pizza_amore', 2026, 6],
+  ] as const) {
+    const pKey = `${cid}|${yr}_${String(mo).padStart(2, '0')}`;
+    if (evaluatedPeriods.has(pKey)) continue;
     try {
-      const batchResult = exportService.generateDocumentAndMonthlySKR03Csv(primaryDoc, clientDocs, year, m, {
-        writeFiles: false,
-      });
-      const report = batchResult.reviewReport;
-
-      const bankCheck = report.checks.find((c) => c.id === 'BANK_BALANCE');
-      const transitCheck = report.checks.find((c) => c.id === 'TRANSIT_1360');
-      const kasseCheck = report.checks.find((c) => c.id === 'KASSE_PLAUSIBLE');
-
-      console.log(`Bookings: ${report.total_bookings} total (${report.auto_booked} auto-verified)`);
-      console.log(`Open Critical: ${report.open_critical} | Warnings: ${report.open_warnings}`);
-      console.log(`CHECK BANK_BALANCE:    ${bankCheck?.status || 'MISSING'} (${bankCheck?.value || ''} vs ${bankCheck?.expected || ''})`);
-      console.log(`CHECK TRANSIT_1360:    ${transitCheck?.status || 'MISSING'} (${transitCheck?.value || ''})`);
-      console.log(`CHECK KASSE_PLAUSIBLE: ${kasseCheck?.status || 'MISSING'} (${kasseCheck?.value || ''})`);
-
-      if (bankCheck?.status !== 'PASS' || transitCheck?.status !== 'PASS' || kasseCheck?.status !== 'PASS') {
-        allCriticalPassed = false;
+      console.log = () => {};
+      const r = computeMonth(cid, yr, mo);
+      console.log = quiet;
+      if (r.accuracy) {
+        accuracyReports.push(r.accuracy);
+        evaluatedPeriods.add(pKey);
       }
-
-      const openIssues = report.issues.filter((i) => !i.resolved);
-      console.log(`Open Issues (${openIssues.length}):`);
-      for (const iss of openIssues) {
-        const grp = iss.relatedBookings ? ` [GROUPED ${iss.relatedBookings.length}x]` : '';
-        const matchInfo = iss.matchedBeleg ? ` [Beleg: ${iss.matchedBeleg.partner} | ${iss.matchedBeleg.taxClause || ''}]` : '';
-        console.log(
-          `  - [${iss.categoryTab || 'DECISION'}] ${iss.type}${grp}: ${iss.booking.amount.toFixed(2)} € (${iss.booking.sh} ${iss.booking.konto}->${iss.booking.gegenkonto}) | ${iss.booking.text}${matchInfo}`
-        );
-      }
-
-      // Spot-check auto-resolved bookings reported by CSV/bookings
-      const checkBookings = report.bookings.filter((b: any) =>
-        /(monteiro|talamona|fortia|drive4ever|van hove|goebel|eha|roth|buffalo|birlik|siegel|digitaldrive|epper|marzal)/i.test(
-          `${b.buchungstext || ''} ${b.belegfeld1 || ''}`
-        )
-      );
-      if (checkBookings.length > 0) {
-        console.log(`Spot-check key bookings:`);
-        for (const cb of checkBookings) {
-          console.log(`  * ${cb.belegdatum} ${cb.sh} ${cb.konto}->${cb.gegenkonto} (BU:${cb.buCode || '-'}) ${Number(cb.amount).toFixed(2)} € | ${cb.buchungstext}`);
-        }
-      }
-    } catch (err: any) {
-      allCriticalPassed = false;
-      console.error(`Error analyzing month ${mPadded}:`, err.stack || err.message);
+    } catch {
+      console.log = quiet;
     }
   }
 
-  console.log(`\nVerification complete. Core controls: ${allCriticalPassed ? 'ALL PASS ✅' : 'FAILED ❌'}`);
-  if (!allCriticalPassed) process.exitCode = 1;
+  if (accuracyReports.length > 0) {
+    console.log('\n===================================================================================================================================');
+    console.log(' FinTax Monthly Accuracy Report (storage/accuracy/<client>_<YYYY_MM>.json & .first_run.json)');
+    console.log(' Goal: user-changed = 0  AND  current accuracy ≥ 97.0%');
+    console.log('-----------------------------------------------------------------------------------------------------------------------------------');
+    console.log(
+      ' Client           | Month    | Total | First-Run Accuracy | Current Accuracy | Resolved by Q | Questions (Beleg/Ent/Unl) | User-Changed | Goal'
+    );
+    console.log('---------------------------------------------------------------------------------------------------------------------------------------------------');
+    for (const acc of accuracyReports) {
+      const firstStr = `${acc.first_run_correct}/${acc.total_bookings} (${acc.first_run_accuracy_pct.toFixed(1)}%)`.padEnd(18);
+      const currStr = `${acc.auto_correct}/${acc.total_bookings} (${acc.current_accuracy_pct.toFixed(1)}%)`.padEnd(16);
+      const resStr = String(acc.resolved_by_question).padStart(13);
+      const qbt = acc.questions_by_type;
+      const qStr = `${String(acc.questions_asked).padStart(2)} (${qbt.beleg_fehlt} / ${qbt.entscheidung} / ${qbt.unreadable})`.padEnd(25);
+      const ucStr = String(acc.user_changed).padStart(12);
+      const goalStr = acc.goal_met ? 'PASS ✅' : 'FAIL ❌';
+      console.log(
+        ` ${(acc.client_id || '').padEnd(16)} | ${acc.period.padEnd(8)} | ${String(acc.total_bookings).padStart(5)} | ${firstStr} | ${currStr} | ${resStr} | ${qStr} | ${ucStr} | ${goalStr}`
+      );
+      if (acc.error_list.length > 0) {
+        for (const err of acc.error_list) {
+          console.log(
+            `    ↳ [${err.category}] ${err.date} ${err.amount.toFixed(2)} € "${err.text.slice(0, 35)}" (${err.proposedAccount} -> ${err.finalAccount}): ${err.cause}`
+          );
+        }
+      }
+    }
+    console.log('===================================================================================================================================');
+  }
+
+  console.log('\n====================================================');
+  console.log(' ' + summary.join('   |   '));
+  console.log(` RESULT: ${allPass ? 'ALL MONTHS PASS ✅' : 'FAILED ❌'}`);
+  console.log('====================================================');
+  if (!allPass) process.exitCode = 1;
 }
 
-main().catch(console.error);
+main();

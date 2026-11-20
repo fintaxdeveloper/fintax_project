@@ -1,9 +1,28 @@
 import 'package:flutter/material.dart';
 import '../../../../core/l10n/translations.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/screen_title_header.dart';
+import '../../../../models/document_item.dart';
+import '../../../../services/api_service.dart';
 import '../../../authentication/models/user_model.dart';
+import '../../../documents/presentation/widgets/document_list_tile.dart';
 import '../../../scanner/presentation/screens/camera_scan_screen.dart';
 import '../../../scanner/presentation/screens/whatsapp_import_screen.dart';
+import '../widgets/folder_summary_card.dart';
+import '../widgets/folder_tab_bar.dart';
+
+/// Static description of one folder tab.
+class _Folder {
+  final String categoryKey;
+  final String titleKey;
+  final String subtitleKey;
+  final IconData icon;
+  final Color color;
+  final Color lightColor;
+
+  const _Folder(this.categoryKey, this.titleKey, this.subtitleKey, this.icon, this.color, this.lightColor);
+}
 
 class DocumentsScreen extends StatefulWidget {
   final UserModel user;
@@ -14,30 +33,56 @@ class DocumentsScreen extends StatefulWidget {
 }
 
 class _DocumentsScreenState extends State<DocumentsScreen> {
-  int _selectedCategoryIndex = 0;
+  static const _folders = [
+    _Folder('01_FiBu', 'financialAccounting', 'financialAccountingSub', Icons.bar_chart_rounded,
+        AppColors.emeraldIcon, AppColors.emeraldBox),
+    _Folder('02_LoBu', 'payrollTeam', 'payrollTeamSub', Icons.people_outline_rounded,
+        AppColors.purpleIcon, AppColors.purpleBox),
+    _Folder('00_Schriftverkehr', 'correspondence', 'correspondenceSub', Icons.mail_outline_rounded,
+        AppColors.orangeIcon, AppColors.orangeBox),
+    _Folder('00_Gruendung', 'masterRecords', 'masterRecordsSub', Icons.domain_rounded,
+        AppColors.indigoIcon, AppColors.indigoBox),
+  ];
 
-  void _openCameraScan() {
-    Navigator.push(
+  int _selectedIndex = 0;
+  List<DocumentItem> _allDocuments = [];
+  bool _loading = true;
+
+  _Folder get _folder => _folders[_selectedIndex];
+
+  List<DocumentItem> _docsFor(_Folder f) =>
+      _allDocuments.where((d) => d.category == f.categoryKey).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDocuments();
+  }
+
+  Future<void> _loadDocuments() async {
+    setState(() => _loading = true);
+    final docs = await ApiService.fetchClientDocuments();
+    if (!mounted) return;
+    setState(() {
+      _allDocuments = docs;
+      _loading = false;
+    });
+  }
+
+  Future<void> _openCameraScan() async {
+    final res = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CameraScanScreen(
-          user: widget.user,
-          initialCategory: _selectedCategoryIndex == 0
-              ? '01_FiBu'
-              : _selectedCategoryIndex == 1
-                  ? '02_LoBu'
-                  : '00_Schriftverkehr',
-        ),
+        builder: (_) => CameraScanScreen(user: widget.user, initialCategory: _folder.categoryKey),
       ),
     );
+    if (res == true) _loadDocuments();
   }
 
   void _openWhatsAppImport() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => WhatsAppImportScreen(user: widget.user),
-      ),
+      MaterialPageRoute(builder: (_) => WhatsAppImportScreen(user: widget.user)),
     );
   }
 
@@ -46,263 +91,99 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     return ValueListenableBuilder<String>(
       valueListenable: Tr.languageNotifier,
       builder: (context, currentLang, child) {
-        final categories = [
-          Tr.get('accounting'),
-          Tr.get('payroll'),
-          Tr.get('letters'),
-        ];
+        final docs = _docsFor(_folder);
 
         return Scaffold(
           backgroundColor: AppColors.background,
           body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            child: RefreshIndicator(
+              color: AppColors.primary,
+              onRefresh: _loadDocuments,
+              child: ListView(
+                padding: const EdgeInsets.only(top: 20, bottom: 120),
                 children: [
-                  // Title Header
-                  Text(
-                    Tr.get('addDocument'),
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: ScreenTitleHeader(
+                      title: Tr.get('documents'),
+                      subtitle: Tr.get('pickFolderSub'),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    Tr.get('pickFolderSub'),
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
 
-                  // Segmented Folder Selector
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE2ECEB),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      children: List.generate(categories.length, (index) {
-                        final isSelected = _selectedCategoryIndex == index;
-                        return Expanded(
-                          child: GestureDetector(
-                            onTap: () => setState(() => _selectedCategoryIndex = index),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                color: isSelected ? AppColors.surface : Colors.transparent,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: isSelected
-                                    ? [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.05),
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ]
-                                    : null,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  categories[index],
-                                  style: TextStyle(
-                                    color: isSelected ? AppColors.primary : AppColors.textSecondary,
-                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Camera Frame View Card
-                  Container(
-                    height: 260,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Positioned(
-                          left: 36,
-                          top: 36,
-                          child: _cornerMarker(top: true, left: true),
+                  // The 4 folder tabs
+                  FolderTabBar(
+                    selectedIndex: _selectedIndex,
+                    onChanged: (i) => setState(() => _selectedIndex = i),
+                    tabs: [
+                      for (final f in _folders)
+                        FolderTab(
+                          label: Tr.get(f.titleKey),
+                          icon: f.icon,
+                          color: f.color,
+                          lightColor: f.lightColor,
                         ),
-                        Positioned(
-                          right: 36,
-                          top: 36,
-                          child: _cornerMarker(top: true, left: false),
-                        ),
-                        Positioned(
-                          left: 36,
-                          bottom: 36,
-                          child: _cornerMarker(top: false, left: true),
-                        ),
-                        Positioned(
-                          right: 36,
-                          bottom: 36,
-                          child: _cornerMarker(top: false, left: false),
-                        ),
-
-                        // Inner Preview Box
-                        Container(
-                          width: 170,
-                          height: 110,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                        ),
-
-                        // Gold Pill "Invoice detected" Badge
-                        Positioned(
-                          bottom: 24,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: AppColors.accentGold,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              Tr.get('invoiceDetected'),
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Main Action Button: Scan with camera
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton.icon(
-                      onPressed: _openCameraScan,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(27),
-                        ),
-                        elevation: 0,
-                      ),
-                      icon: const Icon(Icons.crop_free_rounded, size: 22),
-                      label: Text(
-                        Tr.get('scanWithCamera'),
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Secondary Buttons Row: Choose file & From WhatsApp
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 52,
-                          child: OutlinedButton(
-                            onPressed: _openCameraScan,
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: AppColors.surface,
-                              side: const BorderSide(color: AppColors.border),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                            ),
-                            child: Text(
-                              Tr.get('chooseFile'),
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SizedBox(
-                          height: 52,
-                          child: OutlinedButton(
-                            onPressed: _openWhatsAppImport,
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: AppColors.surface,
-                              side: const BorderSide(color: AppColors.border),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                            ),
-                            child: Text(
-                              Tr.get('fromWhatsApp'),
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
 
-                  // Subtext
-                  Center(
-                    child: Text(
-                      Tr.get('uploadHintText'),
-                      style: const TextStyle(
-                        color: AppColors.textTertiary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                  // Content of the selected tab
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      child: Column(
+                        key: ValueKey(_selectedIndex),
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FolderSummaryCard(
+                            icon: _folder.icon,
+                            color: _folder.color,
+                            lightColor: _folder.lightColor,
+                            title: Tr.get(_folder.titleKey),
+                            subtitle: Tr.get(_folder.subtitleKey),
+                            countLabel: _loading ? '…' : '${docs.length} ${Tr.get('docsCountSuffix')}',
+                            scanLabel: Tr.get('quickScan'),
+                            fileLabel: Tr.get('quickFile'),
+                            whatsAppLabel: Tr.get('quickWhatsApp'),
+                            onScan: _openCameraScan,
+                            onFile: _openCameraScan,
+                            onWhatsApp: _openWhatsAppImport,
+                          ),
+                          const SizedBox(height: 22),
+                          Text(
+                            Tr.get('folderDocuments'),
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (_loading)
+                            Padding(
+                              padding: const EdgeInsets.all(40),
+                              child: Center(child: CircularProgressIndicator(color: _folder.color)),
+                            )
+                          else if (docs.isEmpty)
+                            EmptyState(
+                              icon: Icons.folder_open_rounded,
+                              title: Tr.get('noDocsInFolder'),
+                              subtitle: Tr.get('noDocsInFolderSub'),
+                            )
+                          else
+                            for (final doc in docs)
+                              DocumentListTile(document: doc, themeColor: _folder.color),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 100),
                 ],
               ),
             ),
           ),
         );
       },
-    );
-  }
-
-  Widget _cornerMarker({required bool top, required bool left}) {
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        border: Border(
-          top: top ? const BorderSide(color: Colors.white, width: 3.5) : BorderSide.none,
-          bottom: !top ? const BorderSide(color: Colors.white, width: 3.5) : BorderSide.none,
-          left: left ? const BorderSide(color: Colors.white, width: 3.5) : BorderSide.none,
-          right: !left ? const BorderSide(color: Colors.white, width: 3.5) : BorderSide.none,
-        ),
-      ),
     );
   }
 }

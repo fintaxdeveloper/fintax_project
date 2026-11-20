@@ -74,12 +74,19 @@ export const SKR03_RULES: Skr03Rule[] = [
   {
     keywords: [
       'lebensmittel', 'buch', 'bücher', 'nahrung', 'supermarkt',
-      'rewe', 'edeka', 'aldi', 'lidl', 'netto', 'penny', 'norma',
+      'rewe', 'edeka', 'aldi', 'lidl', 'netto marken', 'netto-marken', 'netto markt', 'penny', 'norma',
       'groceries', 'food', 'books', 'zeitungen',
     ],
     accountCode: '3300',
     accountName: 'Wareneingang 7 % Vorsteuer',
     defaultVatPercent: 7,
+  },
+  // 3800 – Bezugsnebenkosten
+  {
+    keywords: ['bezugsnebenkosten', 'fahrzeugtransport', 'autotransport', 'spedition'],
+    accountCode: '3800',
+    accountName: 'Bezugsnebenkosten',
+    defaultVatPercent: 19,
   },
   // 3400 – Wareneingang 19% Vorsteuer (standard-rate goods)
   {
@@ -265,13 +272,35 @@ export const SKR03_RULES: Skr03Rule[] = [
   },
 
   // ─────────────────────────────────────────────────
-  //  4670 – Reisekosten (Travel expenses)
+  //  4390 – Sonstige Abgaben / Behörden- und Zulassungsgebühren
   // ─────────────────────────────────────────────────
   {
     keywords: [
-      'bahn', 'deutsche bahn', 'db ticket', 'lufthansa', 'flug',
-      'hotel', 'uber', 'taxi', 'parken', 'ticket', 'reise',
-      'reisekosten', 'zugticket', 'boarding', 'airbnb', 'booking.com',
+      'gebühr', 'gebühren', 'verwaltungsgebühr', 'kfz-zulassung', 'zulassungsstelle', 'neuzulassung', 'i-kfz',
+      'gewerbeamt', 'gewerbeanmeldung', 'landeshauptstadt', 'kreisausschuss', 'kreisverwaltung',
+      'landratsamt', 'stadtkasse', 'magistrat',
+    ],
+    accountCode: '4390',
+    accountName: 'Sonstige Abgaben / Gebühren',
+    defaultVatPercent: 0,
+  },
+
+  // ─────────────────────────────────────────────────
+  //  4670 / 4673 – Reisekosten (Travel expenses)
+  // ─────────────────────────────────────────────────
+  {
+    keywords: [
+      'bahn', 'deutsche bahn', 'db fernverkehr', 'db vertrieb', 'db ticket', 'bahncard',
+      'bahnbonus', 'einfache fahrt', 'taxi', 'funktaxen', 'taxen', 'flixbus', 'flixtrain', 'zugticket',
+    ],
+    accountCode: '4673',
+    accountName: 'Reisekosten / Fahrtkosten (7%)',
+    defaultVatPercent: 7,
+  },
+  {
+    keywords: [
+      'lufthansa', 'flug', 'hotel', 'uber', 'parken', 'ticket', 'reise',
+      'reisekosten', 'boarding', 'airbnb', 'booking.com',
       'mietwagen', 'rental car', 'travel', 'flight', 'train',
       'accommodation', 'übernachtung', 'verpflegung',
     ],
@@ -583,7 +612,8 @@ export const skr03Mapper = {
       };
     }
 
-    const combined = `${supplierName} ${description}`.toLowerCase();
+    // Strip "ökostrom" so DB train tickets ("100 % ÖKOSTROM IM DB FERNVERKEHR") never hit 4240 energy
+    const combined = `${supplierName} ${description}`.toLowerCase().replace(/[öo]kostrom/gi, ' ');
 
     // Short keywords (e.g. "obi", "pr", "o2", "du", "gas") must match as whole words, otherwise
     // "Mobile" would hit "obi" (Baumarkt) or "price" would hit "pr" (Werbung).

@@ -7,9 +7,26 @@ import { googleDriveService } from './googleDriveService.js';
 import { clientFolderService } from './clientFolderService.js';
 import { monthlyDocumentRegistry } from './monthlyDocumentRegistry.js';
 import { generatePersonenkontenCsvContent, generateSachkontenCsvContent } from './datevExtfTemplates.js';
-import { reviewService, ReviewReport } from './reviewService.js';
+import {
+  reviewService,
+  ReviewReport,
+  MaterializedDecision,
+  LineResolutionTarget,
+  parseDatevExtfCsv,
+} from './reviewService.js';
 import { clientRulesService } from './clientRulesService.js';
-import { belegIndexService, extractVinFromText } from './belegIndexService.js';
+import { belegIndexService, extractVinFromText, areVinsFuzzyEqual } from './belegIndexService.js';
+import {
+  ruleEngine,
+  priorCapitalBooked,
+  extractAllVins,
+  extractPayeePrefix,
+  normalizeKey,
+  RuleDecision,
+  MonthLinks,
+} from './ruleEngine.js';
+import { monthLockService } from './monthLockService.js';
+import { dbService } from './dbService.js';
 
 // Exact 124 columns for Agenda & DATEV EXTF format (Buchungsstapel Version 700 / 12)
 const EXTF_COLUMNS = [
@@ -324,6 +341,8 @@ export const exportService = {
 
     // 3. Monetary account: 1000 (Kasse) or 1200 (Bank)
     const isCash =
+      doc.paymentChannel === 'kasse' ||
+      doc.uploadSlot === 'Kassebelege' ||
       doc.original_filename?.toLowerCase().includes('total') ||
       doc.original_filename?.toLowerCase().includes('bar') ||
       doc.original_filename?.toLowerCase().includes('kasse') ||
@@ -410,58 +429,38 @@ export const exportService = {
     fileName: string;
     count: number;
   } {
-    // Prioritize documents with extracted data and positive amounts or bookings
-    const exportableDocs = documents.filter((doc) => {
-      if (!doc.extracted_data) return false;
-      const hasAmount = Number(doc.extracted_data.total_amount) > 0;
-      const hasBookings = Array.isArray(doc.extracted_data.bookings) && doc.extracted_data.bookings.length > 0;
-      return hasAmount || hasBookings;
-    });
+    clientRulesService.checkRulesFreshness();
+    const allDocs = dbService.getAll();
+    const primary =
+      documents.find(
+        (d) =>
+          d.extracted_data?.document_type === 'BANK_STATEMENT' ||
+          /kontoauszug|1200[-_ ]?bank|bank[-_]\d+/i.test(d.original_filename || '')
+      ) || documents[0];
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const datePart = `${year}${month}${day}`;
-    const timePart = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const timestamp = `${datePart}${timePart}383`;
-
-    const datumVon = `${year}${month}01`;
-    const lastDayOfMonth = new Date(year, now.getMonth() + 1, 0).getDate();
-    const datumBis = `${year}${month}${String(lastDayOfMonth).padStart(2, '0')}`;
-    const exportClientId = documents.find((d) => d.client_id)?.client_id;
-    const exportSettings = clientRulesService.getClientSettings(exportClientId);
-    const mandantenNr = exportSettings.mandanten_nr || '710';
-    const beraterName = exportSettings.berater_name || process.env.DEFAULT_BERATER_NAME || 'berater';
-
-    // LINE 1: Agenda / DATEV EXTF Header (Version 700 / 12)
-    const line1 = `"EXTF";700;21;"Buchungsstapel";12;${timestamp};;"AG";"${beraterName}";;1;${mandantenNr};${year}0101;4;${datumVon};${datumBis};;;;1;;;"EUR"`;
-
-    // LINE 2: Column Names quoted and separated by semicolon
-    const line2 = EXTF_COLUMNS.map((c) => `"${c}"`).join(';');
-
-    // DATA ROWS: Exact 124 fields per booking, expanding multi-booking documents
-    const rows: string[] = exportableDocs.flatMap((doc) => this.buildBookingRows(doc));
-
-    // Agenda & DATEV standard: UTF-8 with BOM (\uFEFF) and Windows CRLF (\r\n)
-    const csvContent = '\uFEFF' + [line1, line2, ...rows].join('\r\n') + '\r\n';
-
-    const fileName = `EXTF_Buchungen_${datePart}_${timePart}_${year}_${parseInt(month, 10)}.csv`;
-    const exportDir = this.getExportDir();
-    if (!fs.existsSync(exportDir)) {
-      fs.mkdirSync(exportDir, { recursive: true });
-    }
-    const filePath = path.join(exportDir, fileName);
-    fs.writeFileSync(filePath, csvContent, 'utf-8');
-
-    // Automatically sync generated CSV to Google Drive
-    try {
-      googleDriveService.syncCsv(csvContent, fileName);
-    } catch (gErr) {
-      console.warn('[Agenda Export] Google Drive sync error:', gErr);
+    if (primary) {
+      const { year, monthNum } = googleDriveService.resolveYearAndMonth(
+        primary.extracted_data?.invoice_date,
+        primary.original_filename
+      );
+      const res = this.generateDocumentAndMonthlySKR03Csv(primary, allDocs, year, monthNum);
+      const exportDir = this.getExportDir();
+      const filePath = path.join(exportDir, res.buchungenCsvFileName);
+      return {
+        csvContent: res.buchungenCsvContent,
+        filePath,
+        fileName: res.buchungenCsvFileName,
+        count: res.bookingCount,
+      };
     }
 
-    return { csvContent, filePath, fileName, count: rows.length };
+    // Fallback for empty list
+    return {
+      csvContent: '',
+      filePath: '',
+      fileName: '',
+      count: 0,
+    };
   },
 
   getAccountDescription(code: string): string {
@@ -592,7 +591,7 @@ export const exportService = {
     allDocs: DocumentRecord[],
     targetYear: number | string,
     targetMonth: number,
-    opts: { allowBlocked?: boolean; writeFiles?: boolean } = {}
+    opts: { allowBlocked?: boolean; writeFiles?: boolean; ignoreLock?: boolean } = {}
   ): {
     singleCsvContent: string;
     singleCsvFileName: string;
@@ -609,11 +608,14 @@ export const exportService = {
     sachkontenCsvContent: string;
     sachkontenCsvFileName: string;
     bookingCount: number;
+    monthlyItems: BookingItem[];
     reviewReport: ReviewReport;
   } {
     const yearNum = Number(targetYear) || new Date().getFullYear();
     const monthNum = targetMonth >= 1 && targetMonth <= 12 ? targetMonth : new Date().getMonth() + 1;
     const monthPadded = String(monthNum).padStart(2, '0');
+
+    clientRulesService.checkRulesFreshness();
 
     const now = new Date();
     const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -707,19 +709,70 @@ export const exportService = {
     let allMonthlyItems: BookingItem[] = [];
     let hasBankStatement = false;
     let openingBalance: number | undefined;
+    let holderInGruendung = false;
     let closingBalance: number | undefined;
+
+    const activeLock = !opts.ignoreLock ? monthLockService.getLock(doc.client_id, yearNum, monthNum) : null;
+    let kasseOpeningBalance = clientRulesService.getStartingBalance(doc.client_id, yearNum, '1000') || 0;
+    const vinUnresolved = new Set<BookingItem>();
+    const reviewScope = reviewService.scopeKey(doc.client_id, yearNum, monthNum);
+    let lineKeys = new Map<BookingItem, string>();
+    let excluded: Array<{ item: BookingItem; lineKey: string; resolution: any }> = [];
+    let resolvedKeys = new Map<string, any>();
+    let lineResolutionTargets: LineResolutionTarget[] = [];
+    let materializedDecisions: MaterializedDecision[] = [];
+    let missingMaterializations: string[] = [];
+    const partialPayments: Array<{
+      beleg: any;
+      item?: BookingItem;
+      docAmount: number;
+      bankAmount: number;
+      restAmount: number;
+      type: string;
+      partner: string;
+      vin?: string;
+    }> = [];
+    let allClientRecords: any[] = [];
+    const priorOpenItems: Array<{
+      kind: '1600' | '1400';
+      month: number;
+      amount: number;
+      vin?: string;
+      invoiceNo?: string;
+      partner: string;
+    }> = [];
+    const priorMonth3200Vins = new Map<string, number[]>();
+    let preResolutionBankBookings: BookingItem[] = [];
+    let preResolutionItems: BookingItem[] = [];
+
+    if (activeLock) {
+      allMonthlyItems = activeLock.bookings.map((b) => ({ ...b }));
+      hasBankStatement = allMonthlyItems.some((it) => it.konto === '1200');
+      openingBalance = activeLock.opening_balance;
+      closingBalance = activeLock.closing_balance;
+      if (activeLock.kasse_opening_balance !== undefined) {
+        kasseOpeningBalance = activeLock.kasse_opening_balance;
+      }
+      lineKeys = reviewService.assignLineKeys(allMonthlyItems);
+      console.log(`[MonthLock] ${yearNum}-${monthPadded} (${doc.client_id}) is LOCKED — serving frozen snapshot (${allMonthlyItems.length} rows, locked_at=${activeLock.locked_at})`);
+    } else {
     if (officialMonthBookings && officialMonthBookings.length > 0) {
       allMonthlyItems = [...officialMonthBookings];
       hasBankStatement = true;
     } else {
       // 3-Track Separation: Bank Statements (1200) vs Kasse (1000) vs Bank Belege (Invoices/Receipts)
       const isBankStmt = (d: DocumentRecord): boolean =>
+        d.paymentChannel === 'statement' ||
+        d.uploadSlot === 'Kontoauszug' ||
         d.extracted_data?.document_type === 'BANK_STATEMENT' ||
         /kontoauszug|1200[-_ ]?bank|bank[-_]\d+/i.test(d.original_filename || '');
 
       const isKasseDoc = (d: DocumentRecord): boolean =>
         !isBankStmt(d) &&
-        (/kasse/i.test(d.original_filename || '') || d.extracted_data?.payment_method === 'cash');
+        (d.paymentChannel === 'kasse' ||
+          d.uploadSlot === 'Kassebelege' ||
+          /kasse/i.test(d.original_filename || '') ||
+          d.extracted_data?.payment_method === 'cash');
 
       const rawBankDocs = monthDocs.filter(isBankStmt);
       // Deduplicate bank statements by content signature (checksum, opening/closing balance + row count,
@@ -749,6 +802,7 @@ export const exportService = {
         bankDocsMap.set(getBankDocDedupKey(bd), bd);
       }
       const bankDocs = Array.from(bankDocsMap.values());
+      holderInGruendung = bankDocs.some((bdoc) => Boolean(bdoc.extracted_data?.holder_in_gruendung));
       const kasseDocs = monthDocs.filter(isKasseDoc);
       const belegDocs = monthDocs.filter((d) => !isBankStmt(d) && !isKasseDoc(d));
 
@@ -773,7 +827,9 @@ export const exportService = {
         const seenBankKeys = new Set<string>();
         for (const bd of bankDocs) {
           const docKeyCounts = new Map<string, number>();
-          for (const item of extractDocItems(bd)) {
+          const rawItems = extractDocItems(bd);
+          for (let idx = 0; idx < rawItems.length; idx++) {
+            const item = rawItems[idx];
             if (Number(item.amount) === 0) continue;
             if (clientRulesService.isForeignClient(doc.client_id, item.buchungstext || '')) continue;
             const datum = (item.belegdatum || '').replace(/[^0-9]/g, '').slice(-4);
@@ -784,14 +840,72 @@ export const exportService = {
             if (!seenBankKeys.has(dedupKey)) {
               seenBankKeys.add(dedupKey);
               const bTxt = item.buchungstext || '';
-              const hasFeeMatch = item.sh === 'H' && /(?:entg|entgelt|gebühr)[:\s]*0[,.]80|securego.*0[,.]80/i.test(bTxt);
+              const nextItem = rawItems[idx + 1];
+              const alreadyFollowedBySplitFee =
+                nextItem &&
+                nextItem.konto === '1200' &&
+                nextItem.gegenkonto === '4970' &&
+                Math.abs((Number(nextItem.amount) || 0) - 0.80) < 0.01 &&
+                String(nextItem.belegdatum || '').replace(/[^0-9]/g, '').slice(-4) === datum &&
+                /echtzeit-überweisung entgelt/i.test(nextItem.buchungstext || '');
+              const hasFeeMatch =
+                item.sh === 'H' &&
+                !alreadyFollowedBySplitFee &&
+                /(?:entg|entgelt|gebühr)[:\s]*0[,.]80|securego.*0[,.]80/i.test(bTxt);
+              const atmMatch =
+                item.sh === 'H'
+                  ? bTxt.match(/Auszahlung\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s*EUR\s+Entgelt\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s*EUR/i)
+                  : null;
+              const alreadyFollowedByAtmFee =
+                nextItem &&
+                nextItem.konto === '1200' &&
+                nextItem.gegenkonto === '4970' &&
+                String(nextItem.belegdatum || '').replace(/[^0-9]/g, '').slice(-4) === datum &&
+                /geldautomat|auszahlung entgelt/i.test(nextItem.buchungstext || '');
               const amtNum = Number(item.amount) || 0;
-              if (hasFeeMatch && amtNum > 0.80) {
-                // Split into main transaction and 0.80 EUR instant fee
+              const implicitAtmFee =
+                item.sh === 'H' &&
+                item.gegenkonto === '1360' &&
+                amtNum > 100 &&
+                Math.round((amtNum % 100) * 100) / 100 === 5.95
+                  ? 5.95
+                  : 0;
+              const atmFeeAmt = atmMatch
+                ? parseFloat(atmMatch[2].replace(/\./g, '').replace(',', '.'))
+                : implicitAtmFee;
+              if (!alreadyFollowedByAtmFee && atmFeeAmt > 0 && amtNum > atmFeeAmt) {
+                const cashBase = parseFloat((amtNum - atmFeeAmt).toFixed(2));
+                bankItems.push({
+                  ...item,
+                  amount: cashBase,
+                  gegenkonto: '1360',
+                  buchungstext: `${bTxt.split(/\s+-\s+/)[0]} - Auszahlung ${cashBase.toFixed(2).replace('.', ',')} EUR`.slice(0, 60),
+                  konto: item.konto || '1200',
+                });
+                bankItems.push({
+                  amount: atmFeeAmt,
+                  sh: 'H',
+                  konto: '1200',
+                  gegenkonto: '4970',
+                  buCode: '',
+                  belegdatum: item.belegdatum,
+                  belegfeld1: '',
+                  belegfeld2: '',
+                  buchungstext: 'Geldautomat Auszahlung Entgelt',
+                  currency: item.currency || 'EUR',
+                });
+              } else if (hasFeeMatch && amtNum > 0.80) {
+                // Split into main transaction and 0.80 EUR instant fee, stripping fee marker so it is never double-split
                 const baseAmt = parseFloat((amtNum - 0.80).toFixed(2));
+                const cleanedText = bTxt
+                  .replace(/\s*(?:securego\s*plus\s*)?(?:entg|entgelt|gebühr)[:\s]*0[,.]80(?:\s*eur)?(?:\s*entgelt)?/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 60);
                 bankItems.push({
                   ...item,
                   amount: baseAmt,
+                  buchungstext: cleanedText || bTxt,
                   konto: item.konto || '1200',
                 });
                 bankItems.push({
@@ -801,7 +915,7 @@ export const exportService = {
                   gegenkonto: '4970',
                   buCode: '',
                   belegdatum: item.belegdatum,
-                  belegfeld1: item.belegfeld1 || '',
+                  belegfeld1: '',
                   belegfeld2: '',
                   buchungstext: 'Echtzeit-Überweisung Entgelt (SecureGo)',
                   currency: item.currency || 'EUR',
@@ -811,6 +925,12 @@ export const exportService = {
               }
             }
           }
+        }
+
+        // Clear any previously persisted matchedBeleg/matchedBy so Track 3 & Track 4 always re-match cleanly
+        for (const bi of bankItems) {
+          delete bi.matchedBeleg;
+          delete bi.matchedBy;
         }
 
         // Track 2: Match Bank Belege (Invoices/Receipts) against Bank Statement rows (enrich, NEVER duplicate into 1200)
@@ -873,37 +993,530 @@ export const exportService = {
           }
         }
 
-        // Track 3: Add genuine Cash/Kasse (1000) items that are NOT already bank transfers, NOT card/SEPA payments, NOT on bank by VIN, and NOT summary/merged lists
-        for (const kd of kasseDocs) {
-          if (/\[SUMMARY_LIST\]/i.test(kd.extracted_data?.line_items_summary || '')) continue;
-          if (/bankbeleg/i.test(kd.original_filename || '')) continue;
-          for (const kItem of extractDocItems(kd)) {
-            const kText = kItem.buchungstext || '';
-            if (clientRulesService.isForeignClient(doc.client_id, kText)) continue;
-            const kAmt = Number(kItem.amount) || 0;
-            const isSummaryList =
-              /\[SUMMARY_LIST\]|itemized\s*list|monatsabrechnung|sammelrechnung|tankkarten[-\s]*abrechnung|zusammenfassung|abrechnung\s+tankkarte/i.test(kText) ||
-              (/\baral\b/i.test(kText) && kAmt > 250);
-            if (isSummaryList) continue;
+        const bookedKasseKeys = new Set<string>();
 
-            // VIN duplicate guard: if this car's VIN already has a bank booking this month, never book in Kasse
-            const kFull = `${kText} ${kItem.belegfeld1 || ''}`;
-            const kVins = new Set<string>(stripIbans(kFull).match(vinExtractRegex) || []);
-            const kv1 = extractVinFromText(kFull);
-            if (kv1) kVins.add(kv1);
-            if ([...kVins].some((v) => bankVins.has(v))) continue;
+        // Track 3: Strict direction-aware, exclusive (1 bank line -> 1 doc), multi-line payment matching & genuine Kassenbelege booking
+        const clientRecords = belegIndexService.getClientIndex(doc.client_id, yearNum, monthNum, 0);
+        allClientRecords = clientRecords;
 
-            // Merged multi-contract hallucination / inverted Ankaufvertrag guard:
-            if (/ankaufvertrag/i.test(kText) && kItem.sh === 'S') continue;
-            if (kAmt > 50000 && kItem.gegenkonto !== '1360') continue;
-
-            const isAlreadyOnBank =
-              kItem.gegenkonto !== '1360' &&
-              bankItems.some((b) => Math.abs((Number(b.amount) || 0) - kAmt) < 1.0);
-            const looksLikeBankOrCard = /überwiesen|ueberwiesen|bank|sparkasse|volksbank|girocard|ec-chip|ec-cash|kartenzahlung|kundenbeleg|sepa|lastschrift|mastercard|visa/i.test(kText);
-            if (!isAlreadyOnBank && !looksLikeBankOrCard && kItem.konto === '1000') {
-              allMonthlyItems.push(kItem);
+        const round2Loc = (n: number) => Math.round(n * 100) / 100;
+        const normKeyLoc = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normInvOcrLoc = (s: string) => normKeyLoc(s).replace(/b/g, '8').replace(/o/g, '0').replace(/i/g, '1');
+        const levLoc = (a: string, b: string): number => {
+          if (a === b) return 0;
+          const dp = Array.from({ length: b.length + 1 }, (_, j) => j);
+          for (let i = 1; i <= a.length; i++) {
+            let prev = dp[0];
+            dp[0] = i;
+            for (let j = 1; j <= b.length; j++) {
+              const cur = dp[j];
+              dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+              prev = cur;
             }
+          }
+          return dp[b.length];
+        };
+        const similarTokenLoc = (a: string, b: string) =>
+          a === b || (a.length >= 5 && b.length >= 5 && levLoc(a, b) <= 1);
+        const stopTokens = /^(gmbh|auto|autohaus|automotive|audi|opel|ford|mercedes|benz|tesla|bmw|vw|motor|cars|handel|systems|assekuranz|service|sale|kauf|bank|stadt|kreis|firma|herr|frau|einfache|fahrt|rechnung|station|sb|jet|aral|shell|esso|freie|tankstelle|straße|strasse)$/;
+        const extractDistinctiveTokens = (s: string) =>
+          (s || '')
+            .toLowerCase()
+            .split(/[^a-zäöüß]+/)
+            .filter((t) => t.length >= 4 && !stopTokens.test(t));
+        const extractBankInvLoc = (b: BookingItem): string => {
+          const bf = (b.belegfeld1 || '').trim();
+          if (bf && bf.length >= 4 && !/^bank/i.test(bf)) return normKeyLoc(bf);
+          const m = (b.buchungstext || '').match(/(?:rechnungsnummer|rechnungsnr|r\.?\s*nr\.?|renr|rechnung|rn|rg)[:\s/-]*(\d{1,4}\/\d{4}|\d{4}-[a-z0-9]{4,8}|\d{5,12}|2024-\d{3,6})/i);
+          return m ? normKeyLoc(m[1]) : '';
+        };
+        const isExplicitFullCash = (raw: string): boolean =>
+          /(?:kaufpreis\s+wurde\s+in\s+bar\s+(?:gezahlt|bezahlt|erhalten)|komplett\s+bar\s+(?:bezahlt|gezahlt)|gesamtbetrag\s+(?:wurde\s+)?(?:in\s+)?bar\s+(?:bezahlt|gezahlt|erhalten))/i.test(
+            raw
+          ) && !/(?:überwiesen|ueberwiesen|per\s*.{0,2}berweisung)/i.test(raw);
+        const extractWrittenCashPart = (raw: string, total: number): number => {
+          let sum = 0;
+          for (const m of (raw || '').matchAll(
+            /(\d{1,3}(?:\.\d{3})+|\d{3,6})(?:[.,](?:\d{2}|-))?\s*(?:,-|\.-)?\s*(?:EUR|€|Euro)?\s*(?:wurden?\s+)?(?:in\s+)?bar\s*(?:gezahlt|bezahlt|erhalten)/gi
+          )) {
+            const v = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+            if (!isNaN(v) && v > 0 && v < total - 0.5) sum += v;
+          }
+          return round2Loc(sum);
+        };
+        const extractWrittenSplitPayoffs = (raw: string): Array<{ amount: number; payeeTokens: string[] }> => {
+          const out: Array<{ amount: number; payeeTokens: string[] }> = [];
+          for (const m of (raw || '').matchAll(
+            /(\d{1,3}(?:\.\d{3})*,\s*\d{2})\s*(?:EUR|€|Euro)?\s*(?:wurden?\s+)?an\s+(?:die\s+|den\s+|das\s+)?([A-Za-zÄÖÜäöüß0-9\s.-]{3,35}?)\s*(?:abgel.{1,2}st|überwiesen|ueberwiesen|gezahlt)/gi
+          )) {
+            const amt = parseFloat(m[1].replace(/\./g, '').replace(/\s+/g, '').replace(',', '.'));
+            const pWords = m[2]
+              .toLowerCase()
+              .split(/[^a-zäöüß0-9]+/)
+              .filter((w) => w.length >= 2 && !/^(die|den|das|der|kunden|verkäufer|verkaeufer|bank)$/.test(w));
+            if (!isNaN(amt) && amt > 0 && pWords.length > 0) {
+              out.push({ amount: round2Loc(amt), payeeTokens: pWords });
+            }
+          }
+          return out;
+        };
+        const attachBelegIfMissing = (b: BookingItem, r: any, by: string) => {
+          if (!b.matchedBeleg) {
+            b.matchedBy = b.matchedBy || by;
+            b.matchedBeleg = {
+              id: r.id,
+              source_file: r.source_file,
+              pages: r.pages,
+              partner: r.partner,
+              invoiceNo: r.invoiceNo,
+              vin: r.vin,
+              amount: r.amount,
+              taxClause: r.taxClause,
+              snippet: r.matchedLineSnippet,
+              document_id: r.document_id,
+            };
+          }
+        };
+
+        const monthRecords = clientRecords.filter(
+          (r) =>
+            r.month === monthNum &&
+            r.year === yearNum &&
+            r.amount > 0 &&
+            !clientRulesService.isForeignClient(doc.client_id, `${r.partner} ${r.source_file}`)
+        );
+        const allDocInvoices = new Set(
+          monthRecords.map((r) => (r.invoiceNo ? normKeyLoc(r.invoiceNo) : '')).filter((x) => x.length >= 4)
+        );
+        const usedBankIndices = new Set<number>();
+        const matchedBankSumByRecord = new Map<string, number>();
+
+        const bankMatchCandidates = monthRecords.filter(
+          (r) => r.type !== 'FINANZBERICHT' && r.type !== 'PLATFORM_STATEMENT' && !isExplicitFullCash(r.rawText)
+        );
+        const attachMatchesForPass = (allowPartialMulti: boolean) => {
+          for (const r of bankMatchCandidates) {
+            if (matchedBankSumByRecord.has(r.id)) continue;
+            const expectedSh = r.type === 'QA24_SALE' ? 'S' : 'H';
+            const rInvNorm = r.invoiceNo ? normKeyLoc(r.invoiceNo) : '';
+            const rInvOcr = r.invoiceNo ? normInvOcrLoc(r.invoiceNo) : '';
+            const rVin = r.vin || '';
+            const pTokens = extractDistinctiveTokens(r.partner || '');
+
+            const lineMatchesDoc = (b: BookingItem): { ok: boolean; score: number; by: string } => {
+              if (String(b.sh).toUpperCase() !== expectedSh) return { ok: false, score: 0, by: '' };
+              const bTxtRaw = `${b.buchungstext || ''} ${b.belegfeld1 || ''}`;
+              const bTxtLower = bTxtRaw.toLowerCase();
+              const bInv = extractBankInvLoc(b);
+              const bInvOcr = bInv ? normInvOcrLoc(bInv) : '';
+              const bVin = extractVinFromText(bTxtRaw);
+
+              // Do not match a bank line whose explicit invoice number belongs to a DIFFERENT known document
+              if (bInv && rInvNorm && bInv !== rInvNorm && bInvOcr !== rInvOcr && allDocInvoices.has(bInv)) {
+                return { ok: false, score: 0, by: '' };
+              }
+              if (rInvNorm && rInvNorm.length >= 4 && bInv && (bInv === rInvNorm || (bInvOcr.length >= 6 && bInvOcr === rInvOcr))) {
+                return { ok: true, score: 100, by: `Rechnungsnummer ${r.invoiceNo}` };
+              }
+              if (rVin && bVin && !areVinsFuzzyEqual(rVin, bVin, 2)) {
+                return { ok: false, score: 0, by: '' };
+              }
+              if (rVin && (bTxtLower.includes(rVin.toLowerCase()) || bTxtLower.includes(rVin.slice(-7).toLowerCase()) || (bVin && areVinsFuzzyEqual(rVin, bVin, 2)))) {
+                return { ok: true, score: 90, by: `VIN ${rVin}` };
+              }
+              const bTokens = extractDistinctiveTokens(bTxtRaw);
+              const nameMatch = pTokens.some((pt) => bTxtLower.includes(pt) || bTokens.some((bt) => similarTokenLoc(pt, bt)));
+              if (nameMatch) {
+                return { ok: true, score: 70, by: `Partner ${r.partner}` };
+              }
+              // Exact card/receipt amount match (±0.05 EUR for rounding credit notes like -0.01) across ±7 days (including month boundary)
+              if ((r.type === 'RECEIPT' || r.type === 'SUPPLIER_INVOICE') && Math.abs((Number(b.amount) || 0) - r.amount) <= 0.05) {
+                const rD = parseInt((r.belegdatum || '01').slice(0, 2), 10) || 1;
+                const rM = parseInt((r.belegdatum || '0101').slice(2, 4), 10) || monthNum;
+                const bD = parseInt((b.belegdatum || '01').slice(0, 2), 10) || 1;
+                const bM = parseInt((b.belegdatum || '0101').slice(2, 4), 10) || monthNum;
+                if (Math.abs(rM * 30 + rD - (bM * 30 + bD)) <= 7) {
+                  return { ok: true, score: 50, by: `Betrag ${r.amount.toFixed(2)} €` };
+                }
+              }
+              // Written split payoff / Ablösung in QA24_PURCHASE (e.g. "12.147,11 EUR wurden an die VW Bank abgelöst")
+              if (r.type === 'QA24_PURCHASE' && expectedSh === 'H') {
+                const splits = extractWrittenSplitPayoffs(r.rawText);
+                for (const sp of splits) {
+                  if (Math.abs((Number(b.amount) || 0) - sp.amount) <= 0.50 && sp.payeeTokens.some((pt) => bTxtLower.includes(pt))) {
+                    return { ok: true, score: 85, by: `Ablösung / Teilzahlung ${sp.amount.toFixed(2)} €` };
+                  }
+                }
+              }
+              return { ok: false, score: 0, by: '' };
+            };
+
+            if (!allowPartialMulti) {
+              // Pass 1: Exact full single-line payment matches (no line claimed twice)
+              let bestIdx = -1;
+              let bestScore = -1;
+              let bestBy = '';
+              for (let idx = 0; idx < bankItems.length; idx++) {
+                if (usedBankIndices.has(idx)) continue;
+                const b = bankItems[idx];
+                const amtDiff = Math.abs((Number(b.amount) || 0) - r.amount);
+                if (amtDiff >= 0.50) continue;
+                const res = lineMatchesDoc(b);
+                if (res.ok && res.score > bestScore) {
+                  bestScore = res.score;
+                  bestIdx = idx;
+                  bestBy = res.by;
+                }
+              }
+              if (bestIdx >= 0) {
+                usedBankIndices.add(bestIdx);
+                attachBelegIfMissing(bankItems[bestIdx], r, bestBy);
+                matchedBankSumByRecord.set(r.id, round2Loc(Number(bankItems[bestIdx].amount) || 0));
+              }
+            } else {
+              // Pass 2: Sum ALL unused same-direction bank lines matching this document (multi-tranche / partial payments)
+              const hits: Array<{ idx: number; amt: number; by: string }> = [];
+              for (let idx = 0; idx < bankItems.length; idx++) {
+                if (usedBankIndices.has(idx)) continue;
+                const b = bankItems[idx];
+                const amt = Number(b.amount) || 0;
+                if (!(amt > 0) || amt > r.amount + 5.0) continue;
+                const res = lineMatchesDoc(b);
+                // In Pass 2 require stronger identity (>=70 for vehicle contracts, >=100 invoiceNo for small receipts/invoices)
+                const minPass2Score = r.type === 'RECEIPT' || r.type === 'SUPPLIER_INVOICE' ? 100 : 70;
+                if (res.ok && res.score >= minPass2Score) {
+                  hits.push({ idx, amt, by: res.by });
+                }
+              }
+              if (hits.length > 0) {
+                let sum = 0;
+                for (const h of hits) {
+                  if (sum + h.amt <= r.amount + 5.0) {
+                    usedBankIndices.add(h.idx);
+                    attachBelegIfMissing(bankItems[h.idx], r, h.by);
+                    sum = round2Loc(sum + h.amt);
+                  }
+                }
+                if (sum > 0) {
+                  matchedBankSumByRecord.set(r.id, sum);
+                }
+              }
+            }
+          }
+        };
+
+        attachMatchesForPass(false);
+        attachMatchesForPass(true);
+
+        // Restaurant-specific bookings: Finanzbericht (POS), Platform Statements (1410 + fees + §13b), Mixed VAT split (3300/3400)
+        const isRestaurantClient = clientRulesService.getRules(doc.client_id)?.business_type === 'restaurant';
+        if (isRestaurantClient) {
+          // 1. Bank platform payouts -> 1200 an 1410
+          for (const bi of allMonthlyItems) {
+            if (bi.konto !== '1200' || bi.sh !== 'S') continue;
+            const bLower = (bi.buchungstext || '').toLowerCase();
+            if (/takeaway|lieferando|orderyoyo|order\s*smart|uber\s*payments/i.test(bLower)) {
+              bi.gegenkonto = '1410';
+              bi.buCode = '';
+              if (/takeaway|derdengelden|uber\s*payments/i.test(bLower) && !bi.buchungstext?.includes('§13b')) {
+                bi.buchungstext = `${bi.buchungstext} (§13b)`.slice(0, 60);
+              }
+            }
+          }
+
+          // 1b. Bargeldeinzahlung Bank (1200 S an 1360) -> Kasse counter-entry (1000 H an 1360)
+          const hasKasse1360 = (amt: number, dt: string) =>
+            allMonthlyItems.some(
+              (x) => x.konto === '1000' && x.gegenkonto === '1360' && x.sh === 'H' && Math.abs(Number(x.amount) - amt) < 0.05 && x.belegdatum === dt
+            );
+          for (const bi of [...allMonthlyItems]) {
+            if (bi.konto === '1200' && bi.sh === 'S' && bi.gegenkonto === '1360' && !hasKasse1360(bi.amount, bi.belegdatum)) {
+              allMonthlyItems.push({
+                amount: bi.amount,
+                sh: 'H',
+                konto: '1000',
+                gegenkonto: '1360',
+                buCode: '',
+                belegdatum: bi.belegdatum,
+                belegfeld1: '1360',
+                belegfeld2: '',
+                buchungstext: `Bargeldeinzahlung Bank (${bi.belegdatum})`,
+                currency: 'EUR',
+              });
+            }
+          }
+
+          // 2. Mixed VAT grocery receipts (Lidl/Aldi/Rewe: A 7% / B 19%) -> split into 3300 (7%) + 3400 (19%)
+          const recordById = new Map(monthRecords.map((r) => [r.id, r]));
+          for (let idx = allMonthlyItems.length - 1; idx >= 0; idx--) {
+            const bi = allMonthlyItems[idx];
+            if (bi.konto !== '1200' || bi.sh !== 'H' || !bi.matchedBeleg?.id) continue;
+            const rec = recordById.get(bi.matchedBeleg.id);
+            if (!rec?.vatSplits || rec.vatSplits.length < 2) continue;
+            const splitItems: BookingItem[] = rec.vatSplits.map((sp) => ({
+              ...bi,
+              amount: sp.brutto,
+              gegenkonto: sp.account,
+              buCode: sp.buCode,
+              buchungstext: `${bi.buchungstext} (${sp.rate}%)`.slice(0, 60),
+            }));
+            allMonthlyItems.splice(idx, 1, ...splitItems);
+          }
+
+          // 3. Finanzbericht daily POS reports -> 1000 an 8300/8400 (cash) + 1410 an 8300/8400 (online)
+          for (const r of monthRecords) {
+            if (r.type !== 'FINANZBERICHT' || !r.finanzbericht) continue;
+            const fb = r.finanzbericht;
+            if (fb.cash7Brutto > 0) {
+              allMonthlyItems.push({
+                amount: fb.cash7Brutto, sh: 'S', konto: '1000', gegenkonto: '8300', buCode: '',
+                belegdatum: fb.belegdatum, belegfeld1: 'POS', belegfeld2: '',
+                buchungstext: `Finanzbericht Bar 7% ${fb.date}`, currency: 'EUR', matchedBeleg: r,
+              });
+            }
+            if (fb.cash19Brutto > 0) {
+              allMonthlyItems.push({
+                amount: fb.cash19Brutto, sh: 'S', konto: '1000', gegenkonto: '8400', buCode: '',
+                belegdatum: fb.belegdatum, belegfeld1: 'POS', belegfeld2: '',
+                buchungstext: `Finanzbericht Bar 19% ${fb.date}`, currency: 'EUR', matchedBeleg: r,
+              });
+            }
+            if (fb.online7Brutto > 0) {
+              allMonthlyItems.push({
+                amount: fb.online7Brutto, sh: 'S', konto: '1410', gegenkonto: '8300', buCode: '',
+                belegdatum: fb.belegdatum, belegfeld1: 'POS', belegfeld2: '',
+                buchungstext: `Finanzbericht Online 7% ${fb.date}`, currency: 'EUR', matchedBeleg: r,
+              });
+            }
+            if (fb.online19Brutto > 0) {
+              allMonthlyItems.push({
+                amount: fb.online19Brutto, sh: 'S', konto: '1410', gegenkonto: '8400', buCode: '',
+                belegdatum: fb.belegdatum, belegfeld1: 'POS', belegfeld2: '',
+                buchungstext: `Finanzbericht Online 19% ${fb.date}`, currency: 'EUR', matchedBeleg: r,
+              });
+            }
+          }
+
+          // 4. Platform statement fees -> 4600/4970 an 1410 (flag §13b for NL platforms)
+          for (const r of monthRecords) {
+            if (r.type !== 'PLATFORM_STATEMENT' || !r.platformStatement) continue;
+            const ps = r.platformStatement;
+            if (ps.feesGross > 0) {
+              allMonthlyItems.push({
+                amount: ps.feesGross,
+                sh: 'H',
+                konto: '1410',
+                gegenkonto: '4600',
+                buCode: ps.reverseCharge13b ? '' : '9',
+                belegdatum: r.belegdatum,
+                belegfeld1: r.invoiceNo || ps.platform.toUpperCase(),
+                belegfeld2: '',
+                buchungstext: `${ps.platform} Gebühren${ps.reverseCharge13b ? ' (§13b Steuerberater)' : ''}`.slice(0, 60),
+                currency: 'EUR',
+                matchedBeleg: r,
+              });
+            }
+          }
+        }
+
+        for (const r of monthRecords) {
+          if (r.type === 'FINANZBERICHT' || r.type === 'PLATFORM_STATEMENT' || r.type === 'OTHER') continue;
+          const bankSum = matchedBankSumByRecord.get(r.id) || 0;
+
+          if (bankSum >= r.amount - 0.50) {
+            // Fully settled via bank statement -> never book in Kasse, never create Restbetrag question
+            continue;
+          }
+
+          if (bankSum > 0) {
+            // Partially paid by bank -> subtract ALL bank payments and any explicit written cash component
+            const rest = round2Loc(r.amount - bankSum);
+            const writtenCash = extractWrittenCashPart(r.rawText, r.amount);
+            const isSale = r.type === 'QA24_SALE';
+            const cashGegenkonto = isSale ? r.skr03Account || '8193' : '3200';
+            const ref = (isSale ? r.invoiceNo || r.vin : r.vin || r.invoiceNo) || '';
+
+            if (
+              writtenCash > 0 &&
+              (Math.abs(rest - writtenCash) <= 0.50 ||
+                /restbetrag\s+wird\s+.{0,2}berwiesen|wurden?\s+.{0,2}berwiesen/i.test(r.rawText))
+            ) {
+              // Document explicitly states how much was paid in cash (and remaining is paid/to be paid via bank transfer) -> book only written cash part!
+              allMonthlyItems.push({
+                amount: writtenCash,
+                sh: isSale ? 'S' : 'H',
+                konto: '1000',
+                gegenkonto: cashGegenkonto,
+                buCode: '',
+                belegdatum: r.belegdatum,
+                belegfeld1: ref,
+                belegfeld2: '',
+                buchungstext: `${r.partner} - Baranteil (${r.vin || r.invoiceNo || 'Barzahlung'})`.slice(0, 60),
+                currency: 'EUR',
+                matchedBeleg: r,
+              });
+              continue;
+            }
+
+            if (rest > 0.50) {
+              const restItem: BookingItem = {
+                amount: rest,
+                sh: isSale ? 'S' : 'H',
+                konto: '1000',
+                gegenkonto: cashGegenkonto,
+                buCode: '',
+                belegdatum: r.belegdatum,
+                belegfeld1: ref,
+                belegfeld2: '',
+                buchungstext: `${r.partner} - Restbetrag (${r.vin || r.invoiceNo || 'Teilzahlung'})`.slice(0, 60),
+                currency: 'EUR',
+                matchedBeleg: r,
+              };
+              allMonthlyItems.push(restItem);
+              partialPayments.push({
+                beleg: r,
+                item: restItem,
+                docAmount: r.amount,
+                bankAmount: bankSum,
+                restAmount: rest,
+                type: r.type,
+                partner: r.partner,
+                vin: r.vin || undefined,
+              });
+            }
+            continue;
+          }
+
+          // No bank line matched -> check whether explicit partial cash + bank transfer or full Kasse booking
+          if (r.paidBy === 'karte') continue;
+          const writtenCashNoBank = extractWrittenCashPart(r.rawText, r.amount);
+          if (writtenCashNoBank > 0) {
+            const isSale = r.type === 'QA24_SALE';
+            const cashGegenkonto = isSale ? r.skr03Account || '8193' : '3200';
+            const ref = (isSale ? r.invoiceNo || r.vin : r.vin || r.invoiceNo) || '';
+            const dedupKey = `PARTCASH:${r.id}:${writtenCashNoBank}`;
+            if (!bookedKasseKeys.has(dedupKey)) {
+              bookedKasseKeys.add(dedupKey);
+              allMonthlyItems.push({
+                amount: writtenCashNoBank,
+                sh: isSale ? 'S' : 'H',
+                konto: '1000',
+                gegenkonto: cashGegenkonto,
+                buCode: '',
+                belegdatum: r.belegdatum,
+                belegfeld1: ref,
+                belegfeld2: '',
+                buchungstext: `${r.partner} - Baranteil (${r.vin || r.invoiceNo || 'Barzahlung'})`.slice(0, 60),
+                currency: 'EUR',
+                matchedBeleg: r,
+              });
+            }
+            continue;
+          }
+          if (r.paidBy === 'überweisung' || /per\s*.{0,2}berweisung|zahlungsvereinbarung/i.test(r.rawText)) {
+            // Document explicitly paid via bank transfer (e.g. Willi Kaiser) -> never Kasse
+            continue;
+          }
+
+          // Cash purchase (Ankaufvertrag / Kaufvertrag QA24 = Käufer in Bar)
+          if (r.type === 'QA24_PURCHASE' && (isExplicitFullCash(r.rawText) || r.paidCash || r.paidBy === 'bar' || /kasse/i.test(r.source_file))) {
+            const dedupKey = `PURCHASE:${r.vin || r.partner}:${r.amount}`;
+            if (bookedKasseKeys.has(dedupKey)) continue;
+            bookedKasseKeys.add(dedupKey);
+
+            allMonthlyItems.push({
+              amount: r.amount,
+              sh: 'H',
+              konto: '1000',
+              gegenkonto: '3200',
+              buCode: '',
+              belegdatum: r.belegdatum,
+              belegfeld1: r.vin || r.invoiceNo || '',
+              belegfeld2: '',
+              buchungstext: (r.partner ? `${r.partner} - ${r.vin || 'Fahrzeugeinkauf'}` : `Fahrzeugeinkauf${r.vin ? ' ' + r.vin : ''}`).slice(0, 60),
+              currency: 'EUR',
+              matchedBeleg: r,
+            });
+            continue;
+          }
+
+          // QA24 sale invoice in cash (or with §25a and not received in bank) -> 1000 an 8193
+          if (r.type === 'QA24_SALE' && (isExplicitFullCash(r.rawText) || r.paidCash || r.paidBy === 'bar' || /kasse/i.test(r.source_file))) {
+            const dedupKey = `SALE:${r.vin || r.invoiceNo || r.partner}:${r.amount}`;
+            if (bookedKasseKeys.has(dedupKey)) continue;
+            bookedKasseKeys.add(dedupKey);
+
+            allMonthlyItems.push({
+              amount: r.amount,
+              sh: 'S',
+              konto: '1000',
+              gegenkonto: r.skr03Account || '8193',
+              buCode: '',
+              belegdatum: r.belegdatum,
+              belegfeld1: r.invoiceNo || r.vin || '',
+              belegfeld2: '',
+              buchungstext: `${r.partner} - ${r.vin || r.invoiceNo || 'Fahrzeugverkauf'}`.slice(0, 60),
+              currency: 'EUR',
+              matchedBeleg: r,
+            });
+            continue;
+          }
+
+          // Authority fee receipt (Gebühr) -> 4390 an 1000 (no VAT)
+          if (r.skr03Account === '4390' || (/gewerbeanmeldung|gebühr|gebuehr/i.test(r.rawText) && r.amount <= 500)) {
+            const dedupKey = `FEE:${r.id}`;
+            if (bookedKasseKeys.has(dedupKey)) continue;
+            bookedKasseKeys.add(dedupKey);
+
+            allMonthlyItems.push({
+              amount: r.amount,
+              sh: 'H',
+              konto: '1000',
+              gegenkonto: '4390',
+              buCode: '',
+              belegdatum: r.belegdatum,
+              belegfeld1: r.invoiceNo || '',
+              belegfeld2: '',
+              buchungstext: `${r.partner} - Gebühr`.slice(0, 60),
+              currency: 'EUR',
+              matchedBeleg: r,
+            });
+            continue;
+          }
+
+          // Small genuine Kasse operating receipts (DB / Bahn / Taxi 4673, Fuel 4530, TÜV/HU 4540)
+          if (
+            (r.type === 'RECEIPT' || r.type === 'SUPPLIER_INVOICE') &&
+            r.amount <= 500 &&
+            ['4530', '4673', '4540'].includes(r.skr03Account) &&
+            (r.paidCash || r.paidBy === 'bar' || /kasse/i.test(r.source_file))
+          ) {
+            const dedupKey = `KASSE_RCPT:${r.id}`;
+            if (bookedKasseKeys.has(dedupKey)) continue;
+            bookedKasseKeys.add(dedupKey);
+
+            const bu =
+              r.buCode || (r.skr03Account === '4673' ? '8' : r.skr03Account === '4530' || r.skr03Account === '4540' ? '9' : '');
+            const desc =
+              r.skr03Account === '4673'
+                ? 'Fahrtkosten / Reise'
+                : r.skr03Account === '4530'
+                ? 'Kraftstoff'
+                : 'Kfz / TÜV';
+            allMonthlyItems.push({
+              amount: r.amount,
+              sh: 'H',
+              konto: '1000',
+              gegenkonto: r.skr03Account,
+              buCode: bu,
+              belegdatum: r.belegdatum,
+              belegfeld1: r.invoiceNo || '',
+              belegfeld2: '',
+              buchungstext: `${r.partner} - ${desc}`.slice(0, 60),
+              currency: 'EUR',
+              matchedBeleg: r,
+            });
+            continue;
           }
         }
       } else {
@@ -914,81 +1527,10 @@ export const exportService = {
       }
     }
 
-    // Auto-generate Kasse (1000) counter-entries for Geldtransit (1360) withdrawals 1-to-1!
-    // Use occurrence counts per (belegdatum, cashAmount) instead of a Set so multiple same-day,
-    // same-amount ATM withdrawals (e.g. 2x 2,000 EUR on 28.10) each get their own Kasse deposit.
-    const existingKasseCounts = new Map<string, number>();
-    for (const it of allMonthlyItems) {
-      if (it.konto === '1000' && it.gegenkonto === '1360') {
-        const d = (it.belegdatum || '').replace(/[^0-9]/g, '').slice(-4);
-        const key = `${d}|${Number(it.amount).toFixed(2)}`;
-        existingKasseCounts.set(key, (existingKasseCounts.get(key) || 0) + 1);
-      }
-    }
-    const transitWithdrawals = allMonthlyItems.filter(
-      (it) => it.konto === '1200' && it.gegenkonto === '1360' && String(it.sh).toUpperCase() === 'H'
-    );
-    for (const tw of transitWithdrawals) {
-      let cashAmount = Number(tw.amount) || 0;
-      const auszahlungMatch = (tw.buchungstext || '').match(/Auszahlung\s+([\d.,]+)\s*EUR/i);
-      if (auszahlungMatch) {
-        const parsedCash = parseFloat(auszahlungMatch[1].replace(/\./g, '').replace(',', '.'));
-        if (!isNaN(parsedCash) && parsedCash > 0 && parsedCash <= cashAmount) {
-          cashAmount = parsedCash;
-        }
-      }
-      const d = (tw.belegdatum || '').replace(/[^0-9]/g, '').slice(-4);
-      const kasseKey = `${d}|${cashAmount.toFixed(2)}`;
-      const remainingExisting = existingKasseCounts.get(kasseKey) || 0;
-      if (remainingExisting > 0) {
-        existingKasseCounts.set(kasseKey, remainingExisting - 1);
-      } else {
-        allMonthlyItems.push({
-          amount: cashAmount,
-          sh: 'S',
-          konto: '1000',
-          gegenkonto: '1360',
-          buCode: '',
-          belegdatum: tw.belegdatum,
-          belegfeld1: 'KASSE-BAR',
-          belegfeld2: '',
-          buchungstext: 'Bareinzahlung Kasse - Auszahlung',
-          currency: 'EUR',
-        });
-      }
-    }
-
     // Build rich VIN & Invoice tax-regime intelligence from genuine Beleg documents (NEVER from BANK_STATEMENT docs!)
     const vinTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const invoiceTaxMap = new Map<string, '8193' | '8400' | '8125'>();
     const payeeTaxMap = new Map<string, '8193' | '8400' | '8125'>();
-    const vinRegex = /(?<![A-Z0-9])([A-HJ-NPR-Z]{2,3}[A-HJ-NPR-Z0-9]{8,9}\d{5,6})(?![0-9])/g;
-    const extractAllVins = (s: string): string[] => {
-      const set = new Set<string>();
-      const v = extractVinFromText(s);
-      if (v) set.add(v);
-      const cleaned = (s || '')
-        .toUpperCase()
-        .replace(/\bIBAN\s*[:.]?\s*[A-Z]{2}\s*\d{2}(?:\s*[A-Z0-9]){11,30}/g, ' ')
-        .replace(/\b[A-Z]{2}\d{2}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{4}[\s]?[0-9]{0,4}\b/g, ' ')
-        .replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g, (m) => (m.length !== 17 || /^[A-Z]{2}\d{15}$/.test(m) ? ' ' : m));
-      const m = cleaned.match(vinRegex);
-      if (m) {
-        m.forEach((x) => {
-          if (!/^[A-Z]{2}\d{15}$/.test(x) && !/^DE\d{8}/.test(x)) set.add(x);
-        });
-      }
-      return [...set];
-    };
-
-    const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const extractPayeePrefix = (text: string): string => {
-      const beforeDash = (text || '').split(/\s+-\s+|\s+PN:|\s{2,}/)[0].toLowerCase().replace(/[^a-zäöüß0-9\s]/gi, ' ').trim();
-      const legalStop = /^(gmbh|mbh|ug|ag|kg|ohg|gbr|unipessoal|lda|ltda|sarl|srl|sas|bv|nv|oy|ab|aps|inc|llc|co|ltd|firma|herr|frau)$/;
-      const words = beforeDash.split(/\s+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !legalStop.test(w));
-      return words.slice(0, 2).join(' ');
-    };
-
     for (const d of allDocs) {
       if (doc.client_id && d.client_id !== doc.client_id) continue;
       const ext = d.extracted_data;
@@ -1120,10 +1662,79 @@ export const exportService = {
     };
 
     // Final deterministic SKR03 & VAT safety normalization before EXTF row generation
-    const vinUnresolved = new Set<BookingItem>();
+    // ── ONE PLACE FOR RULES ─────────────────────────────────────────────────────
+    // This code only collects facts (matched Beleg, tax maps, month context) and applies the result.
+    // Every account decision is made by ruleEngine.decideAccount().
+    const taxMaps = { vin: vinTaxMap, invoice: invoiceTaxMap, payee: payeeTaxMap } as const;
+    const capitalAccount = clientRulesService.getStammkapital(doc.client_id)?.account || '0800';
+    let capitalBookedSoFar = priorCapitalBooked(allDocs, doc.client_id, yearNum, monthNum);
+    const firstBankCredit = allMonthlyItems.find((i) => i.konto === '1200' && String(i.sh).toUpperCase() === 'S');
+    const belegOf = new Map<BookingItem, ReturnType<typeof belegIndexService.findMatchForBankLine>>();
+
+    const traceDecision = (item: BookingItem, d: RuleDecision) => {
+      const m = belegOf.get(item);
+      console.log(
+        `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
+        `step: ${d.step}, match: ${m ? m.matchedBy : 'none'}, record id: ${m?.record?.id || 'none'}, ` +
+        `taxClause: ${m?.record?.taxClause || 'none'}, final account: ${d.account}${d.needsReview ? ' (provisional → review question)' : ''}, why: ${d.reason}`
+      );
+    };
+
+    const applyDecision = (item: BookingItem, d: RuleDecision) => {
+      item.gegenkonto = d.account;
+      item.buCode = d.buCode;
+      if (d.reviewKind === 'STAMMKAPITAL') {
+        item.reviewHint = { type: 'STAMMKAPITAL_UNCLEAR', question: d.question || '' };
+      } else if (d.reviewKind === 'MISSING_BELEG_INCOMING') {
+        item.reviewHint = { type: 'MISSING_BELEG_INCOMING', question: d.question || '' };
+      } else {
+        delete item.reviewHint;
+      }
+      if (d.reviewKind === 'VIN_SALE') {
+        const m = belegOf.get(item);
+        const vins = extractAllVins(`${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase());
+        const contractOrInvMatch =
+          m?.record.invoiceNo ||
+          (item.belegfeld1 && item.belegfeld1.length >= 4 && !/^\d{5}\s/.test(item.belegfeld1) ? item.belegfeld1 : '') ||
+          (item.buchungstext || '').match(/\b(?:ReNr|Re-Nr|RG|RE|Re|VR|Vertrag|Kaufvertrag)[.:#\s-]*([A-Z0-9\/-]{2,15})\b/i)?.[1] ||
+          '';
+        item.carGroupKey = m?.record.vin || vins[0] || (contractOrInvMatch ? `ID:${contractOrInvMatch.toUpperCase()}` : undefined);
+        if (!isStornoPair(item) && (Number(item.amount) || 0) >= 500) vinUnresolved.add(item);
+      }
+    };
+
+    const decideItem = (item: BookingItem, links?: MonthLinks): RuleDecision => {
+      const m = belegOf.get(item);
+      const sh: 'S' | 'H' = String(item.sh).toUpperCase() === 'S' ? 'S' : 'H';
+      return ruleEngine.decideAccount({
+        clientId: doc.client_id,
+        phase: 'normalize',
+        konto: item.konto,
+        sh,
+        amount: Number(item.amount) || 0,
+        text: item.buchungstext || '',
+        belegfeld1: item.belegfeld1,
+        currentAccount: item.gegenkonto,
+        beleg: m
+          ? { ...m.record, id: m.record.id, matchedBy: m.matchedBy }
+          : item.matchedBeleg
+          ? { ...(item.matchedBeleg as any), id: item.matchedBeleg.id, type: (item.matchedBeleg as any).type || (sh === 'S' ? 'QA24_SALE' : 'QA24_PURCHASE'), matchedBy: item.matchedBy || 'Kassenbeleg' }
+          : null,
+        taxMaps,
+        stammkapital: {
+          holderInGruendung,
+          isFirstCreditAfterZeroOpening:
+            item === firstBankCredit && openingBalance !== undefined && Math.abs(openingBalance) < 0.005,
+          earlierBooked: capitalBookedSoFar,
+        },
+        links,
+      });
+    };
+
+    const firstPass = new Map<BookingItem, RuleDecision>();
     for (const item of allMonthlyItems) {
       const belegMatch =
-        item.konto === '1200' && indexedBelege.length > 0
+        !item.matchedBeleg && item.konto === '1200' && indexedBelege.length > 0
           ? belegIndexService.findMatchForBankLine(
               indexedBelege,
               item.buchungstext || '',
@@ -1134,6 +1745,7 @@ export const exportService = {
             )
           : null;
       if (belegMatch) {
+        belegOf.set(item, belegMatch);
         item.matchedBy = belegMatch.matchedBy;
         item.matchedBeleg = {
           id: belegMatch.record.id,
@@ -1149,406 +1761,392 @@ export const exportService = {
         };
         if ((!item.belegfeld1 || /^bank/i.test(item.belegfeld1)) && belegMatch.record.invoiceNo) {
           const isSaleRecord = belegMatch.record.type === 'QA24_SALE' || belegMatch.record.taxClause === '25a' || belegMatch.record.taxClause === 'EU';
-          if (item.sh === 'H' && isSaleRecord) {
-            // NEVER copy a sales invoice number onto a purchase line (sh === 'H')!
-          } else {
-            item.belegfeld1 = belegMatch.record.invoiceNo;
-          }
+          // A sales invoice number never belongs on a purchase (outgoing) line
+          if (!(item.sh === 'H' && isSaleRecord)) item.belegfeld1 = belegMatch.record.invoiceNo;
         }
       }
-
-      const txt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toLowerCase();
-      // Owner transaction check (0730 Verrechnungskonto Gesellschafter, NO BU CODE)
-      if (
-        item.konto === '1200' &&
-        clientRulesService.isOwner(doc.client_id, txt) &&
-        !/\b(lohn|gehalt|stammkapital|stammeinlage)\b/i.test(txt) &&
-        !/debitkarte|bankcard|kreditkarte|kartengebühr|depotgebühr|kontoführung/i.test(txt)
-      ) {
-        item.gegenkonto = '0730';
-        item.buCode = '';
-        console.log(
-          `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
-          `final account: 0730, why: matched owner rule (${doc.client_id})`
-        );
-      } else if (item.konto === '1200' && item.sh === 'H' && (extractAllVins(txt).length > 0 || /(?:XP7|LRW|W0L|WAU|WDD|WVW)[A-Z0-9]{14,}/i.test(txt))) {
-        // Outgoing vehicle purchase payments on bank -> 3200 (no BU)
-        item.gegenkonto = '3200';
-        item.buCode = '';
-        console.log(
-          `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
-          `final account: 3200, why: outgoing VIN purchase payment`
-        );
-      } else if (/\b(aral|shell|esso|total|jet|avia|omv|tankstelle|agip|bft|minera|couche-tard|circle k|westfalen|star tankstelle|hem\b|sprint|sb-tank)\b/i.test(txt)) {
-        item.gegenkonto = '4530';
-        item.buCode = '9';
-      } else if (/\b(arag|signal iduna|allianz|huk|axa|gothaer|provinzial|zurich|lvm|devk|continentale|barmenia|ergo|dkv|debeka|generali|vgh|helvetia|basler|kfz-versicherung|versicherung)\b/i.test(txt) && !/garantie/i.test(txt)) {
-        item.gegenkonto = '4520';
-        item.buCode = '';
-      } else if (clientRulesService.matchVendorRule(doc.client_id, txt, Number(item.amount) || 0)) {
-        const vr = clientRulesService.matchVendorRule(doc.client_id, txt, Number(item.amount) || 0)!;
-        item.gegenkonto = vr.account;
-        item.buCode = vr.buCode;
-      } else if (/\b(penny|rewe|aldi|edeka|lidl|netto|kaufland)\b/i.test(txt) && Number(item.amount) < 500 && item.sh === 'H') {
-        item.gegenkonto = '4673';
-        item.buCode = '8';
-      } else if (item.sh === 'S' && /(storno|rückbuchung|rueckbuchung|erstattung|refund|gutschrift)/i.test(txt)) {
-        if (/\b(fintax|steuerberat|rechtsanwalt|fibu|buchhaltung)\b/i.test(txt)) {
-          item.gegenkonto = '4955';
-          item.buCode = '9';
-        } else if (/\b(auto-teile|autoteile|kfz-teile|ersatzteile)\b/i.test(txt) || /\bebay\b/i.test(txt)) {
-          item.gegenkonto = '4540';
-          item.buCode = '9';
-        }
-      } else if (/\b(ölwechsel|olwechsel|auto-teile|autoteile)\b/i.test(txt)) {
-        item.gegenkonto = '4540';
-        item.buCode = '9';
-      } else if (item.sh === 'H' && (/\b(kaufvertrag|fahrzeugankauf)\b/i.test(txt) || clientRulesService.lookupPayee(doc.client_id, txt) === '3200')) {
-        item.gegenkonto = '3200';
-        item.buCode = '';
-      } else if (/\b(tüv|tuev|dekra|gtü|küs|porsche zentrum|audi zentrum|bmw autohaus|mercedes-benz autohaus)\b/i.test(txt) && Number(item.amount) < 1500) {
-        item.gegenkonto = '4540';
-        item.buCode = '9';
-      } else if (/\b(deutsche post|briefmarke|porto)\b/i.test(txt)) {
-        item.gegenkonto = '4910';
-        item.buCode = '';
-      } else if (/\b(main-taunus-kreis|landratsamt|amtsgericht|stadtkasse|buergerbuero|bürgerbüro|kfz-steuer|hauptzollamt)\b/i.test(txt)) {
-        item.buCode = '';
-      } else if (/\bdifferenzbetrag\b/i.test(txt) && item.sh === 'H') {
-        item.gegenkonto = '3200';
-        item.buCode = '';
-      } else if (/(überzahlung|ueberzahlung)/i.test(txt) && item.sh === 'H') {
-        item.gegenkonto = '8400';
-        item.buCode = '';
-      } else if (item.sh === 'S' && (item.gegenkonto === '8193' || item.gegenkonto === '8400' || item.gegenkonto === '8125')) {
-        const upperTxt = `${item.buchungstext || ''} ${item.belegfeld1 || ''}`.toUpperCase();
-        const vins = extractAllVins(upperTxt);
-
-        // ── RULE 1: Matched Sales Beleg with taxClause ('25a' | '19' | 'EU') is FINAL ──
-        // If matched Beleg has taxClause '25a' | '19' | 'EU' and type QA24_SALE (or CONTRACT/SALE),
-        // use its skr03Account (8193/8400/8125) as FINAL and mark the line resolved.
-        // VIN purchase-register check runs ONLY when no matched Beleg has a taxClause.
-        if (belegMatch) {
-          const r = belegMatch.record;
-          const isSale = r.type === 'QA24_SALE' || r.type === 'CONTRACT' || r.skr03Account === '8193' || r.skr03Account === '8125';
-          if (isSale && (r.taxClause === '25a' || r.taxClause === 'EU' || r.taxClause === '19' || r.skr03Account)) {
-            const finalAccount: '8193' | '8400' | '8125' =
-              r.taxClause === 'EU' || r.skr03Account === '8125' || clientRulesService.isEuDealer(doc.client_id, r.partner || '')
-                ? '8125'
-                : r.taxClause === '25a' || r.skr03Account === '8193'
-                ? '8193'
-                : '8400';
-            item.gegenkonto = finalAccount;
-            item.buCode = '';
-            console.log(
-              `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
-              `match step: ${belegMatch.matchedBy}, record id: ${r.id}, taxClause: ${r.taxClause}, ` +
-              `final account: ${finalAccount}, why: matched QA24_SALE Beleg with taxClause '${r.taxClause}'`
-            );
-            // Resolved as FINAL -> skip VIN purchase-register check!
-            continue;
-          }
-        }
-
-        let resolvedTax: '8193' | '8400' | '8125' | undefined;
-        let decisionWhy = '';
-
-        // 1. EU dealer registry check (rules/<client>.json)
-        if (clientRulesService.isEuDealer(doc.client_id, txt)) {
-          resolvedTax = '8125';
-          decisionWhy = 'EU dealer registry';
-        }
-
-        // 2. By exact 17-char VIN (glued-safe)
-        if (!resolvedTax && vins.length > 0) {
-          for (const vin of vins) {
-            const matchedSalesAcc = vinTaxMap.get(vin) || (clientRulesService.lookupVin(doc.client_id, vin)?.taxKey as any);
-            if (matchedSalesAcc && matchedSalesAcc !== '3200') {
-              resolvedTax = matchedSalesAcc;
-              decisionWhy = `VIN ${vin} mapped to ${matchedSalesAcc}`;
-              break;
-            }
-          }
-        }
-
-        // 2b. By 7-character suffix VINs (e.g. bank statement short VINs)
-        if (!resolvedTax) {
-          const words = upperTxt.split(/[^A-Z0-9]/).filter((w) => w.length >= 6 && w.length <= 10 && /\d/.test(w) && /[A-Z]/.test(w));
-          for (const w of words) {
-            const matched = clientRulesService.lookupVin(doc.client_id, w);
-            if (matched && matched.taxKey !== '3200') {
-              resolvedTax = matched.taxKey as any;
-              decisionWhy = `Short VIN ${w} mapped to ${matched.taxKey}`;
-              break;
-            }
-          }
-        }
-
-        // 3. By matched OCR BelegRecord (cross-month §25a / EU / 19% / private purchase)
-        if (!resolvedTax && belegMatch) {
-          const r = belegMatch.record;
-          if (r.taxClause === 'EU' || r.skr03Account === '8125' || clientRulesService.isEuDealer(doc.client_id, r.partner || '')) {
-            resolvedTax = '8125';
-            decisionWhy = 'Beleg taxClause EU';
-          } else if (r.taxClause === '25a' || (r.type === 'QA24_PURCHASE' && r.taxClause !== '19') || r.skr03Account === '8193') {
-            resolvedTax = '8193';
-            decisionWhy = 'Beleg taxClause 25a';
-          } else if (r.taxClause === '19') {
-            resolvedTax = '8400';
-            decisionWhy = 'Beleg taxClause 19%';
-          } else if (r.vin && vinTaxMap.has(r.vin.toUpperCase())) {
-            resolvedTax = vinTaxMap.get(r.vin.toUpperCase());
-            decisionWhy = `Beleg VIN ${r.vin} purchase map`;
-          }
-        }
-
-        // 4. By Payee / Buyer name (including direct EU-Dealer check from client rules)
-        if (!resolvedTax) {
-          if (clientRulesService.isEuDealer(doc.client_id, txt)) {
-            resolvedTax = '8125';
-            decisionWhy = 'Payee EU dealer';
-          }
-        }
-        if (!resolvedTax) {
-          const payee = extractPayeePrefix(item.buchungstext || '');
-          if (payee && payeeTaxMap.has(payee)) {
-            resolvedTax = payeeTaxMap.get(payee);
-            decisionWhy = `Payee prefix ${payee}`;
-          } else {
-            const matchedRule = clientRulesService.lookupPayee(doc.client_id, txt);
-            if (matchedRule && matchedRule !== '3200') {
-              resolvedTax = matchedRule as any;
-              decisionWhy = `Payee rule ${matchedRule}`;
-            } else {
-              for (const [pKey, targetAcc] of payeeTaxMap.entries()) {
-                if (pKey.length >= 4 && txt.includes(pKey)) {
-                  resolvedTax = targetAcc;
-                  decisionWhy = `Payee match ${pKey}`;
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        // 5. By Invoice / Beleg Number
-        if (!resolvedTax) {
-          const invMatch = (item.buchungstext || '').match(/(?:rechnungsnummer|rechnung|rg|rn|beleg)[:\s]*([a-z0-9\/\-]+)/i);
-          const rawInv = invMatch ? invMatch[1] : item.belegfeld1;
-          if (rawInv) {
-            const normInv = normalizeKey(rawInv);
-            if (invoiceTaxMap.has(normInv)) {
-              resolvedTax = invoiceTaxMap.get(normInv);
-              decisionWhy = `Invoice number ${normInv}`;
-            }
-          }
-        }
-
-        // 6. By Vehicle / Tax Keywords
-        if (!resolvedTax) {
-          if (/(differenzbesteuerung|25a|gebrauchtgegenst|sonderregelung|differenzbesteuert)/i.test(txt)) {
-            resolvedTax = '8193';
-            decisionWhy = 'Keyword §25a';
-          } else if (/(innergemeinschaftliche|eu-lieferung|steuerfrei\s*§?\s*4|ig\.?\s*lieferung)/i.test(txt)) {
-            resolvedTax = '8125';
-            decisionWhy = 'Keyword EU-Lieferung';
-          }
-        }
-
-        if (resolvedTax) {
-          item.gegenkonto = resolvedTax;
-          item.buCode = '';
-          console.log(
-            `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
-            `match step: ${belegMatch ? belegMatch.matchedBy : 'keyword/vin'}, record id: ${belegMatch?.record?.id || 'none'}, ` +
-            `taxClause: ${belegMatch?.record?.taxClause || 'none'}, final account: ${resolvedTax}, why: ${decisionWhy}`
-          );
-        } else if (
-          item.gegenkonto === '8193' &&
-          /(differenzbesteuerung|25a|gebrauchtgegenst|sonderregelung|differenzbesteuert)/i.test(txt)
-        ) {
-          // Explicit §25a indicator in the text → keep 8193 (no doubt)
-        } else {
-          // VIN not found in purchase history → provisional 8400, but NEVER final: route to Review List
-          if (item.gegenkonto === '8193') {
-            item.gegenkonto = '8400';
-            item.buCode = '';
-          }
-          // Step 5: Group ONLY by VIN, Invoice Number, or Contract ID. NEVER by payee prefix!
-          const contractOrInvMatch =
-            belegMatch?.record.invoiceNo ||
-            (item.belegfeld1 && item.belegfeld1.length >= 4 && !/^\d{5}\s/.test(item.belegfeld1) ? item.belegfeld1 : '') ||
-            (item.buchungstext || '').match(/\b(?:ReNr|Re-Nr|RG|RE|Re|VR|Vertrag|Kaufvertrag)[.:#\s-]*([A-Z0-9\/-]{2,15})\b/i)?.[1] ||
-            '';
-          item.carGroupKey =
-            belegMatch?.record.vin ||
-            vins[0] ||
-            (contractOrInvMatch ? `ID:${contractOrInvMatch.toUpperCase()}` : undefined);
-          if (!isStornoPair(item) && (Number(item.amount) || 0) >= 500) {
-            vinUnresolved.add(item);
-            console.log(
-              `[Decision Trace] Bank line ${item.belegdatum} "${item.buchungstext}" (${item.amount} €): ` +
-              `match step: ${belegMatch ? belegMatch.matchedBy : 'none'}, record id: ${belegMatch?.record?.id || 'none'}, ` +
-              `taxClause: ${belegMatch?.record?.taxClause || 'none'}, final account: 8400 (provisional), why: VIN purchase-register check -> VIN not found in purchase history`
-            );
-          }
-        }
-      } else if (
-        item.sh === 'H' &&
-        ['4900', '4930'].includes(item.gegenkonto) &&
-        belegMatch?.record.skr03Account &&
-        !['1000', '1200', '4900'].includes(belegMatch.record.skr03Account)
-      ) {
-        item.gegenkonto = belegMatch.record.skr03Account;
-        if (belegMatch.record.buCode !== undefined) {
-          item.buCode = belegMatch.record.buCode;
-        }
+      const d = decideItem(item);
+      applyDecision(item, d);
+      firstPass.set(item, d);
+      if (d.step === 'b-special' && !d.needsReview && d.account === capitalAccount && item.konto === '1200' && String(item.sh).toUpperCase() === 'S') {
+        capitalBookedSoFar += Number(item.amount) || 0;
       }
+      if (d.step !== 'd-vendor' || d.needsReview) traceDecision(item, d);
     }
 
-    // Same-VIN = Same-Account rule for split vehicle purchase payments (e.g. Teil 1 / Teil 2)
-    const monthPurchaseVins = new Set<string>();
+    // Second pass: follow-up payments (Teil 2 / Restzahlung / same VIN) are linked to the already decided payment
+    const links: MonthLinks = { purchaseVins: new Set<string>(), purchasePayee: new Map<string, string>(), salePayee: new Map<string, string>() };
     for (const item of allMonthlyItems) {
+      const prefix = extractPayeePrefix(item.buchungstext || '');
       if (item.sh === 'H' && item.gegenkonto === '3200') {
-        const vins = extractAllVins(`${item.buchungstext || ''} ${item.belegfeld1 || ''}`);
-        vins.forEach((v) => monthPurchaseVins.add(v));
+        extractAllVins(`${item.buchungstext || ''} ${item.belegfeld1 || ''}`).forEach((v) => links.purchaseVins.add(v));
       }
+      if (!prefix) continue;
+      if (item.sh === 'H' && ['3200', '3400'].includes(item.gegenkonto)) links.purchasePayee.set(prefix, item.gegenkonto);
+      else if (item.sh === 'S' && ['8193', '8400', '8125'].includes(item.gegenkonto)) links.salePayee.set(prefix, item.gegenkonto);
     }
     for (const item of allMonthlyItems) {
-      if (item.sh === 'H' && item.gegenkonto === '4900') {
-        const vins = extractAllVins(`${item.buchungstext || ''} ${item.belegfeld1 || ''}`);
-        if (vins.some((v) => monthPurchaseVins.has(v))) {
-          item.gegenkonto = '3200';
-          item.buCode = '';
+      const d1 = firstPass.get(item);
+      if (!d1?.needsReview || d1.reviewKind === 'STAMMKAPITAL' || d1.reviewKind === 'MISSING_BELEG_INCOMING') continue;
+      const d2 = decideItem(item, links);
+      if (d2.needsReview) continue; // still unresolved → stays a review question
+      applyDecision(item, d2);
+      vinUnresolved.delete(item);
+      if (d2.linkedPayee) {
+        const certain = allMonthlyItems.some(
+          (other) =>
+            other !== item && other.sh === 'S' && !vinUnresolved.has(other) &&
+            other.gegenkonto === item.gegenkonto && extractPayeePrefix(other.buchungstext || '') === d2.linkedPayee
+        );
+        if (!certain) vinUnresolved.add(item);
+      }
+      traceDecision(item, d2);
+    }
+
+    // Auto-generate Kasse (1000) counter-entries for Geldtransit (1360) withdrawals 1-to-1
+    // (runs AFTER ruleEngine.decideAccount so vehicle purchases / other 1200 lines are already finalized)
+    const existingKasseCounts = new Map<string, number>();
+    for (const it of allMonthlyItems) {
+      if (it.konto === '1000' && it.gegenkonto === '1360') {
+        const d = (it.belegdatum || '').replace(/[^0-9]/g, '').slice(-4);
+        const key = `${d}|${Number(it.amount).toFixed(2)}`;
+        existingKasseCounts.set(key, (existingKasseCounts.get(key) || 0) + 1);
+      }
+    }
+    const transitWithdrawals = allMonthlyItems.filter(
+      (it) => it.konto === '1200' && it.gegenkonto === '1360' && String(it.sh).toUpperCase() === 'H'
+    );
+    for (const tw of transitWithdrawals) {
+      let cashAmount = Number(tw.amount) || 0;
+      const auszahlungMatch = (tw.buchungstext || '').match(/Auszahlung\s+([\d.,]+)\s*EUR/i);
+      if (auszahlungMatch) {
+        const parsedCash = parseFloat(auszahlungMatch[1].replace(/\./g, '').replace(',', '.'));
+        if (!isNaN(parsedCash) && parsedCash > 0 && parsedCash <= cashAmount) {
+          cashAmount = parsedCash;
+        }
+      }
+      const d = (tw.belegdatum || '').replace(/[^0-9]/g, '').slice(-4);
+      const kasseKey = `${d}|${cashAmount.toFixed(2)}`;
+      const remainingExisting = existingKasseCounts.get(kasseKey) || 0;
+      if (remainingExisting > 0) {
+        existingKasseCounts.set(kasseKey, remainingExisting - 1);
+      } else {
+        allMonthlyItems.push({
+          amount: cashAmount,
+          sh: 'S',
+          konto: '1000',
+          gegenkonto: '1360',
+          buCode: '',
+          belegdatum: tw.belegdatum,
+          belegfeld1: 'KASSE-BAR',
+          belegfeld2: '',
+          buchungstext: 'Bareinzahlung Kasse - Auszahlung',
+          currency: 'EUR',
+        });
+      }
+    }
+
+    // Collect prior-month open items (OPOS: 1600 Kreditor / 1400 Debitor) and prior-month 3200 purchase VINs
+    const exportDirForOpening = this.getExportDir();
+    const priorExportFiles = fs.existsSync(exportDirForOpening) ? fs.readdirSync(exportDirForOpening) : [];
+    const addPrior3200Vin = (vin: string | null | undefined, m: number) => {
+      if (!vin || vin.length !== 17) return;
+      const list = priorMonth3200Vins.get(vin) || [];
+      if (!list.includes(m)) list.push(m);
+      priorMonth3200Vins.set(vin, list);
+    };
+    const addPriorOpenItem = (op: {
+      kind: '1600' | '1400';
+      month: number;
+      amount: number;
+      vin?: string;
+      invoiceNo?: string;
+      partner: string;
+    }) => {
+      const exists = priorOpenItems.some(
+        (e) =>
+          e.kind === op.kind &&
+          e.month === op.month &&
+          ((e.vin && op.vin && areVinsFuzzyEqual(e.vin, op.vin, 2)) ||
+            (e.invoiceNo && op.invoiceNo && e.invoiceNo.toLowerCase() === op.invoiceNo.toLowerCase()) ||
+            Math.abs(e.amount - op.amount) < 0.05)
+      );
+      if (!exists) priorOpenItems.push(op);
+    };
+
+    const allLookbackRecords = belegIndexService.getClientIndex(doc.client_id, yearNum, monthNum, 6);
+    for (let mPrev = 1; mPrev < monthNum; mPrev++) {
+      // 1. Check prior month's latest exported EXTF CSV
+      const monthFileRe = new RegExp(`^EXTF_Buchungen_\\d{8}_\\d{6}_${yearNum}_${mPrev}\\.csv$`);
+      const candidates = priorExportFiles.filter((f) => monthFileRe.test(f)).sort((a, b) => b.localeCompare(a));
+      for (const fname of candidates) {
+        try {
+          const rawCsv = fs.readFileSync(path.join(exportDirForOpening, fname), 'utf-8');
+          const headerCols = (rawCsv.replace(/^\uFEFF/, '').split(/\r?\n/)[0] || '').split(';');
+          const csvMandant = (headerCols[11] || '').replace(/"/g, '').trim();
+          if (csvMandant && String(mandantenNr) && csvMandant !== String(mandantenNr)) continue;
+          const parsedPrev = parseDatevExtfCsv(rawCsv);
+          for (const row of parsedPrev) {
+            const rVin = extractVinFromText(`${row.buchungstext} ${row.belegfeld1}`) || undefined;
+            if ((row.konto === '3200' && row.sh === 'S') || (row.gegenkonto === '3200' && row.sh === 'H')) {
+              addPrior3200Vin(rVin, mPrev);
+            }
+            if ((row.gegenkonto === '1600' && row.sh === 'S') || (row.konto === '1600' && row.sh === 'H')) {
+              addPriorOpenItem({
+                kind: '1600',
+                month: mPrev,
+                amount: row.amount,
+                vin: rVin,
+                invoiceNo: row.belegfeld1 || undefined,
+                partner: row.buchungstext,
+              });
+            }
+            if ((row.konto === '1400' && row.sh === 'S') || (row.gegenkonto === '1400' && row.sh === 'H')) {
+              addPriorOpenItem({
+                kind: '1400',
+                month: mPrev,
+                amount: row.amount,
+                vin: rVin,
+                invoiceNo: row.belegfeld1 || undefined,
+                partner: row.buchungstext,
+              });
+            }
+          }
+          break;
+        } catch {
+          // try older candidate
+        }
+      }
+      // 2. Check prior month's saved review resolutions (OPEN_INVOICE / PARTIAL to 1600 or 1400) and prior 3200 Belege
+      const prevScope = reviewService.scopeKey(doc.client_id, yearNum, mPrev);
+      const prevSaved = reviewService.getResolutions(prevScope);
+      for (const [k, res] of Object.entries(prevSaved)) {
+        if (res.action === 'EXCLUDE') continue;
+        if (k.startsWith('OPEN_INVOICE:')) {
+          const recId = k.slice('OPEN_INVOICE:'.length);
+          const rec = allLookbackRecords.find((r) => r.id === recId);
+          if (rec) {
+            const kind: '1600' | '1400' = res.gegenkonto === '1400' || rec.type === 'QA24_SALE' ? '1400' : '1600';
+            addPriorOpenItem({
+              kind,
+              month: mPrev,
+              amount: rec.amount,
+              vin: rec.vin || undefined,
+              invoiceNo: rec.invoiceNo || undefined,
+              partner: rec.partner,
+            });
+            if (kind === '1600' && (rec.skr03Account === '3200' || rec.type === 'QA24_PURCHASE')) {
+              addPrior3200Vin(rec.vin, mPrev);
+            }
+          }
+        }
+      }
+      for (const rec of allLookbackRecords) {
+        if (rec.year === yearNum && rec.month === mPrev && rec.type === 'QA24_PURCHASE' && rec.amount > 0 && rec.vin) {
+          addPrior3200Vin(rec.vin, mPrev);
         }
       }
     }
 
-    // Same-Payee Linking for follow-up / rest / deposit payments ("rest", "Restzahlung", "Anzahlung", "Teil 2")
-    const payeePurchaseMap = new Map<string, string>();
-    const payeeSaleMap = new Map<string, string>();
-    for (const item of allMonthlyItems) {
-      const prefix = extractPayeePrefix(item.buchungstext || '');
-      if (!prefix) continue;
-      if (item.sh === 'H' && ['3200', '3400'].includes(item.gegenkonto)) {
-        payeePurchaseMap.set(prefix, item.gegenkonto);
-      } else if (item.sh === 'S' && ['8193', '8400', '8125'].includes(item.gegenkonto)) {
-        payeeSaleMap.set(prefix, item.gegenkonto);
+    const matchPriorOpenItem = (it: BookingItem) => {
+      if (it.konto !== '1200' && it.konto !== '1000') return null;
+      if (it.gegenkonto === '1360' || it.gegenkonto === '4970' || it.gegenkonto === '0730') return null;
+      const shUp = String(it.sh).toUpperCase();
+      const targetKind: '1600' | '1400' = shUp === 'H' ? '1600' : '1400';
+      const itTxt = `${it.buchungstext || ''} ${it.belegfeld1 || ''} ${it.matchedBeleg?.partner || ''} ${it.matchedBeleg?.vin || ''}`;
+      const itVin = extractVinFromText(itTxt) || it.matchedBeleg?.vin || undefined;
+      const itAmt = Number(it.amount) || 0;
+      const itWords = itTxt
+        .toLowerCase()
+        .split(/[^a-zäöüß]+/)
+        .filter((w) => w.length >= 4 && !/^(gmbh|auto|autohaus|automotive|opel|adam|corsa|audi|tesla|model|bmw|kauf|service|inhaber|zahlung|rechnung|securego|plus|iban|entgelt)$/.test(w));
+
+      for (const op of priorOpenItems) {
+        if (op.kind !== targetKind) continue;
+        if (op.vin && itVin && (op.vin === itVin || areVinsFuzzyEqual(op.vin, itVin, 2))) {
+          return op;
+        }
+        if (op.invoiceNo && op.invoiceNo.length >= 4 && (it.belegfeld1 || '').toLowerCase() === op.invoiceNo.toLowerCase()) {
+          return op;
+        }
+        const opWords = (op.partner || '')
+          .toLowerCase()
+          .split(/[^a-zäöüß]+/)
+          .filter((w) => w.length >= 4 && !/^(gmbh|auto|autohaus|automotive|opel|adam|corsa|audi|tesla|model|bmw|kauf|service|inhaber|offene|rechnung)$/.test(w));
+        const sharedName = opWords.some((ow) => itWords.includes(ow));
+        if (sharedName && Math.abs(itAmt - op.amount) <= 1.0) {
+          return op;
+        }
       }
-    }
+      return null;
+    };
+
+    // Rule 1 (OPOS): Before finalizing outgoing/incoming payments, check open 1600 (Kreditor) / 1400 (Debitor) items from earlier months
     for (const item of allMonthlyItems) {
-      const txt = (item.buchungstext || '').toLowerCase();
-      if (!/\b(rest|restzahlung|restbetrag|anzahlung|teil\s*\d+)\b/i.test(txt)) continue;
-      const prefix = extractPayeePrefix(item.buchungstext || '');
-      if (!prefix) continue;
-      if (item.sh === 'H' && item.gegenkonto === '4900' && payeePurchaseMap.has(prefix)) {
-        item.gegenkonto = payeePurchaseMap.get(prefix)!;
+      const matchedOp = matchPriorOpenItem(item);
+      if (matchedOp) {
+        item.gegenkonto = matchedOp.kind;
         item.buCode = '';
-      } else if (item.sh === 'S' && ['8400', '8193'].includes(item.gegenkonto) && payeeSaleMap.has(prefix)) {
-        item.gegenkonto = payeeSaleMap.get(prefix)!;
-        item.buCode = '';
-        // Linked to the same buyer's main sale → same account, but only certain if that sale itself is certain
-        const linkedSaleIsCertain = allMonthlyItems.some(
-          (other) =>
-            other !== item &&
-            other.sh === 'S' &&
-            !vinUnresolved.has(other) &&
-            other.gegenkonto === item.gegenkonto &&
-            extractPayeePrefix(other.buchungstext || '') === prefix
+        vinUnresolved.delete(item);
+        console.log(
+          `[OPOS Clearing ${yearNum}-${monthPadded}] ${item.belegdatum} "${item.buchungstext}" (${Number(item.amount).toFixed(2)} €) clears open ${matchedOp.kind} from ${matchedOp.month}/${yearNum} (${matchedOp.partner})`
         );
-        if (linkedSaleIsCertain) vinUnresolved.delete(item);
       }
     }
 
-    // Tax-exempt and non-deductible accounts (4970, 0730, 3200, 8125, etc.) must NEVER have a BU code!
-    for (const item of allMonthlyItems) {
-      if (['4970', '0730', '3200', '8125', '8193', '4520', '4510', '4910', '4390', '4210'].includes(item.gegenkonto)) {
-        item.buCode = '';
-      }
-    }
+    // Capture pre-resolution proposals before vendor rules & user answers are applied
+    preResolutionBankBookings = allMonthlyItems
+      .filter((it) => it.konto === '1200')
+      .map((it) => ({ ...it }));
+    preResolutionItems = allMonthlyItems.map((it) => ({ ...it }));
 
     // ─────────────────────────────────────────────────────────────────────────────
     // REVIEW GATE: user-confirmed vendor rules → saved user answers → doubt detection
     // ─────────────────────────────────────────────────────────────────────────────
-    const reviewScope = reviewService.scopeKey(doc.client_id, yearNum, monthNum);
     const vendorRuleHits = reviewService.applyVendorRules(allMonthlyItems);
     if (vendorRuleHits > 0) {
       console.log(`[Review Gate ${yearNum}-${monthPadded}] Applied ${vendorRuleHits} user-confirmed vendor rule(s).`);
     }
-    const lineKeys = reviewService.assignLineKeys(allMonthlyItems);
-    const { kept, excluded, resolvedKeys } = reviewService.applyResolutions(reviewScope, allMonthlyItems, lineKeys);
-    allMonthlyItems = kept;
-    // Calculate cumulative Kasse starting balance from previous months in the same year
-    let kasseOpeningBalance = clientRulesService.getStartingBalance(doc.client_id, yearNum, '1000') || 0;
-    const priorBankVinsByMonth = new Map<number, Set<string>>();
-    const priorBankAmountsByMonth = new Map<number, number[]>();
-    const priorBankTransitByMonth = new Map<number, number>();
-    const seenPriorBankStmts = new Set<string>();
-    for (const d of allDocs) {
-      if (doc.client_id && d.client_id !== doc.client_id) continue;
-      const dMeta = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
-      if (Number(dMeta.year) !== yearNum) continue;
-      const isStmt = d.extracted_data?.document_type === 'BANK_STATEMENT' || /bankstatement|kontoauszug|1200-bank/i.test(d.original_filename || '');
-      if (!isStmt) continue;
-      const stmtDedupKey = d.file_checksum
-        ? `chk:${d.file_checksum}`
-        : typeof d.extracted_data?.opening_balance === 'number' && typeof d.extracted_data?.closing_balance === 'number'
-        ? `bal:${d.extracted_data.opening_balance.toFixed(2)}|${d.extracted_data.closing_balance.toFixed(2)}`
-        : (d.original_filename || d.id).toLowerCase().replace(/\s*\(\d+\)\s*(?=\.[a-z0-9]+$|$)/gi, '').trim();
-      if (seenPriorBankStmts.has(stmtDedupKey)) continue;
-      seenPriorBankStmts.add(stmtDedupKey);
-      for (const b of extractDocItems(d)) {
-        const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10) || Number(dMeta.monthNum);
-        if (!(bMonth > 0 && bMonth < monthNum)) continue;
-        if (b.konto === '1200') {
+    lineKeys = reviewService.assignLineKeys(allMonthlyItems);
+    const resApplied = reviewService.applyResolutions(reviewScope, allMonthlyItems, lineKeys);
+    allMonthlyItems = resApplied.kept;
+    excluded = resApplied.excluded;
+    resolvedKeys = resApplied.resolvedKeys;
+    lineResolutionTargets = resApplied.lineResolutionTargets;
+    // Re-apply OPOS clearing in case a stale resolution overwrote an open-item payment with 3200
+    for (const item of allMonthlyItems) {
+      const matchedOp = matchPriorOpenItem(item);
+      if (matchedOp && item.gegenkonto === '3200') {
+        item.gegenkonto = matchedOp.kind;
+        item.buCode = '';
+      }
+    }
+    // Calculate cumulative Kasse 1000 opening balance from prior months:
+    // Priority 1: Locked month snapshot -> Priority 2: Month N-1 exported EXTF CSV -> Priority 3: Prior raw doc fallback
+    const computePriorMonthRawFallback = (mPrev: number): number => {
+      const priorBankVins = new Set<string>();
+      const priorBankAmounts: number[] = [];
+      let bankTransit = 0;
+      let hasBankTransit = false;
+      const seenStmts = new Set<string>();
+      for (const d of allDocs) {
+        if (doc.client_id && d.client_id !== doc.client_id) continue;
+        const dMeta = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+        if (Number(dMeta.year) !== yearNum) continue;
+        const isStmt = d.extracted_data?.document_type === 'BANK_STATEMENT' || /bankstatement|kontoauszug|1200-bank/i.test(d.original_filename || '');
+        if (!isStmt) continue;
+        const stmtDedupKey = d.file_checksum
+          ? `chk:${d.file_checksum}`
+          : typeof d.extracted_data?.opening_balance === 'number' && typeof d.extracted_data?.closing_balance === 'number'
+          ? `bal:${d.extracted_data.opening_balance.toFixed(2)}|${d.extracted_data.closing_balance.toFixed(2)}`
+          : (d.original_filename || d.id).toLowerCase().replace(/\s*\(\d+\)\s*(?=\.[a-z0-9]+$|$)/gi, '').trim();
+        if (seenStmts.has(stmtDedupKey)) continue;
+        seenStmts.add(stmtDedupKey);
+        for (const b of extractDocItems(d)) {
+          const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10) || Number(dMeta.monthNum);
+          if (bMonth !== mPrev || b.konto !== '1200') continue;
           const amt = Number(b.amount) || 0;
-          const amts = priorBankAmountsByMonth.get(bMonth) || [];
-          amts.push(amt);
-          priorBankAmountsByMonth.set(bMonth, amts);
-          const vSet = priorBankVinsByMonth.get(bMonth) || new Set<string>();
-          extractAllVins(`${b.buchungstext || ''} ${b.belegfeld1 || ''}`).forEach((v) => vSet.add(v));
-          priorBankVinsByMonth.set(bMonth, vSet);
+          priorBankAmounts.push(amt);
+          extractAllVins(`${b.buchungstext || ''} ${b.belegfeld1 || ''}`).forEach((v) => priorBankVins.add(v));
           if (b.gegenkonto === '1360') {
-            const delta = String(b.sh).toUpperCase() === 'H' ? amt : -amt;
-            priorBankTransitByMonth.set(bMonth, (priorBankTransitByMonth.get(bMonth) || 0) + delta);
+            hasBankTransit = true;
+            bankTransit += String(b.sh).toUpperCase() === 'H' ? amt : -amt;
           }
         }
       }
-    }
-    const priorKasseTransitByMonth = new Map<number, number>();
-    for (const d of allDocs) {
-      if (doc.client_id && d.client_id !== doc.client_id) continue;
-      if (/bankbeleg/i.test(d.original_filename || '')) continue;
-      if (/\[SUMMARY_LIST\]/i.test(d.extracted_data?.line_items_summary || '')) continue;
-      const dMeta = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
-      if (Number(dMeta.year) !== yearNum) continue;
-      for (const b of extractDocItems(d)) {
-        const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10) || Number(dMeta.monthNum);
-        if (!(bMonth > 0 && bMonth < monthNum) || b.konto !== '1000') continue;
-        const kText = b.buchungstext || '';
-        const kAmt = Number(b.amount) || 0;
-        if (clientRulesService.isForeignClient(doc.client_id, kText)) continue;
-        if (/ankaufvertrag/i.test(kText) && b.sh === 'S') continue;
-        if (kAmt > 50000 && b.gegenkonto !== '1360') continue;
-        if (/\[SUMMARY_LIST\]|itemized\s*list|monatsabrechnung|sammelrechnung|tankkarten[-\s]*abrechnung|zusammenfassung/i.test(kText) || (/\baral\b/i.test(kText) && kAmt > 250)) continue;
-        if (/überwiesen|ueberwiesen|bank|sparkasse|volksbank|girocard|ec-chip|ec-cash|kartenzahlung|kundenbeleg|sepa|lastschrift|mastercard|visa/i.test(kText)) continue;
-        const vSet = priorBankVinsByMonth.get(bMonth);
-        if (vSet && extractAllVins(`${kText} ${b.belegfeld1 || ''}`).some((v) => vSet.has(v))) continue;
-        const bAmts = priorBankAmountsByMonth.get(bMonth);
-        if (b.gegenkonto !== '1360' && bAmts && bAmts.some((ba) => Math.abs(ba - kAmt) < 1.0)) continue;
-        const delta = (String(b.sh).toUpperCase() === 'S' ? 1 : -1) * kAmt;
-        if (b.gegenkonto === '1360') {
-          priorKasseTransitByMonth.set(bMonth, (priorKasseTransitByMonth.get(bMonth) || 0) + delta);
-        } else {
-          kasseOpeningBalance += delta;
+      let monthDelta = 0;
+      let kasseTransit = 0;
+      let hasKasseTransit = false;
+      for (const d of allDocs) {
+        if (doc.client_id && d.client_id !== doc.client_id) continue;
+        if (/bankbeleg/i.test(d.original_filename || '')) continue;
+        if (/\[SUMMARY_LIST\]/i.test(d.extracted_data?.line_items_summary || '')) continue;
+        const dMeta = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+        if (Number(dMeta.year) !== yearNum) continue;
+        for (const b of extractDocItems(d)) {
+          const bMonth = parseInt((b.belegdatum || '').replace(/[^0-9]/g, '').slice(-2), 10) || Number(dMeta.monthNum);
+          if (bMonth !== mPrev || b.konto !== '1000') continue;
+          const kText = b.buchungstext || '';
+          const kAmt = Number(b.amount) || 0;
+          if (clientRulesService.isForeignClient(doc.client_id, kText)) continue;
+          if (/ankaufvertrag/i.test(kText) && b.sh === 'S') continue;
+          if (kAmt > 50000 && b.gegenkonto !== '1360') continue;
+          if (/\[SUMMARY_LIST\]|itemized\s*list|monatsabrechnung|sammelrechnung|tankkarten[-\s]*abrechnung|zusammenfassung/i.test(kText) || (/\baral\b/i.test(kText) && kAmt > 250)) continue;
+          if (/überwiesen|ueberwiesen|bank|sparkasse|volksbank|girocard|ec-chip|ec-cash|kartenzahlung|kundenbeleg|sepa|lastschrift|mastercard|visa/i.test(kText)) continue;
+          if (extractAllVins(`${kText} ${b.belegfeld1 || ''}`).some((v) => priorBankVins.has(v))) continue;
+          if (b.gegenkonto !== '1360' && priorBankAmounts.some((ba) => Math.abs(ba - kAmt) < 1.0)) continue;
+          const delta = (String(b.sh).toUpperCase() === 'S' ? 1 : -1) * kAmt;
+          if (b.gegenkonto === '1360') {
+            hasKasseTransit = true;
+            kasseTransit += delta;
+          } else {
+            monthDelta += delta;
+          }
         }
       }
-    }
+      if (hasBankTransit) monthDelta += bankTransit;
+      else if (hasKasseTransit) monthDelta += kasseTransit;
+      return Math.round(monthDelta * 100) / 100;
+    };
+
     for (let mPrev = 1; mPrev < monthNum; mPrev++) {
-      if (priorBankTransitByMonth.has(mPrev)) {
-        kasseOpeningBalance += priorBankTransitByMonth.get(mPrev)!;
-      } else if (priorKasseTransitByMonth.has(mPrev)) {
-        kasseOpeningBalance += priorKasseTransitByMonth.get(mPrev)!;
+      const prevLock = monthLockService.getLock(doc.client_id || 'user_client_1', yearNum, mPrev);
+      if (prevLock) {
+        let lockDelta = 0;
+        for (const b of prevLock.bookings) {
+          const amt = Number(b.amount) || 0;
+          const shUp = String(b.sh).toUpperCase();
+          if (b.konto === '1000') lockDelta += shUp === 'S' ? amt : -amt;
+          else if (b.gegenkonto === '1000') lockDelta += shUp === 'S' ? -amt : amt;
+        }
+        kasseOpeningBalance = Math.round((kasseOpeningBalance + lockDelta) * 100) / 100;
+        continue;
+      }
+
+      const monthFileRe = new RegExp(`^EXTF_Buchungen_\\d{8}_\\d{6}_${yearNum}_${mPrev}\\.csv$`);
+      const candidates = priorExportFiles.filter((f) => monthFileRe.test(f)).sort((a, b) => b.localeCompare(a));
+      let csvDelta: number | null = null;
+      for (const fname of candidates) {
+        try {
+          const rawCsv = fs.readFileSync(path.join(exportDirForOpening, fname), 'utf-8');
+          const headerCols = (rawCsv.replace(/^\uFEFF/, '').split(/\r?\n/)[0] || '').split(';');
+          const csvMandant = (headerCols[11] || '').replace(/"/g, '').trim();
+          if (csvMandant && String(mandantenNr) && csvMandant !== String(mandantenNr)) continue;
+          const parsedPrev = parseDatevExtfCsv(rawCsv);
+          let sum1000 = 0;
+          for (const row of parsedPrev) {
+            if (row.konto === '1000') sum1000 += row.sh === 'S' ? row.amount : -row.amount;
+            else if (row.gegenkonto === '1000') sum1000 += row.sh === 'S' ? -row.amount : row.amount;
+          }
+          csvDelta = Math.round(sum1000 * 100) / 100;
+          break;
+        } catch {
+          // try older candidate
+        }
+      }
+      if (csvDelta !== null) {
+        kasseOpeningBalance = Math.round((kasseOpeningBalance + csvDelta) * 100) / 100;
+      } else {
+        kasseOpeningBalance = Math.round((kasseOpeningBalance + computePriorMonthRawFallback(mPrev)) * 100) / 100;
+      }
+    }
+    const matRes = reviewService.materializeResolvedDecisions({
+      items: allMonthlyItems,
+      lineKeys,
+      resolvedKeys,
+      allClientRecords,
+      month: monthNum,
+      kasseOpeningBalance,
+    });
+    allMonthlyItems = matRes.items;
+    materializedDecisions = matRes.materialized;
+    missingMaterializations = matRes.missingMaterializations;
+    } // end if (!activeLock)
+
+    // Scrub invalid placeholder "KeineRechnung" from Belegfeld 2 on all items before audit/export/persist
+    for (const it of allMonthlyItems) {
+      if (it.belegfeld2 && /^keinerechnung$/i.test(it.belegfeld2.trim())) {
+        it.belegfeld2 = '';
       }
     }
 
@@ -1560,15 +2158,33 @@ export const exportService = {
       hasBankStatement,
       openingBalance,
       closingBalance,
+      bankReconciliation: (doc.extracted_data as any)?.bank_reconciliation || (allDocs.find((d) => (d.extracted_data as any)?.bank_reconciliation)?.extracted_data as any)?.bank_reconciliation,
       kasseOpeningBalance,
       vinUnresolved,
       lineKeys,
       excludedLines: excluded,
       resolvedKeys,
+      lineResolutionTargets,
+      materializedDecisions,
+      preResolutionItems,
+      allClientRecords,
+      partialPayments,
+      priorOpenItems,
+      priorMonth3200Vins,
     });
+    reviewReport.locked = Boolean(activeLock);
+    if (activeLock) {
+      reviewReport.locked_at = activeLock.locked_at;
+    }
     console.log(
       `[Review Gate ${yearNum}-${monthPadded}] ${reviewReport.total_bookings} bookings | auto ${reviewReport.auto_booked} | open critical ${reviewReport.open_critical} | warnings ${reviewReport.open_warnings} | ${reviewReport.blocked ? 'EXPORT BLOCKED: ' + reviewReport.block_reasons.join(' ; ') : 'CSV READY ✅'}`
     );
+    if (reviewReport.accuracy) {
+      const acc = reviewReport.accuracy;
+      console.log(
+        `[Accuracy ${yearNum}-${monthPadded}] Total=${acc.total_bookings} | Auto-Correct=${acc.auto_correct} (${acc.auto_correct_pct.toFixed(1)}%) | Questions=${acc.questions_asked} (Beleg fehlt: ${acc.questions_by_type.beleg_fehlt}, Entscheidung: ${acc.questions_by_type.entscheidung}, Unreadable: ${acc.questions_by_type.unreadable}) | User-Changed=${acc.user_changed} | Goal=${acc.goal_met ? 'PASS ✅' : 'FAIL ❌'}`
+      );
+    }
 
     // Automatic Self-Audit Reconciliation Check before EXTF generation
     let auditBankNet = 0;
@@ -1592,6 +2208,31 @@ export const exportService = {
     console.log(
       `[Self-Audit ${yearNum}-${monthPadded}] Rows=${allMonthlyItems.length} | Bank1200(${auditBankCount})=${auditBankNet.toFixed(2)} EUR | Kasse1000=${auditKasseNet.toFixed(2)} EUR | Transit1360=${auditTransitNet.toFixed(2)} EUR`
     );
+    if (reviewReport.kasse_items && reviewReport.kasse_items.length > 0) {
+      console.log(
+        `[Kasse 1000 List ${yearNum}-${monthPadded}] Start=${kasseOpeningBalance.toFixed(2)} EUR | Entries=${reviewReport.kasse_items.length} | End=${(kasseOpeningBalance + auditKasseNet).toFixed(2)} EUR`
+      );
+      for (const ki of reviewReport.kasse_items) {
+        const src = ki.source_file ? `${ki.source_file}${ki.pages && ki.pages.length ? ' p.' + ki.pages.join(',') : ''}` : 'Bank 1200 / Geldtransit';
+        console.log(
+          `  ${ki.date} | ${ki.sh} | ${ki.amount.toFixed(2).padStart(10, ' ')} € | 1000->${ki.gegenkonto.padEnd(4, ' ')} | Saldo ${ki.running_balance.toFixed(2).padStart(10, ' ')} € | ${src} | "${ki.text}"`
+        );
+      }
+    }
+
+    // Persist freshly recalculated pre-resolution bookings back to document records in database
+    if (!activeLock && hasBankStatement && monthDocs.length > 0 && opts.writeFiles !== false) {
+      for (const bd of monthDocs) {
+        if (bd.id && bd.extracted_data?.document_type === 'BANK_STATEMENT') {
+          dbService.update(bd.id, {
+            extracted_data: {
+              ...bd.extracted_data,
+              bookings: preResolutionBankBookings,
+            } as any,
+          });
+        }
+      }
+    }
 
     // Build standard 124-field rows from the complete merged items
     const activeRows: string[] = allMonthlyItems.map((item) => {
@@ -1602,8 +2243,9 @@ export const exportService = {
       const buchungstext = rawText ? `"${rawText.substring(0, 60)}"` : '""';
       const rawField1 = (item.belegfeld1 || '').replace(/[;"\r\n]/g, '').trim();
       const belegfeld1 = rawField1 ? `"${rawField1.substring(0, 36)}"` : '""';
-      const rawField2 = (item.belegfeld2 || '').replace(/[;"\r\n]/g, '').trim();
-      const belegfeld2 = rawField2 ? `"${rawField2.substring(0, 36)}"` : '""';
+      let rawField2 = (item.belegfeld2 || '').replace(/[;"\r\n]/g, '').trim();
+      if (/^keinerechnung$/i.test(rawField2)) rawField2 = '';
+      const belegfeld2 = rawField2 ? `"${rawField2.substring(0, 12)}"` : '""';
       const buCode = item.buCode ? `"${item.buCode.replace(/"/g, '')}"` : '""';
 
       const fields = new Array(124);
@@ -1629,6 +2271,30 @@ export const exportService = {
     const buchungenCsvFileName = `EXTF_Buchungen_${datePart}_${timePart}_${yearNum}_${monthNum}.csv`;
     const buchungenCsvContent = '\uFEFF' + [line1, line2, ...activeRows].join('\r\n') + '\r\n';
 
+    // Post-CSV self-validator: parse the built CSV file itself and run all hard integrity checks on it
+    const csvChecks = reviewService.validateExportedCsv(buchungenCsvContent, {
+      hasBankStatement,
+      openingBalance,
+      closingBalance,
+      kasseOpeningBalance,
+      resolvedKeys,
+      lineResolutionTargets,
+      materializedDecisions,
+      missingMaterializations,
+    });
+    reviewReport.checks.push(...csvChecks);
+    const failedCsvChecks = csvChecks.filter((c) => c.critical && c.status === 'FAIL');
+    if (failedCsvChecks.length > 0) {
+      reviewReport.blocked = true;
+      reviewReport.csv_ready = false;
+      for (const fc of failedCsvChecks) {
+        reviewReport.block_reasons.push(`${fc.label}: ${fc.hint || `${fc.value} (expected ${fc.expected})`}`);
+      }
+      console.warn(
+        `[Post-CSV Validator ${yearNum}-${monthPadded}] EXPORT BLOCKED: ${failedCsvChecks.map((c) => `${c.id}=${c.value}`).join(' ; ')}`
+      );
+    }
+
     // 2. EXTF_Personenkonten_<YYYYMMDD>_<HHMMSS>_<YEAR>.csv
     const personenkontenCsvFileName = `EXTF_Personenkonten_${datePart}_${timePartPersonen}_${yearNum}.csv`;
     const personenkontenCsvContent = generatePersonenkontenCsvContent(
@@ -1651,8 +2317,8 @@ export const exportService = {
       beraterName
     );
 
-    // Keep Excel buffers for direct UI Excel download endpoint (/api/documents/:id/skr03-xlsx)
-    const singleXlsxFileName = `EXTF_Buchungen_${datePart}_${timePart}_${yearNum}_${monthNum}.xlsx`;
+    // Keep Excel buffers as read-only preview (_VORSCHAU.xlsx) for /api/documents/:id/skr03-xlsx
+    const singleXlsxFileName = `EXTF_Buchungen_${datePart}_${timePart}_${yearNum}_${monthNum}_VORSCHAU.xlsx`;
     const singleXlsxContent = this.buildSkr03ExcelWorkbook(allMonthlyItems, yearNum, monthPadded, `EXTF ${yearNum}/${monthPadded}`);
 
     // HARD EXPORT BLOCKER: while critical doubts / failed control checks remain, NO DATEV CSV is released.
@@ -1674,11 +2340,12 @@ export const exportService = {
         sachkontenCsvContent: '',
         sachkontenCsvFileName: '',
         bookingCount: activeRows.length,
+        monthlyItems: allMonthlyItems,
         reviewReport,
       };
     }
 
-    // Save the 3 EXTF CSV files to local storage/exports
+    // Save the 3 EXTF CSV files + Fragen.txt to local storage/exports
     if (opts.writeFiles !== false) {
       const exportDir = this.getExportDir();
       if (!fs.existsSync(exportDir)) {
@@ -1687,6 +2354,34 @@ export const exportService = {
       fs.writeFileSync(path.join(exportDir, buchungenCsvFileName), buchungenCsvContent, 'utf-8');
       fs.writeFileSync(path.join(exportDir, personenkontenCsvFileName), personenkontenCsvContent, 'utf-8');
       fs.writeFileSync(path.join(exportDir, sachkontenCsvFileName), sachkontenCsvContent, 'utf-8');
+
+      // Generate Fragen.txt listing open items (open 1400/1600, unknown accounts, open review issues)
+      const open1400_1600 = allMonthlyItems.filter(
+        (it) => ['1400', '1600'].includes(it.konto) || ['1400', '1600'].includes(it.gegenkonto)
+      );
+      const openQuestions = reviewReport.issues.filter((i) => !i.resolved);
+      const fragenLines: string[] = [
+        `OFFENE FRAGEN & OPOS — ${doc.client_id || ''} (${monthPadded}/${yearNum})`,
+        `Erstellt: ${new Date().toISOString()}`,
+        '================================================================',
+        '',
+        `1. OFFENE REVIEW-FRAGEN (${openQuestions.length}):`,
+        ...openQuestions.map(
+          (q, idx) =>
+            `  ${idx + 1}. [${q.severity}] ${q.booking.date} | ${q.booking.amount.toFixed(2)} EUR | ${q.title} — ${q.question}`
+        ),
+        '',
+        `2. OFFENE POSTEN 1400 / 1600 (${open1400_1600.length}):`,
+        ...open1400_1600.map(
+          (it, idx) =>
+            `  ${idx + 1}. ${it.belegdatum} | ${Number(it.amount).toFixed(2)} EUR | ${it.konto} -> ${it.gegenkonto} | ${it.buchungstext}`
+        ),
+      ];
+      fs.writeFileSync(
+        path.join(exportDir, `Fragen_${yearNum}_${monthPadded}.txt`),
+        fragenLines.join('\r\n'),
+        'utf-8'
+      );
     }
 
     return {
@@ -1705,6 +2400,7 @@ export const exportService = {
       sachkontenCsvContent,
       sachkontenCsvFileName,
       bookingCount: activeRows.length,
+      monthlyItems: allMonthlyItems,
       reviewReport,
     };
   },

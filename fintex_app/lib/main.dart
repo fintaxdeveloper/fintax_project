@@ -14,7 +14,6 @@ void main() {
   );
   runApp(const FinTaxApp());
 }
-
 class FinTaxApp extends StatelessWidget {
   const FinTaxApp({super.key});
 

@@ -1,22 +1,86 @@
 {
-  "user_1794303867395_317f|2024-03": {
-    "1403|30000.00|S|1200|thomasboidolamgc63zahlung#1": {
+  "user_qa24_704|2024-03": {
+    "OPEN_INVOICE:56d82ef2-4b25-437f-a2e2-d8383766ea87": {
+      "action": "SET_ACCOUNT",
+      "gegenkonto": "1600",
+      "buCode": "",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-18T20:35:09.571Z"
+    },
+    "0103|11200.00|H|1000|pfuhlgerhardw0v0xep68k413767#1": {
+      "action": "ACCEPT",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1403",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-18T20:39:03.290Z"
+    },
+    "1203|12600.00|S|1000|boidolthomasrestbetragwdd205#1": {
+      "action": "ACCEPT",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-18T20:42:52.031Z"
+    },
+    "1103|11500.00|H|1000|sorinlustinneagrestbetragwba#1": {
+      "action": "ACCEPT",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-18T20:43:12.483Z"
+    },
+    "0103|40600.00|H|1000|fahrzeugeinkauf#1": {
+      "action": "ACCEPT",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0103",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-18T20:48:15.910Z"
+    },
+    "NEG_CASH:1103": {
+      "action": "SET_ACCOUNT",
+      "gegenkonto": "0730",
+      "buCode": "",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-18T20:53:39.133Z"
+    }
+  },
+  "user_qa24_704|2024-04": {
+    "0504|12000.00|H|1200|rangrovermovikpn5635#1": {
+      "action": "SET_ACCOUNT",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-19T12:56:44.357Z"
+    },
+    "0504|35000.00|S|1200|volkswagenaktiengesellschaft#1": {
       "action": "SET_ACCOUNT",
       "gegenkonto": "8193",
       "buCode": "",
-      "resolved_by": "User/Accountant",
-      "resolved_at": "2026-11-16T10:46:07.960Z",
-      "note": "Kassenbelege S. 8: Rechnung 05/2024 C63 AMG (42.600 € brutto, 30.000 € Anzahlung 14.03.) - Verkauf nach §25a UStG"
-    }
-  },
-  "user_1794702134824_vnbi|2024-03": {
-    "2803|11900.00|S|1000|willikaiserinhaberolafkaiser#1": {
-      "action": "EXCLUDE",
-      "gegenkonto": "8400",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-19T13:03:20.878Z"
+    },
+    "0104|30.00|H|1000|funktaxenrufharburggmbhfahrt#1": {
+      "action": "ACCEPT",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0804",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-19T13:05:09.737Z"
+    },
+    "2004|1500.00|H|1000|oualideljarbouehirestbetragx#1": {
+      "action": "ACCEPT",
+      "gegenkonto": "3200",
       "buCode": "",
-      "resolved_by": "User/Accountant",
-      "resolved_at": "2026-11-16T18:18:02.357Z"
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-19T13:05:54.476Z"
+    },
+    "NEG_CASH:1704": {
+      "action": "SET_ACCOUNT",
+      "gegenkonto": "0730",
+      "buCode": "",
+      "resolved_by": "qa24@fintax.de",
+      "resolved_at": "2026-11-19T13:06:09.798Z"
     }
-  },
-  "user_1794702134824_vnbi|2024-08": {}
+  }
 }

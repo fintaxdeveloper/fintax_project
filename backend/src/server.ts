@@ -31,6 +31,7 @@ import { skr03Mapper } from './services/skr03Mapper.js';
 import { pdfExtractor } from './services/pdfExtractor.js';
 import { belegIndexService, extractVinFromText } from './services/belegIndexService.js';
 import { clientRulesService } from './services/clientRulesService.js';
+import { monthLockService } from './services/monthLockService.js';
 import { DocumentRecord, ExtractedInvoiceData, BookingItem } from './types/document.js';
 
 const app = express();
@@ -52,6 +53,7 @@ app.use(
       return callback(new Error(`CORS policy blocked origin: ${origin}`));
     },
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   })
 );
 app.use(express.json());
@@ -379,6 +381,140 @@ app.post('/api/bank-statements/sample-demo', async (_req, res) => {
   }
 });
 
+// Safety Check: Checks if Kontoauszug period matches selected month/year,
+// checks if account holder name matches client name,
+// and checks if most document dates match selected month/year.
+app.post('/api/documents/check-upload-safety', upload.array('documents'), async (req, res) => {
+  try {
+    const files = (req.files as Express.Multer.File[]) || [];
+    const clientId = String(req.body.client_id || 'user_client_1');
+    const clientName = String(req.body.client_name || '').trim();
+    const rawMonth = String(req.body.month || '').trim();
+    const rawYear = String(req.body.year || '').trim();
+    const metadataRaw = String(req.body.filesMetadata || '[]');
+    let metadataList: Array<{ filename: string; channel?: string; slot?: string }> = [];
+    try {
+      metadataList = JSON.parse(metadataRaw);
+    } catch {
+      metadataList = [];
+    }
+
+    const germanMonths = [
+      '', 'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+      'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
+    ];
+    let selectedMonthNum = parseInt(rawMonth, 10);
+    if (!selectedMonthNum || isNaN(selectedMonthNum)) {
+      const idx = germanMonths.findIndex((m) => m.toLowerCase() === rawMonth.toLowerCase());
+      if (idx > 0) selectedMonthNum = idx;
+    }
+    const selectedYearNum = parseInt(rawYear, 10) || 0;
+
+    const warnings: string[] = [];
+    const clientSettings = clientRulesService.getClientSettings(clientId);
+    const expectedClientName = clientSettings.company_name || clientName || clientId;
+    const clientTokens = [expectedClientName, ...(clientSettings.own_issuer_keywords || [])]
+      .map((t) => t.toLowerCase().trim())
+      .filter((t) => t.length >= 3);
+
+    let totalReceiptsDated = 0;
+    let receiptsMismatched = 0;
+
+    for (const file of files) {
+      const meta = metadataList.find((m) => m.filename === file.originalname);
+      const channel = meta?.channel || (/kontoausz/i.test(file.originalname) ? 'statement' : /kasse/i.test(file.originalname) ? 'kasse' : 'bank');
+
+      let text = '';
+      try {
+        if (file.mimetype.includes('pdf') || file.originalname.toLowerCase().endsWith('.pdf')) {
+          text = await pdfExtractor.extractText(file.path);
+        }
+      } catch (err) {
+        console.warn(`[Safety Check] Could not extract text from ${file.originalname}:`, err);
+      }
+
+      // 1. Kontoauszug / Bank statement checks
+      if (channel === 'statement' || /kontoauszug|bank statement/i.test(file.originalname)) {
+        // a) Check Kontoauszug period
+        let stmtMonth = 0;
+        let stmtYear = 0;
+        let detectedPeriodStr = '';
+
+        // Match period like "01.06.2024 - 30.06.2024" or "01.06.2024 bis 30.06.2024"
+        const rangeMatch = text.match(/(\d{2})\.(\d{2})\.(20\d{2})\s*(?:-|bis|–)\s*(\d{2})\.(\d{2})\.(20\d{2})/i);
+        if (rangeMatch) {
+          stmtMonth = parseInt(rangeMatch[2], 10);
+          stmtYear = parseInt(rangeMatch[3], 10);
+          detectedPeriodStr = `${rangeMatch[1]}.${rangeMatch[2]}.${rangeMatch[3]} – ${rangeMatch[4]}.${rangeMatch[5]}.${rangeMatch[6]}`;
+        } else {
+          // Alternative: "Kontoauszug 06/2024" or "Auszug Nr. 6 / 2024"
+          const mMatch = text.match(/Kontoauszug\s*(?:Nr\.\s*)?(\d{1,2})[\/\s]+(20\d{2})/i);
+          if (mMatch) {
+            stmtMonth = parseInt(mMatch[1], 10);
+            stmtYear = parseInt(mMatch[2], 10);
+            detectedPeriodStr = `${germanMonths[stmtMonth] || stmtMonth} ${stmtYear}`;
+          }
+        }
+
+        if (stmtMonth > 0 && selectedMonthNum > 0 && (stmtMonth !== selectedMonthNum || (stmtYear > 0 && stmtYear !== selectedYearNum))) {
+          const selectedMonthName = germanMonths[selectedMonthNum] || String(selectedMonthNum);
+          warnings.push(
+            `Kontoauszug-Zeitraum (${detectedPeriodStr || `${stmtMonth}/${stmtYear}`}) stimmt nicht mit dem ausgewählten Monat (${selectedMonthName} ${selectedYearNum}) überein.`
+          );
+        }
+
+        // b) Account holder check on statement != client name
+        if (text && clientTokens.length > 0) {
+          const lowerText = text.toLowerCase();
+          const matchesClient = clientTokens.some((token) => lowerText.includes(token));
+          if (!matchesClient) {
+            warnings.push(
+              `Der Kontoinhaber auf dem Kontoauszug (${file.originalname}) scheint nicht mit Mandant „${expectedClientName}“ übereinzustimmen.`
+            );
+          }
+        }
+      } else {
+        // 2. Receipt / Invoice dates check
+        if (text) {
+          const dateMatches = Array.from(text.matchAll(/\b(\d{2})\.(\d{2})\.(20\d{2})\b/g));
+          if (dateMatches.length > 0) {
+            totalReceiptsDated++;
+            const hasMatchingDate = dateMatches.some((dm) => {
+              const dMonth = parseInt(dm[2], 10);
+              const dYear = parseInt(dm[3], 10);
+              return dMonth === selectedMonthNum && dYear === selectedYearNum;
+            });
+            if (!hasMatchingDate) {
+              receiptsMismatched++;
+            }
+          }
+        }
+      }
+
+      // Cleanup temp uploaded file from safety check
+      try {
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      } catch {}
+    }
+
+    if (totalReceiptsDated >= 2 && receiptsMismatched > totalReceiptsDated / 2) {
+      const selectedMonthName = germanMonths[selectedMonthNum] || String(selectedMonthNum);
+      warnings.push(
+        `Die Mehrheit der Belegdaten (${receiptsMismatched} von ${totalReceiptsDated} Belegen) weicht vom ausgewählten Monat (${selectedMonthName} ${selectedYearNum}) ab.`
+      );
+    }
+
+    return res.json({
+      ok: true,
+      hasWarnings: warnings.length > 0,
+      warnings,
+    });
+  } catch (err: any) {
+    console.error('[Safety Check Error]', err);
+    return res.json({ ok: true, hasWarnings: false, warnings: [] });
+  }
+});
+
 // 2. Upload and Process Document (With Client Folder Tree & Duplicate Detection)
 app.post('/api/documents/upload', upload.single('document'), async (req, res) => {
   try {
@@ -426,13 +562,54 @@ app.post('/api/documents/upload', upload.single('document'), async (req, res) =>
       originalname
     );
 
-    // Create initial record
+    const rawSlot = String(req.body.uploadSlot || '').trim();
+    const rawChannel = String(req.body.paymentChannel || '').trim().toLowerCase();
+
+    const uploadSlot: 'Kontoauszug' | 'Bankbelege' | 'Kassebelege' | 'Sonstiges' | undefined =
+      rawSlot === 'Kontoauszug' || rawSlot === 'Bankbelege' || rawSlot === 'Kassebelege' || rawSlot === 'Sonstiges'
+        ? (rawSlot as any)
+        : rawChannel === 'statement'
+        ? 'Kontoauszug'
+        : rawChannel === 'kasse'
+        ? 'Kassebelege'
+        : rawChannel === 'bank'
+        ? 'Bankbelege'
+        : rawChannel === 'unknown'
+        ? 'Sonstiges'
+        : subTypes.some((s) => /kasse/i.test(s)) || /kasse[n]?beleg/i.test(originalname)
+        ? 'Kassebelege'
+        : subTypes.some((s) => /kontoauszug|bank statement/i.test(s)) || /kontoausz/i.test(originalname)
+        ? 'Kontoauszug'
+        : subTypes.some((s) => /bankbeleg/i.test(s)) || /bankbeleg/i.test(originalname)
+        ? 'Bankbelege'
+        : undefined;
+
+    const paymentChannel: 'statement' | 'bank' | 'kasse' | 'unknown' =
+      rawChannel === 'statement' || rawChannel === 'bank' || rawChannel === 'kasse' || rawChannel === 'unknown'
+        ? (rawChannel as any)
+        : uploadSlot === 'Kontoauszug'
+        ? 'statement'
+        : uploadSlot === 'Kassebelege'
+        ? 'kasse'
+        : uploadSlot === 'Bankbelege'
+        ? 'bank'
+        : uploadSlot === 'Sonstiges'
+        ? 'unknown'
+        : /kontoausz/i.test(originalname)
+        ? 'statement'
+        : /kasse/i.test(originalname)
+        ? 'kasse'
+        : 'bank';
+
+    // Create initial record (GoBD: original file is stored untouched by SHA-256)
     const docId = uuidv4();
     const newDoc: DocumentRecord = {
       id: docId,
       client_id: clientId,
       category,
       sub_types: subTypes,
+      paymentChannel,
+      ...(uploadSlot ? { uploadSlot } : {}),
       original_filename: originalname,
       stored_filename: filename,
       file_path: storedPath,
@@ -1084,21 +1261,115 @@ app.get('/api/storage/download', (req: AuthenticatedRequest, res) => {
   }
 });
 
+const isFiBuDoc = (d: DocumentRecord): boolean =>
+  d.category === '01_FiBu' ||
+  Boolean(d.extracted_data?.skr03_account_code) ||
+  d.extracted_data?.document_type === 'BANK_STATEMENT';
+
+const isBankStmtDoc = (d: DocumentRecord): boolean =>
+  d.extracted_data?.document_type === 'BANK_STATEMENT' ||
+  /kontoauszug|1200[-_ ]?bank|bank[-_]\d+/i.test(d.original_filename || '');
+
+const belegMatchesDoc = (mb: any, d: DocumentRecord): boolean => {
+  if (!mb) return false;
+  if (mb.document_id && mb.document_id === d.id) return true;
+  if (mb.source_checksum && d.file_checksum && mb.source_checksum === d.file_checksum) return true;
+  if (
+    mb.source_file &&
+    d.original_filename &&
+    String(mb.source_file).toLowerCase().trim() === d.original_filename.toLowerCase().trim()
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const enrichDocumentsWithMonthGate = (docs: DocumentRecord[], _allDocs: DocumentRecord[]): DocumentRecord[] => {
+  const scopeCache = new Map<string, ReturnType<typeof buildReviewReportForScope> | null>();
+
+  return docs.map((d) => {
+    if (!isFiBuDoc(d)) return d;
+
+    const clientId = d.client_id || 'user_client_1';
+    const resolvedYm = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+    const yearNum = Number(resolvedYm.year);
+    const monthNum = resolvedYm.monthNum;
+    if (!Number.isFinite(yearNum) || yearNum < 2000 || yearNum > 2100 || !(monthNum >= 1 && monthNum <= 12)) {
+      return d;
+    }
+
+    const scopeKey = `${clientId}|${yearNum}|${monthNum}`;
+    let scopeData = scopeCache.get(scopeKey);
+    if (scopeData === undefined) {
+      try {
+        scopeData = buildReviewReportForScope(clientId, yearNum, monthNum);
+      } catch {
+        scopeData = null;
+      }
+      scopeCache.set(scopeKey, scopeData);
+    }
+    if (!scopeData) return d;
+
+    const monthApproved = !scopeData.reviewReport.blocked;
+    const effectiveStatus: DocumentRecord['status'] = monthApproved ? 'APPROVED' : 'NEEDS_ATTENTION';
+    const items = scopeData.monthlyItems || [];
+
+    let realBookingCount = 0;
+    let matchedBookingCount = 0;
+    let displaySkr03 = d.extracted_data?.skr03_account_code;
+
+    if (isBankStmtDoc(d)) {
+      const created = items.filter((it) => it.konto === '1200');
+      realBookingCount = created.length;
+      matchedBookingCount = 0;
+      displaySkr03 = '1200';
+    } else {
+      const created = items.filter((it) => it.konto !== '1200' && belegMatchesDoc(it.matchedBeleg, d));
+      const matched = items.filter((it) => it.konto === '1200' && belegMatchesDoc(it.matchedBeleg, d));
+      realBookingCount = created.length;
+      matchedBookingCount = matched.length;
+      const uniqueGegen = new Set(created.map((it) => it.gegenkonto).filter(Boolean));
+      displaySkr03 =
+        created.length > 0
+          ? uniqueGegen.size === 1
+            ? created[0].gegenkonto
+            : created[0].konto || '1000'
+          : d.extracted_data?.skr03_account_code;
+    }
+
+    return {
+      ...d,
+      status: effectiveStatus,
+      extracted_data: d.extracted_data
+        ? {
+            ...d.extracted_data,
+            skr03_account_code: displaySkr03,
+            real_booking_count: realBookingCount,
+            matched_booking_count: matchedBookingCount,
+            review_blocked: scopeData.reviewReport.blocked,
+            review_open_issues: scopeData.reviewReport.open_critical,
+          }
+        : d.extracted_data,
+    };
+  });
+};
+
 // 3. List all documents (supports ?client_id=<id> filtering; CLIENT sees only own docs)
 app.get('/api/documents', (req: AuthenticatedRequest, res) => {
-  let docs = dbService.getAll();
+  const allDocs = dbService.getAll();
+  let docs = allDocs;
   const reqClientId = req.query.client_id as string | undefined;
   if (req.user?.role === 'CLIENT') {
     if (reqClientId && reqClientId !== req.user.id) {
       return res.status(403).json({ error: 'Zugriff verweigert.' });
     }
     docs = docs.filter((d) => d.client_id === req.user!.id);
-    return res.json(docs);
+    return res.json(enrichDocumentsWithMonthGate(docs, allDocs));
   }
   if (reqClientId) {
     docs = docs.filter((d) => d.client_id === reqClientId || (!d.client_id && reqClientId === 'user_client_1'));
   }
-  res.json(docs);
+  res.json(enrichDocumentsWithMonthGate(docs, allDocs));
 });
 
 // 4. Get single document details
@@ -1152,7 +1423,7 @@ app.get('/api/documents/:id/skr03-csv', (req: AuthenticatedRequest, res) => {
   }
 });
 
-// 4c. Download / Serve SKR03 Excel Workbook (.xlsx) with clean columns & formatting
+// 4c. Download / Serve SKR03 Excel Preview Workbook (_VORSCHAU.xlsx) — read-only preview, not for DATEV import
 app.get('/api/documents/:id/skr03-xlsx', (req: AuthenticatedRequest, res) => {
   try {
     const doc = dbService.getById(String(req.params.id));
@@ -1173,25 +1444,37 @@ app.get('/api/documents/:id/skr03-xlsx', (req: AuthenticatedRequest, res) => {
       doc.original_filename
     );
     const allDocs = dbService.getAll();
-    const data = exportService.generateDocumentAndMonthlySKR03Csv(doc, allDocs, year, monthNum);
+    const data = exportService.generateDocumentAndMonthlySKR03Csv(doc, allDocs, year, monthNum, {
+      allowBlocked: true,
+      writeFiles: false,
+    });
 
-    if (data.reviewReport.blocked) {
-      return res.status(409).json({
-        error: `DATEV export blocked: ${data.reviewReport.block_reasons.join(' • ')}`,
-        blocked: true,
-        review_report: data.reviewReport,
-      });
+    const xlsxBuffer =
+      data.singleXlsxContent ||
+      (doc.extracted_data?.bookings?.length
+        ? exportService.buildSkr03ExcelWorkbook(
+            doc.extracted_data.bookings,
+            year,
+            String(monthNum).padStart(2, '0'),
+            'VORSCHAU'
+          )
+        : undefined);
+
+    if (!xlsxBuffer) {
+      return res.status(500).json({ error: 'Excel-Vorschau konnte nicht erstellt werden.' });
     }
 
-    if (!data.singleXlsxContent) {
-      return res.status(500).json({ error: 'Excel-Datei konnte nicht erstellt werden.' });
-    }
+    const rawName = (data.singleXlsxFileName || `SKR03_${year}_${String(monthNum).padStart(2, '0')}.xlsx`).replace(
+      /\.xlsx$/i,
+      ''
+    );
+    const previewFileName = rawName.endsWith('_VORSCHAU') ? `${rawName}.xlsx` : `${rawName}_VORSCHAU.xlsx`;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${data.singleXlsxFileName || 'SKR03_Export.xlsx'}"`);
-    return res.send(data.singleXlsxContent);
+    res.setHeader('Content-Disposition', `attachment; filename="${previewFileName}"`);
+    return res.send(xlsxBuffer);
   } catch (err: any) {
-    return res.status(500).json({ error: err?.message || 'Fehler beim Generieren der SKR03 Excel-Datei.' });
+    return res.status(500).json({ error: err?.message || 'Fehler beim Generieren der SKR03 Excel-Vorschau.' });
   }
 });
 
@@ -1290,6 +1573,70 @@ app.get('/api/review-report', async (req: AuthenticatedRequest, res) => {
   }
 });
 
+// 4e-2. Download / Serve validated monthly DATEV EXTF CSV directly from Review Gate
+app.get('/api/review/export-csv', async (req: AuthenticatedRequest, res) => {
+  try {
+    const requestedClientId = String(req.query.client_id || 'user_client_1');
+    if (!canAccessClient(req, requestedClientId)) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
+    }
+    const clientId = req.user?.role === 'CLIENT' ? req.user.id : requestedClientId;
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    await belegIndexService.ensureClientIndexed(clientId, dbService.getAll());
+
+    const allDocs = dbService.getAll();
+    const monthDoc =
+      allDocs.find((d) => {
+        if (d.client_id && d.client_id !== clientId) return false;
+        const r = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+        return Number(r.year) === year && r.monthNum === month;
+      }) || {
+        id: `scope_${clientId}_${year}_${month}`,
+        client_id: clientId,
+        original_filename: `Month_${year}_${month}`,
+        stored_filename: `Month_${year}_${month}`,
+        file_path: '',
+        mime_type: 'application/pdf',
+        size_bytes: 0,
+        uploaded_at: new Date().toISOString(),
+        status: 'PROCESSING' as const,
+        extracted_data: {
+          document_type: 'BANK_STATEMENT' as const,
+          supplier_name: 'Monatsübersicht',
+          invoice_number: `STAPEL-${year}-${String(month).padStart(2, '0')}`,
+          invoice_date: `${year}-${String(month).padStart(2, '0')}-01`,
+          currency: 'EUR',
+          net_amount: 0,
+          vat_rate_percent: 0,
+          vat_amount: 0,
+          total_amount: 0,
+          confidence_score: 1,
+          bookings: [],
+        },
+      };
+
+    const csvData = exportService.generateDocumentAndMonthlySKR03Csv(monthDoc, allDocs, year, month, {
+      allowBlocked: false,
+      writeFiles: true,
+    });
+
+    if (csvData.reviewReport.blocked || !csvData.buchungenCsvContent) {
+      return res.status(409).json({
+        error: `DATEV export blocked: ${csvData.reviewReport.block_reasons.join(' • ')}`,
+        blocked: true,
+        review_report: csvData.reviewReport,
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${csvData.buchungenCsvFileName}"`);
+    return res.send(csvData.buchungenCsvContent);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Generieren der monatlichen SKR03 CSV.' });
+  }
+});
+
 // 4f. Resolve a doubt on the Review List (set account, accept, or exclude)
 app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
   try {
@@ -1300,6 +1647,9 @@ app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
       action,
       gegenkonto,
       buCode,
+      belegdatum,
+      amount,
+      sh,
       note,
       remember_vendor,
       vendor_text,
@@ -1314,10 +1664,55 @@ app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
       return res.status(403).json({ error: 'Zugriff verweigert.' });
     }
 
+    let parsedAmount: number | undefined;
+    if (amount !== undefined && amount !== null && String(amount).trim() !== '') {
+      const n = Number(String(amount).trim().replace(',', '.'));
+      if (Number.isFinite(n) && n > 0) {
+        parsedAmount = Math.round(n * 100) / 100;
+      }
+    }
+
+    // Never allow confirming a 0,00 EUR booking on an unbooked Beleg
+    if (action !== 'EXCLUDE' && String(lineKey).startsWith('UNUSED_BELEG:')) {
+      const belegId = String(lineKey).slice('UNUSED_BELEG:'.length);
+      const scopeParts = String(scope).split('|');
+      const ymParts = (scopeParts[1] || '').split('-');
+      const recs = belegIndexService.getClientIndex(
+        scopeClientId,
+        Number(ymParts[0]) || new Date().getFullYear(),
+        Number(ymParts[1]) || 1,
+        0
+      );
+      const rec = recs.find((r) => r.id === belegId);
+      const effectiveAmount = parsedAmount !== undefined ? parsedAmount : Number(rec?.amount) || 0;
+      if (!(effectiveAmount > 0)) {
+        return res.status(400).json({
+          error: 'Ein Betrag von 0,00 € kann nicht gebucht werden. Bitte geben Sie einen gültigen Betrag (> 0,00 €) ein.',
+        });
+      }
+    }
+
+    let normalizedBelegdatum: string | undefined;
+    if (belegdatum) {
+      const rawDate = String(belegdatum).trim();
+      const isoMatch = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const deMatch = rawDate.match(/^(\d{1,2})\.(\d{1,2})\.?(?:\d{2,4})?$/);
+      if (isoMatch) {
+        normalizedBelegdatum = `${isoMatch[3]}${isoMatch[2]}`;
+      } else if (deMatch) {
+        normalizedBelegdatum = `${deMatch[1].padStart(2, '0')}${deMatch[2].padStart(2, '0')}`;
+      } else if (/^\d{4}$/.test(rawDate)) {
+        normalizedBelegdatum = rawDate;
+      }
+    }
+
     const resolution: any = {
       action,
       gegenkonto: gegenkonto ? String(gegenkonto).trim() : undefined,
       buCode: buCode !== undefined ? String(buCode).trim() : '',
+      ...(normalizedBelegdatum ? { belegdatum: normalizedBelegdatum } : {}),
+      ...(parsedAmount !== undefined ? { amount: parsedAmount } : {}),
+      ...(sh === 'S' || sh === 'H' ? { sh } : {}),
       note: note ? String(note).trim() : undefined,
       resolved_by: (req as any).user?.email || 'User/Accountant',
       resolved_at: new Date().toISOString(),
@@ -1330,10 +1725,10 @@ app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
       reviewService.saveResolution(scope, lk, resolution);
     }
 
-    if (remember_vendor && vendor_text && resolution.gegenkonto) {
+    if (remember_vendor && vendor_text && resolution.gegenkonto && resolution.gegenkonto !== '3200') {
       reviewService.saveVendorRule(vendor_text, resolution.gegenkonto, resolution.buCode || '', scopeClientId);
       const gk = resolution.gegenkonto;
-      if (gk === '8193' || gk === '8400' || gk === '8125' || gk === '3200') {
+      if (gk === '8193' || gk === '8400' || gk === '8125') {
         const vin = extractVinFromText(String(vendor_text));
         if (vin) {
           clientRulesService.saveVinRule(scopeClientId, vin, gk, { customer: String(vendor_text).slice(0, 80) });
@@ -1424,12 +1819,24 @@ app.post('/api/review/resolve', async (req: AuthenticatedRequest, res) => {
         console.warn('[Review Resolve] Sync error:', syncErr);
       }
 
-      // If document was waiting for review, update its status to READY_FOR_REVIEW
-      if (document_id) {
-        const docRecord = dbService.getById(document_id);
-        if (docRecord && docRecord.status === 'NEEDS_ATTENTION') {
-          dbService.update(document_id, { status: 'READY_FOR_REVIEW' });
-        }
+    }
+
+    // Sync persisted statuses for all FiBu documents in this resolved month
+    const targetStatus: DocumentRecord['status'] = reRunData.reviewReport.blocked ? 'NEEDS_ATTENTION' : 'APPROVED';
+    for (const d of allDocs) {
+      if ((d.client_id || 'user_client_1') !== clientId || !isFiBuDoc(d)) continue;
+      const r = googleDriveService.resolveYearAndMonth(d.extracted_data?.invoice_date, d.original_filename);
+      if (Number(r.year) === year && r.monthNum === month) {
+        dbService.update(d.id, {
+          status: targetStatus,
+          extracted_data: d.extracted_data
+            ? {
+                ...d.extracted_data,
+                review_blocked: reRunData.reviewReport.blocked,
+                review_open_issues: reRunData.reviewReport.open_critical,
+              }
+            : d.extracted_data,
+        });
       }
     }
 
@@ -1465,6 +1872,73 @@ app.post('/api/review/reset', (req: AuthenticatedRequest, res) => {
     return res.json({ message: 'Zurückgesetzt.', scope });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Fehler beim Zurücksetzen.' });
+  }
+});
+
+// 4g-2. Lock / Unlock an approved month (locked months are not re-calculated with new rules)
+app.post('/api/review/unlock-month', (req: AuthenticatedRequest, res) => {
+  try {
+    const { clientId, year, month } = req.body || {};
+    if (!clientId || !year || !month) {
+      return res.status(400).json({ error: 'clientId, year und month sind erforderlich.' });
+    }
+    if (!canAccessClient(req, String(clientId))) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
+    }
+    const unlocked = monthLockService.unlockMonth(String(clientId), Number(year), Number(month));
+    const refreshed = buildReviewReportForScope(String(clientId), Number(year), Number(month));
+    return res.json({
+      unlocked,
+      message: unlocked ? 'Monat entsperrt – wird mit aktuellen Regeln neu berechnet.' : 'Monat war nicht gesperrt.',
+      reviewReport: refreshed.reviewReport,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Entsperren des Monats.' });
+  }
+});
+
+app.post('/api/review/lock-month', (req: AuthenticatedRequest, res) => {
+  try {
+    const { clientId, year, month } = req.body || {};
+    if (!clientId || !year || !month) {
+      return res.status(400).json({ error: 'clientId, year und month sind erforderlich.' });
+    }
+    if (!canAccessClient(req, String(clientId))) {
+      return res.status(403).json({ error: 'Zugriff verweigert.' });
+    }
+    const cId = String(clientId);
+    const y = Number(year);
+    const m = Number(month);
+    const current = buildReviewReportForScope(cId, y, m);
+    if (current.reviewReport.blocked) {
+      return res.status(409).json({
+        error: 'Monat kann nicht gesperrt werden, solange noch offene Prüfungen bestehen.',
+        reviewReport: current.reviewReport,
+      });
+    }
+    const bookings = current.reviewReport.bookings.map((b) => ({
+      amount: b.amount,
+      sh: b.sh,
+      konto: b.konto,
+      gegenkonto: b.gegenkonto,
+      buCode: b.buCode,
+      belegdatum: b.date,
+      belegfeld1: b.belegfeld1 || '',
+      buchungstext: b.text,
+      currency: 'EUR',
+    }));
+    monthLockService.lockMonth(cId, y, m, {
+      bookings,
+      locked_by: req.user?.email || 'ui',
+    });
+    const updated = buildReviewReportForScope(cId, y, m);
+    return res.json({
+      locked: true,
+      message: 'Monat gesperrt (eingefroren).',
+      reviewReport: updated.reviewReport,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Fehler beim Sperren des Monats.' });
   }
 });
 

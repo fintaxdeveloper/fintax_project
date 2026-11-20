@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/home_model.dart';
+
+import '../../models/home_model.dart';
 import '../../repositories/home_repository.dart';
 
 class HomeController extends ChangeNotifier {

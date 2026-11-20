@@ -32,6 +32,7 @@ import { ClientPortal } from './portals/ClientPortal';
 import { AdminPortal } from './portals/AdminPortal';
 import { BankReconciliationModal } from './components/BankReconciliationModal';
 import type { BankStatementItem } from './components/BankReconciliationModal';
+import { openAuthenticatedFileInNewTab, fetchAuthenticatedBlobUrl } from './utils/authFile';
 
 interface ExtractedInvoiceData {
   document_type: string;
@@ -90,7 +91,7 @@ const API_BASE = 'http://localhost:5000/api';
 
 function MainAppContent() {
   const { user, activePortal } = useAuth();
-  const { success, error, info } = useSnackbar();
+  const { success, error } = useSnackbar();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [adminNavTab, setAdminNavTab] = useState<'USERS' | 'ASSIGNMENTS' | 'DELETIONS' | 'FOLDERS' | 'AUDIT'>('USERS');
   const [clientNavTab, setClientNavTab] = useState<ClientTabType>('OVERVIEW');
@@ -118,7 +119,32 @@ function MainAppContent() {
   const [loading, setLoading] = useState<boolean>(true);
   const [uploading, setUploading] = useState<boolean>(false);
   const [selectedDoc, setSelectedDoc] = useState<DocumentRecord | null>(null);
+  const [selectedDocBlobUrl, setSelectedDocBlobUrl] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState<ExtractedInvoiceData | null>(null);
+
+  useEffect(() => {
+    if (!selectedDoc) {
+      setSelectedDocBlobUrl(null);
+      return;
+    }
+    const controller = new AbortController();
+    let createdUrl: string | null = null;
+    fetchAuthenticatedBlobUrl(`${API_BASE}/documents/${selectedDoc.id}/file`, controller.signal)
+      .then((blobUrl) => {
+        createdUrl = blobUrl;
+        setSelectedDocBlobUrl(blobUrl);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          console.error('Document preview fetch error:', err);
+          setSelectedDocBlobUrl(null);
+        }
+      });
+    return () => {
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [selectedDoc]);
   const [activeTab, setActiveTab] = useState<'ALL' | 'NEEDS_ATTENTION' | 'APPROVED'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -910,21 +936,6 @@ function MainAppContent() {
 
                           <td style={{ padding: '14px 18px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                              {doc.extracted_data && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    window.open(`${API_BASE}/documents/${doc.id}/export-agenda`, '_blank');
-                                    info(lang === 'de' ? 'Agenda SKR03 CSV heruntergeladen.' : 'Agenda SKR03 CSV downloaded.', 'CSV Export');
-                                  }}
-                                  className="btn btn-secondary"
-                                  title={lang === 'de' ? 'Agenda SKR03 CSV herunterladen' : 'Download Agenda SKR03 CSV'}
-                                  style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#047857', color: '#ffffff', border: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
-                                >
-                                  <FileSpreadsheet size={14} />
-                                  <span>SKR03 CSV</span>
-                                </button>
-                              )}
                               <button
                                 onClick={() => openReviewModal(doc)}
                                 className="btn btn-primary"
@@ -1633,16 +1644,21 @@ function MainAppContent() {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <a
-                  href={`${API_BASE}/documents/${selectedDoc.id}/file`}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await openAuthenticatedFileInNewTab(`${API_BASE}/documents/${selectedDoc.id}/file`);
+                    } catch (err: any) {
+                      error(err?.message || 'Dokument konnte nicht geöffnet werden.');
+                    }
+                  }}
                   className="btn btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', cursor: 'pointer' }}
                 >
                   <ExternalLink size={14} />
                   {t.openOriginalNewTab}
-                </a>
+                </button>
                 <button
                   onClick={() => setSelectedDoc(null)}
                   style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
@@ -1668,15 +1684,19 @@ function MainAppContent() {
                   padding: 16,
                 }}
               >
-                {selectedDoc.mime_type === 'application/pdf' ? (
+                {!selectedDocBlobUrl ? (
+                  <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+                    {lang === 'de' ? 'Vorschau wird geladen…' : 'Loading preview…'}
+                  </div>
+                ) : selectedDoc.mime_type === 'application/pdf' ? (
                   <iframe
-                    src={`${API_BASE}/documents/${selectedDoc.id}/file`}
+                    src={selectedDocBlobUrl}
                     style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8 }}
                     title="PDF Viewer"
                   />
                 ) : (
                   <img
-                    src={`${API_BASE}/documents/${selectedDoc.id}/file`}
+                    src={selectedDocBlobUrl}
                     alt="Original Receipt"
                     style={{
                       maxWidth: '100%',
@@ -1878,24 +1898,6 @@ function MainAppContent() {
                   >
                     <CheckCircle2 size={18} />
                     <span>{t.btnApprove}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await handleReviewSave(true);
-                      window.open(`${API_BASE}/documents/${selectedDoc.id}/export-agenda`, '_blank');
-                      success(
-                        lang === 'de'
-                          ? 'Freigegeben & Agenda SKR03 CSV direkt in Google Drive (fintax/CSVs) gespeichert!'
-                          : 'Approved & Agenda SKR03 CSV synced to Google Drive (fintax/CSVs)!',
-                        'Google Drive Sync'
-                      );
-                    }}
-                    className="btn btn-primary"
-                    style={{ flex: 1.4, padding: '12px', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', boxShadow: '0 4px 12px rgba(5, 150, 105, 0.35)' }}
-                  >
-                    <FileSpreadsheet size={18} />
-                    <span>{lang === 'de' ? 'Freigeben & CSV Export' : 'Approve & Export CSV'}</span>
                   </button>
                 </div>
               </div>

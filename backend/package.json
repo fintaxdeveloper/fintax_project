@@ -8,7 +8,11 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "test:months": "tsx test/runMonths.ts"
+    "test": "tsx test/runMonths.ts",
+    "test:months": "tsx test/runMonths.ts",
+    "test:ref": "tsx test/diffReference.ts",
+    "reftest": "tsx test/diffReference.ts",
+    "golden:approve": "tsx test/goldenApprove.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",

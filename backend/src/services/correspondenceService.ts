@@ -64,7 +64,7 @@ Important Rules:
     let raw: any = null;
 
     // 1. Try Local Ollama on RTX A3000
-    if (AI_PROVIDER === 'ollama') {
+    if (ollamaClient.isEnabled() && AI_PROVIDER === 'ollama') {
       try {
         console.log('[Tax Letter] Processing official tax letter with local Ollama on RTX GPU...');
         if (isPdf) {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/primary_action_button.dart';
 import '../../../../models/todo_task.dart';
 import '../../../authentication/models/user_model.dart';
+import '../widgets/labeled_text_field.dart';
 
 class NewEmployeeScreen extends StatefulWidget {
   final UserModel user;
@@ -55,46 +57,35 @@ class _NewEmployeeScreenState extends State<NewEmployeeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Vor- und Nachname *', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary)),
-            const SizedBox(height: 6),
-            TextField(
+            LabeledTextField(
+              label: 'Vor- und Nachname *',
               controller: _nameController,
-              decoration: const InputDecoration(hintText: 'z.B. Sabine Meyer'),
+              hintText: 'z.B. Sabine Meyer',
             ),
             const SizedBox(height: 16),
-
-            const Text('Position / Funktion *', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary)),
-            const SizedBox(height: 6),
-            TextField(
+            LabeledTextField(
+              label: 'Position / Funktion *',
               controller: _positionController,
-              decoration: const InputDecoration(hintText: 'z.B. Vertiebsassistenz'),
+              hintText: 'z.B. Vertiebsassistenz',
             ),
             const SizedBox(height: 16),
-
-            const Text('E-Mail Adresse', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary)),
-            const SizedBox(height: 6),
-            TextField(
+            LabeledTextField(
+              label: 'E-Mail Adresse',
               controller: _emailController,
+              hintText: 'meyer@mustermann.de',
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(hintText: 'meyer@mustermann.de'),
             ),
             const SizedBox(height: 16),
-
-            const Text('Eintrittsdatum', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary)),
-            const SizedBox(height: 6),
-            TextField(
+            LabeledTextField(
+              label: 'Eintrittsdatum',
               controller: _startDateController,
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.calendar_today, size: 18)),
+              prefixIcon: Icons.calendar_today,
             ),
             const SizedBox(height: 28),
-
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.sectionPayroll),
-                child: const Text('Mitarbeiter anlegen', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-              ),
+            PrimaryActionButton(
+              label: 'Mitarbeiter anlegen',
+              onPressed: _submit,
+              backgroundColor: AppColors.sectionPayroll,
             ),
           ],
         ),

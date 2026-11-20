@@ -1,0 +1,39 @@
+{
+  "client_id": "user_qa24_704",
+  "year": 2024,
+  "month": 2,
+  "period": "2024_02",
+  "captured_at": "2026-11-19T15:19:41.389Z",
+  "proposals": [
+    {
+      "amount": 12500,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "0800",
+      "buCode": "",
+      "belegdatum": "2102",
+      "buchungstext": "ABDUL RAHMAN QAYUMI",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.11,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1576",
+      "buCode": "",
+      "belegdatum": "2902",
+      "buchungstext": "siehe Anlage 1 PN:905",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.6,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2902",
+      "buchungstext": "Abschluss lt. Anlage 2 PN:905",
+      "belegfeld1": ""
+    }
+  ]
+}

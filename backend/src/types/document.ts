@@ -30,6 +30,8 @@ export interface BookingItem {
   ai_reason?: string;
   ai_suggested_gegenkonto?: string;
   ai_suggested_bu?: string;
+  /** Set by the rule engine when the line needs a human decision (shown in the Review Gate) */
+  reviewHint?: { type: 'STAMMKAPITAL_UNCLEAR' | 'MISSING_BELEG_INCOMING'; question: string };
   /** Cross-month Beleg matching & car-level grouping metadata */
   carGroupKey?: string;
   matchedBy?: string;
@@ -70,10 +72,27 @@ export interface ExtractedInvoiceData {
   target_folder?: string;
   /** Bank statement opening / closing balance (positive = credit balance) for reconciliation */
   opening_balance?: number;
+  /** Statement holder is a company in formation ("i.Gr.") – used by the Stammkapital rule */
+  holder_in_gruendung?: boolean;
   closing_balance?: number;
+  bank_reconciliation?: {
+    openingBalance?: number;
+    closingBalance?: number;
+    calculatedClosing: number;
+    diff: number;
+    balanced: boolean;
+    pages: Array<{
+      page: number;
+      txCount: number;
+      pageSum: number;
+      lines: Array<{ date: string; amount: number; text: string }>;
+    }>;
+  };
   /** Review gate status of the month this document belongs to */
   review_blocked?: boolean;
   review_open_issues?: number;
+  real_booking_count?: number;
+  matched_booking_count?: number;
 }
 
 export interface ValidationIssue {
@@ -108,6 +127,8 @@ export interface DocumentRecord {
   client_id?: string;
   category?: DocumentCategory;
   sub_types?: string[];
+  paymentChannel?: 'statement' | 'bank' | 'kasse' | 'unknown';
+  uploadSlot?: 'Kontoauszug' | 'Bankbelege' | 'Kassebelege' | 'Sonstiges';
   original_filename: string;
   stored_filename: string;
   file_path: string;

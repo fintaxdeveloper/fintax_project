@@ -1,0 +1,939 @@
+{
+  "client_id": "user_client_1",
+  "year": 2026,
+  "month": 5,
+  "period": "2026_05",
+  "captured_at": "2026-11-19T15:28:52.874Z",
+  "proposals": [
+    {
+      "amount": 664,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1740",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "Echtzeitüberweisung Juma Yasir (Privatperson)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2015,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1890",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "Einzahlung",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 308,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3000",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung Koyun Food e.K.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 323,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3400",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "koyun",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 255,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 13)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 446.7,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 19)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 24.84,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung EDEKA BRUDER TRIBERG",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2.99,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung EDEKA BRUDER TRIBERG",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 112.6,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3400",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 110.27,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 19.82,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0405",
+      "buchungstext": "lidl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 16.98,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 50.85,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung LIDL Furtwangen",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 8.64,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 80.48,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0405",
+      "buchungstext": "Kartenzahlung SHELL Furtwangen (Tanken)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 51.73,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "0405",
+      "buchungstext": "AMAZON Luxembourg (VISA)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 341.49,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "0505",
+      "buchungstext": "Kartenzahlung METRO Gundelfingen",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2936.92,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1361",
+      "buCode": "",
+      "belegdatum": "0505",
+      "buchungstext": "PAYONE Zahlungseingang (netto, SERV 37,46 +USt 7,12)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 13.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "0505",
+      "buchungstext": "Kartenzahlung FREIE Service Station Waldkirch (Tanken)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 17.7,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4980",
+      "buCode": "9",
+      "belegdatum": "0605",
+      "buchungstext": "Kartenzahlung BAUHAUS Villingen-Schwenningen",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 30,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "0705",
+      "buchungstext": "ENTERPRISE Rent A Car Villingen (VISA)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 22.97,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0705",
+      "buchungstext": "Kartenzahlung NETTO Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 10.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0705",
+      "buchungstext": "Kartenzahlung NETTO Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 67.15,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "0805",
+      "buchungstext": "Lastschrift ecs electronic cash sylaender (Kartenterminal-Ge",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 80.58,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0805",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 53.94,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0805",
+      "buchungstext": "lidl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 26,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1105",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 685.4,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1105",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 31)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 216.5,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1105",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 10)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 76.2,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3000",
+      "buCode": "",
+      "belegdatum": "1105",
+      "buchungstext": "Kartenzahlung AKSA HANTAT SUPERMARKT",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 205,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1105",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 8)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 142,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3000",
+      "buCode": "",
+      "belegdatum": "1105",
+      "buchungstext": "Kartenzahlung SumUp Koyun Food e.K.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 93,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3400",
+      "buCode": "",
+      "belegdatum": "1105",
+      "buchungstext": "koyun",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 28.57,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4920",
+      "buCode": "9",
+      "belegdatum": "1205",
+      "buchungstext": "Lastschrift Telekom Deutschland",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 670.67,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4920",
+      "buCode": "8",
+      "belegdatum": "1205",
+      "buchungstext": "Echtzeitüberweisung Royem Döner GmbH",
+      "belegfeld1": "2026-4370"
+    },
+    {
+      "amount": 2410,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1890",
+      "buCode": "",
+      "belegdatum": "1205",
+      "buchungstext": "Einzahlung",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 834.9,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1361",
+      "buCode": "",
+      "belegdatum": "1205",
+      "buchungstext": "PAYONE Zahlungseingang (netto, SERV 13,12 +USt 2,48)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 28.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4980",
+      "buCode": "",
+      "belegdatum": "1305",
+      "buchungstext": "Kartenzahlung JAECKLE+FLAIG Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 30.01,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "1305",
+      "buchungstext": "Kartenzahlung ESSO Triberg (Tanken)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 68.25,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1305",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 500,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "1305",
+      "buchungstext": "Auszahlung GA Sparkasse",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 43.2,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1505",
+      "buchungstext": "Kartenzahlung NETTO Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 15.39,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1505",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 97.64,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "1505",
+      "buchungstext": "Kartenzahlung SHELL Furtwangen (Tanken)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 51.73,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "1505",
+      "buchungstext": "Landesbank Hessen-Thüringen VISA-Gutschrift",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1156.1,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1805",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 51)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 150,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "1805",
+      "buchungstext": "Getraenke Nock Schonach (Getränkeeinkauf)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 11.05,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1805",
+      "buchungstext": "Kartenzahlung EDEKA BRUDER TRIBERG",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 105.89,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1805",
+      "buchungstext": "edeka",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 456.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3000",
+      "buCode": "",
+      "belegdatum": "1805",
+      "buchungstext": "Kartenzahlung Koyun Food e.K.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 341,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3400",
+      "buCode": "",
+      "belegdatum": "1805",
+      "buchungstext": "koyun",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 85.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4980",
+      "buCode": "",
+      "belegdatum": "1805",
+      "buchungstext": "Kartenzahlung JAECKLE+FLAIG Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 96.18,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1805",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 15.39,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1805",
+      "buchungstext": "lidl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 9.48,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1805",
+      "buchungstext": "Kartenzahlung NETTO Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 27.77,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1905",
+      "buchungstext": "Kartenzahlung EDEKA BRUDER Furtwangen",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1809.03,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1361",
+      "buCode": "",
+      "belegdatum": "1905",
+      "buchungstext": "PAYONE Zahlungseingang (netto, SERV 25,98 +USt 4,94)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 980,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1890",
+      "buCode": "",
+      "belegdatum": "1905",
+      "buchungstext": "Einzahlung",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 397.7,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1590",
+      "buCode": "",
+      "belegdatum": "2005",
+      "buchungstext": "Echtzeitüberweisung Raiffeisen Kinzigtal",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 62.14,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2105",
+      "buchungstext": "Kartenzahlung SHELL Furtwangen (Tanken)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 3.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2105",
+      "buchungstext": "lidl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 75.86,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2105",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 5.21,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2205",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 22.81,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2205",
+      "buchungstext": "lidl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 11.58,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2205",
+      "buchungstext": "Kartenzahlung EDEKA BRUDER TRIBERG",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 249,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1740",
+      "buCode": "",
+      "belegdatum": "2205",
+      "buchungstext": "Überweisung Hilal Kartal (Privatperson)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 500,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "Auszahlung GA Sparkasse",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 713.6,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 35)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 95.5,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 5)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1310,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1890",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "Einzahlung",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 9.99,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "Lycatel Germany (VISA, vermutl. privat)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 86.47,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2605",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2.48,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2605",
+      "buchungstext": "lidl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 10.58,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2605",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 32.77,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2605",
+      "buchungstext": "Kartenzahlung NETTO Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 29.07,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2605",
+      "buchungstext": "netto",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 52.07,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2605",
+      "buchungstext": "Kartenzahlung SHELL Furtwangen (Tanken)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 682.3,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "HÄNDLERG. GIROCARD BSCARD (Anzahl 27)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 175,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "Auszahlung GA Sparkasse",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 77.35,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "Echtzeitüberweisung Druckerei",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2883.38,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1361",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "PAYONE Zahlungseingang (netto, SERV 50,94 +USt 9,68)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1542.43,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3000",
+      "buCode": "",
+      "belegdatum": "2605",
+      "buchungstext": "Echtzeitüberweisung Royem Döner GmbH",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 79.89,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2705",
+      "buchungstext": "Kartenzahlung EDEKA BRUDER TRIBERG",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 27.09,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "2705",
+      "buchungstext": "Kartenzahlung AKSA HANTAT SUPERMARKT",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 110.81,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2705",
+      "buchungstext": "Kartenzahlung SHELL Furtwangen (Tanken)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 33.48,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2705",
+      "buchungstext": "Kartenzahlung LIDL Furtwangen",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 45.65,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2705",
+      "buchungstext": "Kartenzahlung NETTO Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 233.81,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2805",
+      "buchungstext": "Kartenzahlung LIDL Triberg",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 270,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "2805",
+      "buchungstext": "Auszahlung GA Sparkasse",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2618,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "2805",
+      "buchungstext": "Überweisung D&K (Miete)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 664,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1740",
+      "buCode": "",
+      "belegdatum": "2805",
+      "buchungstext": "Überweisung Juma Yasir (Privatperson)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 238,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4955",
+      "buCode": "9",
+      "belegdatum": "2805",
+      "buchungstext": "Überweisung finTax consulting",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 94.39,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2905",
+      "buchungstext": "Abrechnung Kontoführung (inkl. USt 15,07)",
+      "belegfeld1": ""
+    }
+  ]
+}

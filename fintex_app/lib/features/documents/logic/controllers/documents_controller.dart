@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../../models/document_item.dart';
+
+import '../../../../models/document_item.dart';
 import '../../repositories/documents_repository.dart';
 
 class DocumentsController extends ChangeNotifier {

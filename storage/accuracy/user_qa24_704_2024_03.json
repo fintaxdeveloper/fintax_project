@@ -1,0 +1,52 @@
+{
+  "client_id": "user_qa24_704",
+  "year": 2024,
+  "month": 3,
+  "period": "2024_03",
+  "generated_at": "2026-11-20T12:55:03.383Z",
+  "total_bookings": 37,
+  "auto_correct": 31,
+  "auto_correct_pct": 83.78,
+  "current_accuracy_pct": 83.78,
+  "first_run_correct": 34,
+  "first_run_accuracy_pct": 91.89,
+  "first_run_changed": 3,
+  "resolved_by_question": 6,
+  "questions_asked": 6,
+  "questions_by_type": {
+    "beleg_fehlt": 2,
+    "entscheidung": 2,
+    "unreadable": 2
+  },
+  "user_changed": 2,
+  "goal_met": false,
+  "errors_by_category": {
+    "extraction:unreadable_or_changed_date": 2
+  },
+  "error_list": [
+    {
+      "category": "extraction:unreadable_or_changed_date",
+      "cause": "Contract/payment date was unreadable or changed by user (01.03. -> 14.03.)",
+      "lineKey": "0103|11200.00|H|1000|pfuhlgerhardw0v0xep68k413767#1",
+      "date": "14.03.",
+      "amount": 11200,
+      "text": "Pfuhl, Gerhard - W0V0XEP68K4137673",
+      "proposedAccount": "3200",
+      "finalAccount": "3200",
+      "proposedDate": "01.03.",
+      "finalDate": "14.03."
+    },
+    {
+      "category": "extraction:unreadable_or_changed_date",
+      "cause": "Contract/payment date was unreadable or changed by user (01.03. -> 01.03.)",
+      "lineKey": "0103|40600.00|H|1000|lenahoffmeisterwdd2052861f59#1",
+      "date": "01.03.",
+      "amount": 40600,
+      "text": "Lena Hoffmeister - WDD2052861F594444",
+      "proposedAccount": "3200",
+      "finalAccount": "3200",
+      "proposedDate": "01.03.",
+      "finalDate": "01.03."
+    }
+  ]
+}

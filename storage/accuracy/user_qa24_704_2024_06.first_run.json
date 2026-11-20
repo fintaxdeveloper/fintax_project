@@ -1,0 +1,639 @@
+{
+  "client_id": "user_qa24_704",
+  "year": 2024,
+  "month": 6,
+  "period": "2024_06",
+  "captured_at": "2026-11-19T19:49:25.842Z",
+  "proposals": [
+    {
+      "amount": 10000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "0306",
+      "buchungstext": "Brigitte Epper - PKW Cupra Indra Epper",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 15.01,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0306",
+      "buchungstext": "ARAL AG - ARAL Flörsheim Hofheimer Stra.e 24/Flörsheim/DE 31",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 25.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0306",
+      "buchungstext": "MINERA KRAFTSTOFFE GMBH/Hattersheim/DE 31.05.2024 um 14:24:0",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 153,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "0306",
+      "buchungstext": "Ingenieurburo Dastgir/Mainz-Kastel/DE 28.05.2024 um 11:58:01",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 4400,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "0406",
+      "buchungstext": "BRIGITTE EPPER - Schlusszahlung fuer Cupar Ateca VSSZZZ5FZM6",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 250,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4980",
+      "buCode": "9",
+      "belegdatum": "0406",
+      "buchungstext": "EBAY BY ADYEN - NX7LD333HPMF5Q25 eBay O 26-11638-25935 TAN1:",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 69.9,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0506",
+      "buchungstext": "DZ Bank-DB Vertrieb GmbH - Vorg: 100602683-35132722 GIROPAY0",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 8747.12,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0506",
+      "buchungstext": "Bank Deutsches Kraftfahrzeuggewerbe GmbH - V008603797 Secure",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1718",
+      "buCode": "",
+      "belegdatum": "0606",
+      "buchungstext": "SCHILLER HORST - Anzahlung Opel Adam",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 43300,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0606",
+      "buchungstext": "Fortia Automotive - Storno Rechnungsnummer 16/2023 XP7YGCEL9",
+      "belegfeld1": "16/2023"
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "0606",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 9.99,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0706",
+      "buchungstext": "ARAL AG - ARAL Flörsheim Hofheimer Stra.e 24/Flörsheim/DE 06",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 40000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "1006",
+      "buchungstext": "BILAR99E OY - LRWYGCEK8PC703197 EREF: XIDTTEKVDAAI",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 600,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "1006",
+      "buchungstext": "Gerd Zeller - Miete SecureGo plus IBAN: DE205007002406103436",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1006",
+      "buchungstext": "Bilar99e Oy - Rückerstattung von LRW3E7FJ0MC333369 SecureGo ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 4750,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1006",
+      "buchungstext": "Florian liszaj - WAUZZZ8V9JA121071 Anzahlung E UR Entgelt Ec",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "1006",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 13600,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8400",
+      "buCode": "",
+      "belegdatum": "1106",
+      "buchungstext": "Bank11 fuer Privatkunden und Hand el GmbH - Auszahlung fuer ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 8.75,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4910",
+      "buCode": "",
+      "belegdatum": "1106",
+      "buchungstext": "Deutsche Post AG - 070609430040923271200024910 ELV65643280 0",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "1106",
+      "buchungstext": "Klaus Kilb - Miete SecureGo plus IBAN: DE1151050015015903302",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 38500,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1106",
+      "buchungstext": "Autowelt Taunus - Kauf Tesla LRWYGCEK8PC703197 SecureGo plus",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 3500,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1206",
+      "buchungstext": "Lobert, Stefan - Erfuellung Kaufvertrag v. 27.5.2024 - Opel ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 29400,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "1206",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - W1N2437011J011595 Zahlung",
+      "belegfeld1": "13/2024"
+    },
+    {
+      "amount": 14.99,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4980",
+      "buCode": "9",
+      "belegdatum": "1206",
+      "buchungstext": "VILLMAR UND PFLUG OHG, HOFH/HOFHEIM/DE 11.06.2024 um 10:45:5",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 15.74,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "1206",
+      "buchungstext": "Adyen N.V. - Gthling Kaufmann Automobile GmbH/Niederhofheime",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 980.85,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "1206",
+      "buchungstext": "MOBILE.DE GMBH - DE2400200600 EREF: L11502P36274 MREF: 85723",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1500,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "0730",
+      "buCode": "",
+      "belegdatum": "1206",
+      "buchungstext": "Qayumi - Echtzeit-Ueberwei sung IBAN: DE42500105175444688009",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "1206",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 7500.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1206",
+      "buchungstext": "Jamal hassan - Kauf Mercedes vito WDF44760313286866 SecureGo",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 682.12,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4900",
+      "buCode": "",
+      "belegdatum": "1306",
+      "buchungstext": "Avalon premium cars - Rechnungsnummer 020186566 SecureGo plu",
+      "belegfeld1": "020186566"
+    },
+    {
+      "amount": 20000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1306",
+      "buchungstext": "Florian liszaj - WAUZZZ8V9JA121071 restzahlung SecureGo plus",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 9.99,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "1406",
+      "buchungstext": "ARAL AG - ARAL Flörsheim Hofheimer Stra.e 24/Flörsheim/DE 13",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 17000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1406",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 7000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1706",
+      "buchungstext": "SCHILLER HORST - Restzahlung Opel Adam",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 9700,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "1706",
+      "buchungstext": "DRIVE4EVER - AANKOOP HYUNDAI",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 30500,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1706",
+      "buchungstext": "ABDUL RAHM QAYUMI - Finanzierung Sibille Reichert Range Rove",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 16,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "1706",
+      "buchungstext": "ALPHA SERVICE G GMBH - 130611290065531271252910806 ELV652910",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 47.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "1706",
+      "buchungstext": "ALPHA SERVICE G GMBH - 130611260033958271252631600 ELV652631",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 153,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "1706",
+      "buchungstext": "Ingenieurburo Dastgir/Mainz-Kastel/DE 10.06.2024 um 15:19:51",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 8000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1706",
+      "buchungstext": "Kerim Bar - Kauf VW Polo Echt zeit-Ueberweisung IBAN: DE7170",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "1706",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 10150.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1706",
+      "buchungstext": "Joachim Urbat - Kauf Fiat 500c ZFA3120000J938530 SecureGo pl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 400,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "1806",
+      "buchungstext": "Birkner - DR Il 139/24 Echt zeit-Ueberweisung IBAN: DE076609",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "1806",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8400",
+      "buCode": "",
+      "belegdatum": "1906",
+      "buchungstext": "Timo Glasen - Tesla Model 3 FIN: 5YJ3E7EC9LF652695 Glasen Ti",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 12000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1906",
+      "buchungstext": "Helga Siegel - Kaufvertrag Adam Opel",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 65,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4980",
+      "buCode": "9",
+      "belegdatum": "1906",
+      "buchungstext": "EBAY BY ADYEN - RNZW2PC6TF9Q4V42 eBay O 03-11722-36784 TAN1:",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1000.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "0730",
+      "buCode": "",
+      "belegdatum": "1906",
+      "buchungstext": "Soheil Qayumi - Anzahlung Opel Adam W0L0MAP08H6078976 Secure",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1571.95,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4510",
+      "buCode": "",
+      "belegdatum": "1906",
+      "buchungstext": "Hauptzollamt gießen - 161875-2024-3420-G 50 10 - Abdul Rahma",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 39800,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1906",
+      "buchungstext": "Gerhard Zeller - Kauf Tesla Y XP7YGCEL2PBB066000 SecureGo pl",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 50.56,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2106",
+      "buchungstext": "Worldline Sweden AB fuer Shell - SHELL 5663/ Hofheim/DE 20.0",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 12000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4900",
+      "buCode": "",
+      "belegdatum": "2406",
+      "buchungstext": "PERIGORD MOTORS SAS - FORD RANGER EREF: FORD RANGER",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 99,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "2406",
+      "buchungstext": "Ingenieurburo Dastgir/Mainz-Kastel/DE 19.06.2024 um 13:03:04",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 40000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "2506",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - XP7YGCEK1PB057456 Zahlung",
+      "belegfeld1": "12/2024"
+    },
+    {
+      "amount": 12000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "8400",
+      "buCode": "",
+      "belegdatum": "2606",
+      "buchungstext": "PERIGORD MOTORS - Storno Rechnung Ford Ranger SecureGo plus ",
+      "belegfeld1": "Ford"
+    },
+    {
+      "amount": 40800,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "2706",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - XP7YGCEL2PB066000 Zahlung",
+      "belegfeld1": "12/2024"
+    },
+    {
+      "amount": 9.99,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2706",
+      "buchungstext": "ARAL AG - ARAL Flörsheim Hofheimer StraYe 24/Flörsheim/DE 26",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 100,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8400",
+      "buCode": "",
+      "belegdatum": "2806",
+      "buchungstext": "Bank11 für Privatkunden und Handel GmbH - Auszahlung SoKo Di",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 6.18,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1576",
+      "buCode": "",
+      "belegdatum": "2806",
+      "buchungstext": "siehe Anlage 1 PN:905",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 32.55,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2806",
+      "buchungstext": "Abschluss lt. Anlage 2 PN:905",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 39000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2806",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 17000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1406",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 39000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2806",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    }
+  ]
+}

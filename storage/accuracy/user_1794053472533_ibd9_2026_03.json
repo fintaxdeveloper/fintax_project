@@ -1,0 +1,25 @@
+{
+  "client_id": "user_1794053472533_ibd9",
+  "year": 2026,
+  "month": 3,
+  "period": "2026_03",
+  "generated_at": "2026-11-20T10:13:43.348Z",
+  "total_bookings": 0,
+  "auto_correct": 0,
+  "auto_correct_pct": 100,
+  "current_accuracy_pct": 100,
+  "first_run_correct": 0,
+  "first_run_accuracy_pct": 100,
+  "first_run_changed": 0,
+  "resolved_by_question": 0,
+  "questions_asked": 1,
+  "questions_by_type": {
+    "beleg_fehlt": 0,
+    "entscheidung": 1,
+    "unreadable": 0
+  },
+  "user_changed": 0,
+  "goal_met": true,
+  "errors_by_category": {},
+  "error_list": []
+}

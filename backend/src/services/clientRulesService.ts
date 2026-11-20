@@ -27,6 +27,8 @@ export interface ClientSettings {
   owners?: string[];
   eu_dealers?: string[];
   foreign_client_keywords?: string[];
+  private_account?: string;
+  private_deposit_account?: string;
 }
 
 export interface ClientRules {
@@ -36,61 +38,109 @@ export interface ClientRules {
   client_name?: string;
   chart_of_accounts?: string;
   industry?: string;
+  business_type?: 'restaurant' | 'car_dealer' | string;
+  legal_form?: 'Einzelunternehmer' | 'GmbH' | 'UG' | string;
+  mandant_nr?: string;
+  tax_mode?: 'Ist' | 'Soll' | string;
+  private_keywords?: string[];
   vehicle_registry?: Record<string, VehicleRule>;
   payee_tax_mappings?: Record<string, '8193' | '8400' | '8125' | '3200'>;
   vendor_account_rules?: VendorAccountRule[];
   starting_balances?: Record<string, Record<string, number>>;
+  stammkapital?: { total: number; account: string };
 }
 
 class ClientRulesService {
   private rulesCache: Map<string, ClientRules> = new Map();
   private filePaths: Map<string, string> = new Map();
+  private loaded = false;
   private rulesDirCandidates: string[] = [
     ...(process.env.FINTAX_STORAGE_DIR ? [path.resolve(process.env.FINTAX_STORAGE_DIR, 'rules')] : []),
     path.resolve(process.cwd(), 'storage/rules'),
     path.resolve(process.cwd(), '../storage/rules'),
     path.resolve(process.cwd(), '../../storage/rules'),
   ];
+  private lastRulesMtime = 0;
 
   constructor() {
     this.reloadAllRules();
   }
 
-  public reloadAllRules(): void {
+  public getRulesDir(): string | null {
+    return this.rulesDirCandidates.find((d) => fs.existsSync(d)) || null;
+  }
+
+  public checkRulesFreshness(): void {
+    const dir = this.getRulesDir();
+    if (!dir || !fs.existsSync(dir)) return;
+    try {
+      const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+      let maxMtime = 0;
+      for (const f of files) {
+        const stat = fs.statSync(path.join(dir, f));
+        if (stat.mtimeMs > maxMtime) maxMtime = stat.mtimeMs;
+      }
+      if (maxMtime > this.lastRulesMtime) {
+        this.lastRulesMtime = maxMtime;
+        this.reloadAllRules(true);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  public reloadAllRules(force = false): void {
+    if (this.loaded && !force) return;
+    this.loaded = true;
     this.rulesCache.clear();
     this.filePaths.clear();
-    for (const dir of this.rulesDirCandidates) {
-      if (fs.existsSync(dir)) {
-        try {
-          const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
-          for (const file of files) {
-            const fullPath = path.join(dir, file);
-            try {
-              const content = fs.readFileSync(fullPath, 'utf-8');
-              const rules: ClientRules = JSON.parse(content);
-              const key = rules.client_id || path.basename(file, '.json');
-              const keysToMap = Array.from(new Set([key, ...(rules.client_aliases || []), ...(rules.client_settings?.client_ids || [])]));
-              for (const k of keysToMap) {
-                const lower = k.toLowerCase();
-                const alpha = lower.replace(/[^a-z0-9]/g, '');
-                if (!this.rulesCache.has(lower)) {
-                  this.rulesCache.set(lower, rules);
-                  this.filePaths.set(lower, fullPath);
-                }
-                if (!this.rulesCache.has(alpha)) {
-                  this.rulesCache.set(alpha, rules);
-                  this.filePaths.set(alpha, fullPath);
-                }
-              }
-              console.log(`[ClientRules] Loaded ${file} -> client_ids: [${keysToMap.join(', ')}]`);
-            } catch (err: any) {
-              console.warn(`[ClientRules] Error loading ${fullPath}:`, err.message);
-            }
+    const clientIdToFile: Map<string, string> = new Map();
+
+    const dir = this.getRulesDir();
+    if (!dir) return;
+
+    try {
+      const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+      for (const file of files) {
+        const fullPath = path.join(dir, file);
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const rules: ClientRules = JSON.parse(content);
+        const key = rules.client_id || path.basename(file, '.json');
+        const keysToMap = Array.from(
+          new Set([key, ...(rules.client_aliases || []), ...(rules.client_settings?.client_ids || [])])
+        );
+
+        for (const k of keysToMap) {
+          const lower = k.toLowerCase();
+          const alpha = lower.replace(/[^a-z0-9]/g, '');
+
+          const existingLowerFile = clientIdToFile.get(lower);
+          const existingAlphaFile = clientIdToFile.get(alpha);
+          if (
+            (existingLowerFile && existingLowerFile !== fullPath) ||
+            (existingAlphaFile && existingAlphaFile !== fullPath)
+          ) {
+            const conflictingFile =
+              existingLowerFile && existingLowerFile !== fullPath ? existingLowerFile : existingAlphaFile!;
+            throw new Error(
+              `[ClientRules] Conflict: client_id "${k}" in ${file} is already mapped by ${path.basename(conflictingFile)}`
+            );
           }
-        } catch {
-          // ignore
+
+          clientIdToFile.set(lower, fullPath);
+          clientIdToFile.set(alpha, fullPath);
+          this.rulesCache.set(lower, rules);
+          this.rulesCache.set(alpha, rules);
+          this.filePaths.set(lower, fullPath);
+          this.filePaths.set(alpha, fullPath);
         }
+        console.log(`[ClientRules] Loaded ${file} -> client_ids: [${keysToMap.join(', ')}]`);
       }
+    } catch (err: any) {
+      if (err.message && err.message.startsWith('[ClientRules] Conflict:')) {
+        throw err;
+      }
+      console.warn(`[ClientRules] Error loading rules from ${dir}:`, err.message);
     }
   }
 
@@ -209,6 +259,12 @@ class ClientRulesService {
   /**
    * Gets starting balance for an account (e.g. 1000 Kasse, 1200 Bank) for a given year.
    */
+  public getStammkapital(clientId: string | undefined): { total: number; account: string } | null {
+    const s = this.getRules(clientId)?.stammkapital;
+    if (!s || !(Number(s.total) > 0) || !s.account) return null;
+    return { total: Number(s.total), account: String(s.account) };
+  }
+
   public getStartingBalance(clientId: string | undefined, year: number, account: string): number | null {
     const rules = this.getRules(clientId);
     if (!rules || !rules.starting_balances) return null;
@@ -231,8 +287,7 @@ class ClientRulesService {
     const fresh: ClientRules = { client_id: clientId, client_settings: { client_ids: [clientId] } };
     const lower = clientId.toLowerCase();
     const safeName = clientId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const defaultRulesDir =
-      this.rulesDirCandidates.find((d) => fs.existsSync(d)) || path.resolve(process.cwd(), '../storage/rules');
+    const defaultRulesDir = this.getRulesDir() || path.resolve(process.cwd(), '../storage/rules');
     this.rulesCache.set(lower, fresh);
     this.filePaths.set(lower, path.join(defaultRulesDir, `${safeName}.json`));
     return fresh;
@@ -242,8 +297,7 @@ class ClientRulesService {
     const rules = this.getRules(clientId);
     if (!rules || !clientId) return;
     const key = clientId.toLowerCase();
-    const defaultRulesDir =
-      this.rulesDirCandidates.find((d) => fs.existsSync(d)) || path.resolve(process.cwd(), '../storage/rules');
+    const defaultRulesDir = this.getRulesDir() || path.resolve(process.cwd(), '../storage/rules');
     const fp =
       this.filePaths.get(key) ||
       this.filePaths.get(key.replace(/[^a-z0-9]/g, '')) ||
@@ -271,6 +325,8 @@ class ClientRulesService {
   }
 
   public savePayeeRule(clientId: string | undefined, payee: string, taxKey: '8193' | '8400' | '8125' | '3200'): void {
+    // A "Remember vendor" rule may never default to 3200 (vehicle purchases are per-VIN/contract)
+    if (taxKey === '3200') return;
     const rules = this.ensureRules(clientId);
     if (!rules || !payee || payee.trim().length < 4) return;
     rules.payee_tax_mappings = rules.payee_tax_mappings || {};
@@ -279,6 +335,8 @@ class ClientRulesService {
   }
 
   public saveVendorRule(clientId: string | undefined, pattern: string, account: string, buCode: string): void {
+    // A "Remember vendor" rule may never default to 3200
+    if (account === '3200') return;
     const rules = this.ensureRules(clientId);
     if (!rules || !pattern || pattern.trim().length < 4) return;
     const escaped = pattern.toLowerCase().trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

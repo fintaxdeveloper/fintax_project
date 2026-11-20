@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/primary_action_button.dart';
 import '../widgets/auth_text_field.dart';
+import '../widgets/password_visibility_toggle.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -81,20 +83,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 hintText: '••••••••',
                 prefixIcon: Icons.lock_outline,
                 obscureText: _obscurePassword,
-                suffixIcon: IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                suffixIcon: PasswordVisibilityToggle(
+                  obscured: _obscurePassword,
                   onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
               const SizedBox(height: 28),
-              SizedBox(
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _handleRegister,
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Konto erstellen', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                ),
+              PrimaryActionButton(
+                label: 'Konto erstellen',
+                isLoading: _isLoading,
+                onPressed: _handleRegister,
               ),
             ],
           ),

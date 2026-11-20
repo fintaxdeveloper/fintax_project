@@ -43,6 +43,18 @@ class AppColors {
   static const Color pinkBox = Color(0xFFFCE7F3);
   static const Color pinkIcon = Color(0xFFBE185D);
 
+  static const Color purpleBox = Color(0xFFF3EEFF);
+  static const Color purpleIcon = Color(0xFF7C3AED);
+
+  static const Color orangeBox = Color(0xFFFFF4E5);
+  static const Color orangeIcon = Color(0xFFD97706);
+
+  static const Color indigoBox = Color(0xFFEEF0FF);
+  static const Color indigoIcon = Color(0xFF4F46E5);
+
+  static const Color emeraldBox = Color(0xFFE7F8F0);
+  static const Color emeraldIcon = Color(0xFF059669);
+
   static const Color redBox = Color(0xFFFCE8E8);
   static const Color redText = Color(0xFF991B1B);
 

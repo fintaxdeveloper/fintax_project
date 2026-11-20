@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/profile_model.dart';
+// import '../models/profile_model.dart';
+import '../../models/profile_model.dart';
 import '../../repositories/profile_repository.dart';
 
 class ProfileController extends ChangeNotifier {

@@ -27,9 +27,27 @@ export const ollamaClient = {
     return hasImages ? this.getVisionModel() : this.getTextModel();
   },
 
+  isEnabled(): boolean {
+    if (process.env.ENABLE_AI !== undefined) {
+      return String(process.env.ENABLE_AI).toLowerCase() === 'true';
+    }
+    if (process.env.DISABLE_AI !== undefined) {
+      return String(process.env.DISABLE_AI).toLowerCase() !== 'true';
+    }
+    const provider = String(process.env.AI_PROVIDER || '').toLowerCase();
+    if (['none', 'off', 'disabled', 'false'].includes(provider)) {
+      return false;
+    }
+    return true;
+  },
+
   async isAvailable(): Promise<boolean> {
+    if (!this.isEnabled()) return false;
     try {
-      const res = await fetch(`${this.getBaseUrl()}/api/tags`, { method: 'GET' });
+      const res = await fetch(`${this.getBaseUrl()}/api/tags`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(1500),
+      });
       return res.ok;
     } catch {
       return false;
@@ -37,6 +55,9 @@ export const ollamaClient = {
   },
 
   async generate(options: OllamaVisionRequest): Promise<string> {
+    if (!this.isEnabled()) {
+      throw new Error('[AI Disabled] AI processing is turned off (ENABLE_AI=false).');
+    }
     const hasImages = Boolean(options.images && options.images.length > 0);
     const model = options.model || this.getModel(hasImages);
     const url = `${this.getBaseUrl()}/api/generate`;
@@ -47,10 +68,12 @@ export const ollamaClient = {
       // Streaming: Ollama sends response headers immediately, so long GPU jobs (vision scans of
       // large scanned pages) never trigger Node's 5-minute UND_ERR_HEADERS_TIMEOUT.
       stream: true,
+      think: false,
       // Keep models resident in VRAM between pages/uploads (avoids expensive reloads)
       keep_alive: process.env.OLLAMA_KEEP_ALIVE || '30m',
       options: {
-        num_predict: 4096,
+        num_ctx: 8192,
+        num_predict: 2048,
         temperature: typeof options.temperature === 'number' ? options.temperature : 0,
         seed: 42,
       },

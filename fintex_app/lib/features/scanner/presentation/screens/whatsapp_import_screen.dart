@@ -2,8 +2,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/section_title.dart';
 import '../../../../services/api_service.dart';
 import '../../../authentication/models/user_model.dart';
+import '../widgets/target_folder_dropdown.dart';
+import '../widgets/whatsapp_file_tile.dart';
+import '../widgets/whatsapp_import_button.dart';
+import '../widgets/whatsapp_info_banner.dart';
 
 class WhatsAppImportScreen extends StatefulWidget {
   final UserModel user;
@@ -79,168 +84,37 @@ class _WhatsAppImportScreenState extends State<WhatsAppImportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // WhatsApp Header Banner
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.whatsapp.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.whatsapp.withValues(alpha: 0.3)),
-              ),
-              child: const Row(
-                children: [
-                  Text('💬', style: TextStyle(fontSize: 34)),
-                  SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Über WhatsApp teilen (PDF S. 2)',
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Empfangene Dokumente oder Fotos direkt aus Chats in die FinTax Kanzlei-Ordner übernehmen.',
-                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            const WhatsAppInfoBanner(),
             const SizedBox(height: 24),
 
-            const Text(
-              'Gefundene WhatsApp-Anhänge',
-              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 15),
-            ),
+            const SectionTitle('Gefundene WhatsApp-Anhänge'),
             const SizedBox(height: 10),
 
-            // Files List
             ...List.generate(_simulatedWhatsAppFiles.length, (index) {
               final file = _simulatedWhatsAppFiles[index];
-              final isSelected = _selectedFileIndex == index;
-
-              return GestureDetector(
+              return WhatsAppFileTile(
+                title: file['title'],
+                details: '${file['sender']} • ${file['size']} • ${file['date']}',
+                icon: file['icon'],
+                color: file['color'] as Color,
+                isSelected: _selectedFileIndex == index,
                 onTap: () => setState(() => _selectedFileIndex = index),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? AppColors.primary : AppColors.border,
-                      width: isSelected ? 2 : 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : AppColors.shadowLight,
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: (file['color'] as Color).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(file['icon'], color: file['color'] as Color, size: 24),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              file['title'],
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${file['sender']} • ${file['size']} • ${file['date']}',
-                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                        color: isSelected ? AppColors.primary : AppColors.textTertiary,
-                        size: 22,
-                      ),
-                    ],
-                  ),
-                ),
               );
             }),
             const SizedBox(height: 20),
 
-            // Target Section Dropdown
-            const Text(
-              'Zielordner in FinTax wählen',
-              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 15),
-            ),
+            const SectionTitle('Zielordner in FinTax wählen'),
             const SizedBox(height: 8),
 
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedSection,
-                  isExpanded: true,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w700),
-                  items: const [
-                    DropdownMenuItem(value: '01_FiBu', child: Text('📁 01_FiBu (Finanzbuchhaltung)')),
-                    DropdownMenuItem(value: '02_LoBu', child: Text('👥 02_LoBu (Lohn & Personal)')),
-                    DropdownMenuItem(value: '00_Schriftverkehr', child: Text('🏛️ 00_Schriftverkehr (Finanzamt)')),
-                    DropdownMenuItem(value: '00_Gruendung', child: Text('📑 00_Gründung (Verträge)')),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedSection = val);
-                  },
-                ),
-              ),
+            TargetFolderDropdown(
+              value: _selectedSection,
+              onChanged: (val) => setState(() => _selectedSection = val),
             ),
             const SizedBox(height: 32),
 
-            // Import Action Button
-            SizedBox(
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed: _uploading ? null : _importFile,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.whatsapp,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                icon: _uploading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.download_rounded),
-                label: const Text(
-                  'In FinTax importieren & KI starten',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                ),
-              ),
+            WhatsAppImportButton(
+              isLoading: _uploading,
+              onPressed: _importFile,
             ),
           ],
         ),

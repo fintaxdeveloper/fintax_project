@@ -1,0 +1,25 @@
+{
+  "client_id": "user_qa24_704",
+  "year": 2024,
+  "month": 5,
+  "period": "2024_05",
+  "generated_at": "2026-11-20T12:22:13.045Z",
+  "total_bookings": 57,
+  "auto_correct": 50,
+  "auto_correct_pct": 87.72,
+  "current_accuracy_pct": 87.72,
+  "first_run_correct": 42,
+  "first_run_accuracy_pct": 73.68,
+  "first_run_changed": 15,
+  "resolved_by_question": 0,
+  "questions_asked": 7,
+  "questions_by_type": {
+    "beleg_fehlt": 6,
+    "entscheidung": 0,
+    "unreadable": 1
+  },
+  "user_changed": 0,
+  "goal_met": false,
+  "errors_by_category": {},
+  "error_list": []
+}

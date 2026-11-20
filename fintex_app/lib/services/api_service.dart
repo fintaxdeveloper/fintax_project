@@ -243,6 +243,26 @@ class ApiService {
         status: 'NEEDS_ATTENTION',
         sizeBytes: 524288,
       ),
+      DocumentItem(
+        id: 'doc_6',
+        originalFilename: 'Handelsregisterauszug_HRB.pdf',
+        category: '00_Gruendung',
+        sectionName: 'Stammdaten',
+        supplierName: 'Amtsgericht Frankfurt',
+        date: '05.03.2024',
+        status: 'APPROVED',
+        sizeBytes: 312320,
+      ),
+      DocumentItem(
+        id: 'doc_7',
+        originalFilename: 'Gewerbeanmeldung.pdf',
+        category: '00_Gruendung',
+        sectionName: 'Stammdaten',
+        supplierName: 'Stadt Frankfurt',
+        date: '12.02.2024',
+        status: 'APPROVED',
+        sizeBytes: 204800,
+      ),
     ];
   }
 }

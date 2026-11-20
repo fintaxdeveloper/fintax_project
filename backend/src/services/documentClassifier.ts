@@ -104,7 +104,7 @@ Here is the extracted text from the document:
 ${extractedText.substring(0, 3000)}
 ---
 `;
-      if (AI_PROVIDER === 'ollama') {
+      if (ollamaClient.isEnabled() && AI_PROVIDER === 'ollama') {
         try {
           console.log('[Classifier] Classifying PDF text via local Ollama...');
           const parsed = await ollamaClient.generateJson<DocumentClassificationResult>({
@@ -129,7 +129,7 @@ ${extractedText.substring(0, 3000)}
       const fileBytes = fs.readFileSync(filePath);
       const base64Data = fileBytes.toString('base64');
 
-      if (AI_PROVIDER === 'ollama') {
+      if (ollamaClient.isEnabled() && AI_PROVIDER === 'ollama') {
         try {
           console.log('[Classifier] Running vision classification with Ollama on RTX A3000...');
           const parsed = await ollamaClient.generateJson<DocumentClassificationResult>({

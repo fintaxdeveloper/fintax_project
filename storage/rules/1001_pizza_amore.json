@@ -1,0 +1,53 @@
+{
+  "client_id": "user_pizza_amore",
+  "client_aliases": ["pizza_amore", "Pizza Amore", "Naqibullah Nejat"],
+  "client_name": "Pizza Amore (Naqibullah Nejat)",
+  "business_type": "restaurant",
+  "legal_form": "Einzelunternehmer",
+  "chart_of_accounts": "SKR03",
+  "mandant_nr": "PLACEHOLDER_MANDANT_NR",
+  "tax_mode": "Ist",
+  "industry": "Gastronomy / Restaurant",
+  "client_settings": {
+    "client_ids": ["user_pizza_amore", "pizza_amore"],
+    "mandanten_nr": "PLACEHOLDER_MANDANT_NR",
+    "company_name": "Pizza Amore",
+    "own_issuer_keywords": ["pizza amore", "naqibullah nejat", "202/254/40507"],
+    "owners": ["naqibullah nejat", "nejat"],
+    "eu_dealers": [],
+    "foreign_client_keywords": [],
+    "private_account": "1800",
+    "private_deposit_account": "1890"
+  },
+  "private_keywords": [
+    "aok",
+    "knappschaft",
+    "lebensversicherung",
+    "allianz lebensvers",
+    "privrent",
+    "rundfunk ard",
+    "rundfunkard",
+    "ard, zdf",
+    "bayerischer rundfunk"
+  ],
+  "vendor_account_rules": [
+    { "pattern": "reiß|reiss|\\breis\\b|spessart|getreidemühle|knecht|mike hering|fleischgroßhandel|waurig|mondo italiano|bereket", "account": "3300", "bu_code": "8" },
+    { "pattern": "lidl|aldi|rewe", "account": "3300", "bu_code": "8" },
+    { "pattern": "bft|tankstelle|aral|shell|jet", "account": "4530", "bu_code": "9" },
+    { "pattern": "car parts|werkstatt", "account": "4540", "bu_code": "9" },
+    { "pattern": "kfz-steuer|bundeskasse", "account": "4510", "bu_code": "" },
+    { "pattern": "kfz-versicher", "account": "4520", "bu_code": "" },
+    { "pattern": "vattenfall|strom|energie", "account": "4240", "bu_code": "9" },
+    { "pattern": "churfränkische|dieter jakob|miete", "account": "4210", "bu_code": "" },
+    { "pattern": "telefonica|o2|vodafone|telekom", "account": "4920", "bu_code": "9" },
+    { "pattern": "ionos", "account": "4925", "bu_code": "9" },
+    { "pattern": "fintax|steuerberater", "account": "4950", "bu_code": "9" },
+    { "pattern": "toom|baumarkt", "account": "4260", "bu_code": "9" },
+    { "pattern": "lieferando|takeaway|orderyoyo|order smart|app smart|uber", "account": "4600", "bu_code": "9" }
+  ],
+  "starting_balances": {
+    "2026_06": {
+      "1200": 2962.24
+    }
+  }
+}

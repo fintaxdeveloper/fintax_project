@@ -10,7 +10,9 @@ import { mathCrossValidationService } from './mathCrossValidationService.js';
 import { supplierMemoryService } from './supplierMemoryService.js';
 import { clientRulesService } from './clientRulesService.js';
 import { ocrService } from './ocrService.js';
-import { belegIndexService, extractVinFromText } from './belegIndexService.js';
+import { belegIndexService } from './belegIndexService.js';
+import { ruleEngine, priorCapitalBooked } from './ruleEngine.js';
+import { dbService } from './dbService.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -19,6 +21,10 @@ const ALLOW_CLOUD_AI = String(process.env.ALLOW_CLOUD_AI || 'false').toLowerCase
 const apiKey = ALLOW_CLOUD_AI ? (process.env.GEMINI_API_KEY || '') : '';
 const genAI = ALLOW_CLOUD_AI && apiKey ? new GoogleGenerativeAI(apiKey) : null;
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'ollama').toLowerCase();
+
+export const isAiEnabled = (): boolean => {
+  return ollamaClient.isEnabled();
+};
 
 export const aiService = {
   /**
@@ -60,10 +66,22 @@ export const aiService = {
       return registryMatch;
     }
 
+    let bankOcrPages: import('./ocrService.js').OcrPage[] | undefined;
+    if (isPdf && (!extractedText || extractedText.trim().length <= 30) && /kontoausz|bank/i.test(filename) && !/bankbeleg/i.test(filename)) {
+      try {
+        bankOcrPages = await ocrService.extractPages(filePath, mimeType, undefined, { requireSpatial: true });
+        if (bankOcrPages.length > 0) {
+          extractedText = bankOcrPages.map((p) => p.text).join('\n\f\n');
+        }
+      } catch (err: any) {
+        console.warn('[AI Service] Scanned bank statement OCR failed:', err?.message || err);
+      }
+    }
+
     if (extractedText) {
       // Deterministic Multi-Transaction German Bank Statement (Kontoauszug) Parser
       // Handles Volksbank, Sparkasse, VR-Bank, Commerzbank statements
-      const parsedBankStatement = this.parseGermanBankStatement(extractedText, filename, clientId);
+      const parsedBankStatement = this.parseGermanBankStatement(extractedText, filename, clientId, bankOcrPages);
       if (parsedBankStatement) {
         if (AI_PROVIDER === 'ollama' && parsedBankStatement.bookings?.length) {
           await this.enrichUnknownBankLinesWithOllama(parsedBankStatement.bookings, clientId);
@@ -76,7 +94,7 @@ export const aiService = {
     }
 
     // 0b. Offline CPU OCR + Multi-Page Bundle Indexing for scanned multi-page PDFs (Kassebelege/Bankbelege)
-    if (isPdf && (!extractedText || extractedText.trim().length <= 30) && /kassebeleg|bankbeleg|beleg/i.test(filename)) {
+    if (isPdf && (!extractedText || extractedText.trim().length <= 30) && /kasse[n]?beleg|kasse|bankbeleg|beleg/i.test(filename)) {
       try {
         const cpuPages = await ocrService.extractPages(filePath, mimeType);
         if (cpuPages.length > 0) {
@@ -106,7 +124,7 @@ export const aiService = {
             const totalSum = validBookings.reduce((s, b) => s + b.amount, 0);
             console.log(`[CPU OCR + BelegIndex] Extracted ${validBookings.length} booking(s) from "${filename}" (${cpuPages.length} pages).`);
             return {
-              document_type: /kassebeleg/i.test(filename) ? 'RECEIPT' : 'PURCHASE_INVOICE',
+              document_type: /kasse[n]?beleg|kasse/i.test(filename) ? 'RECEIPT' : 'PURCHASE_INVOICE',
               supplier_name: validBookings.length > 1 ? `Sammelmappe ${filename}` : indexed[0].partner,
               supplier_tax_id: '',
               invoice_number: indexed[0].invoiceNo || filename,
@@ -118,7 +136,7 @@ export const aiService = {
               total_amount: Math.round(totalSum * 100) / 100,
               confidence_score: 0.95,
               skr03_account_code: validBookings[0]?.gegenkonto || '4900',
-              payment_method: /kassebeleg/i.test(filename) ? 'cash' : 'bank_transfer',
+              payment_method: /kasse[n]?beleg|kasse/i.test(filename) ? 'cash' : 'bank_transfer',
               line_items_summary: indexed.map((r) => `${r.partner} (${r.amount.toFixed(2)} EUR${r.vin ? ', VIN ' + r.vin : ''})`).join('; '),
               bookings: validBookings,
             };
@@ -199,7 +217,7 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
 `;
 
     // 1. Try Local Ollama first (preferring extracted digital or CPU OCR text over slow vision)
-    if (AI_PROVIDER === 'ollama') {
+    if (isAiEnabled() && AI_PROVIDER === 'ollama') {
       try {
         console.log(`[Local AI] Processing invoice with Ollama (${ollamaClient.getModel()})...`);
         let parsed: any = null;
@@ -263,7 +281,7 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
     }
 
     // 2. Try Gemini Cloud if API key is provided
-    if (genAI && base64Data) {
+    if (isAiEnabled() && genAI && base64Data) {
       const modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash'];
       for (const modelName of modelsToTry) {
         try {
@@ -311,6 +329,9 @@ Return ONLY a strictly valid JSON object with NO markdown and NO extra text:
 
     // Multi-page batch PDFs (Kassebelege, Kassenbelege, Bankbelege, Kontoauszug, Kassenbericht) are indexed
     // deterministically and ultra-fast via offline CPU OCR in belegIndexService (skip heavy Ollama GPU vision loop)
+    if (!isAiEnabled()) {
+      return [];
+    }
     if (monthlyDocumentRegistry.match(fname)) return [];
     if (/(?:kasse|kassen|bank).*(?:beleg|bericht)|kontoausz|1200[-_ ]?bank|belege/i.test(fname)) {
       console.log(`[Multi-Bill AI] Skipping heavy per-page vision loop for batch archive "${originalFilename || path.basename(filePath)}" -> handled by fast offline OCR.`);
@@ -1334,7 +1355,7 @@ Return strictly JSON:
       };
 
       // Try Local Ollama Vision
-      if (AI_PROVIDER === 'ollama') {
+      if (isAiEnabled() && AI_PROVIDER === 'ollama') {
         try {
           let imagePayload: string | undefined = undefined;
           if (isPdf) {
@@ -1360,7 +1381,7 @@ Return strictly JSON:
       }
 
       // Try Gemini Cloud API if configured
-      if (genAI && base64Data) {
+      if (isAiEnabled() && genAI && base64Data) {
         try {
           const model = genAI.getGenerativeModel({
             model: 'gemini-1.5-flash',
@@ -1469,6 +1490,10 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       required: ['results'],
     };
 
+    if (!isAiEnabled()) {
+      return;
+    }
+
     try {
       const resp = await ollamaClient.generateJson<{
         results?: Array<{ id: number; category: string; confidence?: number; reason?: string }>;
@@ -1517,7 +1542,12 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
    * Deterministic parser for German Bank Statements (Kontoauszug - Volksbank, Sparkasse, VR Bank, etc.)
    * Extracts every transaction line, exact statement month/year, and maps each transaction to SKR03 Konto 1200 + Gegenkonto + BU-Schlüssel.
    */
-  parseGermanBankStatement(extractedText: string, filename: string = '', clientId?: string): ExtractedInvoiceData | null {
+  parseGermanBankStatement(
+    extractedText: string,
+    filename: string = '',
+    clientId?: string,
+    ocrPages?: import('./ocrService.js').OcrPage[]
+  ): ExtractedInvoiceData | null {
     if (!extractedText) return null;
 
     const lines = extractedText
@@ -1579,6 +1609,296 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       }
     }
     if (currentTx) txs.push(currentTx);
+
+    let spkOpening: number | undefined;
+    let spkClosing: number | undefined;
+    const spkPageRecs: Array<{
+      page: number;
+      txCount: number;
+      pageSum: number;
+      lines: Array<{ date: string; amount: number; text: string }>;
+    }> = [];
+
+    if (txs.length === 0 && /sparkasse/i.test(extractedText)) {
+      // Scanned Sparkasse statement parser:
+      // Handles "DD.MM.YYYY|Type Betrag", spatial row-position matching (left tx vs right Betrag EUR), and columnar OCR fallback
+      const parseSpkAmt = (raw: string): number | null => {
+        let t = raw.trim().replace(/\s+/g, '');
+        t = t.replace(/^[¯–—]/, '-');
+        t = t.replace(/^([-.]?)[gG]/, (_, p) => `${p}9`).replace(/a,/i, '2,').replace(/ga[.,]/i, '98.');
+        t = t.replace(/B$/i, '8').replace(/\)$/, '0').replace(/oo$/i, '00');
+        if (/^\.\d{3}[,.]\d{2}$/.test(t)) t = '-' + t.slice(1);
+        const neg = t.startsWith('-') || t.endsWith('-');
+        t = t.replace(/^[-+]/, '').replace(/[-+]$/, '');
+        if (/^\d{1,3}\.\d{3}[.,]\d{2}$/.test(t)) t = t.replace('.', '');
+        t = t.replace(/[.,](\d{2})$/, (_, d) => `.${d}`);
+        if (!/^\d+(?:\.\d{2})?$/.test(t)) return null;
+        const v = parseFloat(t);
+        if (isNaN(v)) return null;
+        return neg ? -v : v;
+      };
+
+      const spkTypeRe = /(Basis-Lastschrift|Überweisung\/Echtz\.?|Oberweisung\/Echtz\.?|Überweisung beleglos|Daueraufträge|Kartenzahlungen|Bargeldeinzahl\.?\s*SB|Zahlungseingang|Abrechnung(?:\s+\d{2}\.\d{2}\.\d{4})?)/i;
+      const pipeRe = /^(\d{1,2})\.(\d{2})\.(20\d{2})\|(.+?)\s+([-+]?[\d.,]+[-+]?)$/;
+
+      const pipeLines = lines.filter((l) => pipeRe.test(l));
+
+      if (pipeLines.length > 0) {
+        for (const line of lines) {
+          const pm = line.match(pipeRe);
+          if (!pm) continue;
+          const val = parseSpkAmt(pm[5]);
+          if (val === null) continue;
+          txs.push({
+            buDay: pm[1].padStart(2, '0'),
+            buMonth: pm[2],
+            valDay: pm[1].padStart(2, '0'),
+            valMonth: pm[2],
+            type: pm[4].trim(),
+            amount: Math.abs(val),
+            bankSH: val >= 0 ? 'H' : 'S',
+            details: [],
+          });
+        }
+      } else if (ocrPages && ocrPages.some((p) => Array.isArray(p.lines) && p.lines.length > 0 && p.imageWidth)) {
+        // Spatial row-position matching: left column (Datum + Erläuterung) matched to right column (Betrag EUR) by Y coordinate
+        let prevDay = 1;
+        let inferredMonth = '01';
+        const mHint = extractedText.match(/Kontoauszug\s+(\d{1,2})[\/1](20\d{2})/i);
+        if (mHint) inferredMonth = mHint[1].padStart(2, '0');
+
+        for (const pg of ocrPages) {
+          const pgLines = pg.lines || [];
+          const w = pg.imageWidth || 2400;
+          const colSplit = w * 0.70;
+          const maxYDist = Math.round(w * 0.06);
+          const left = pgLines.filter((l) => l.x < colSplit).sort((a, b) => a.y - b.y);
+          const right = pgLines.filter((l) => l.x >= colSplit).sort((a, b) => a.y - b.y);
+
+          const rightAmts: Array<{ y: number; amount: number; used: boolean }> = [];
+          for (const rl of right) {
+            if (/seite\s+\d|betra|juli|juni|anlage/i.test(rl.text)) continue;
+            const v = parseSpkAmt(rl.text);
+            if (v !== null) rightAmts.push({ y: rl.y, amount: v, used: false });
+          }
+
+          // Check opening / closing Kontostand rows by Y position
+          const pickClosestAmt = (targetY: number, maxDist = maxYDist): number | null => {
+            let best: { idx: number; dist: number } | null = null;
+            for (let i = 0; i < rightAmts.length; i++) {
+              if (rightAmts[i].used) continue;
+              const dist = Math.abs(rightAmts[i].y - targetY);
+              if (dist <= maxDist && (!best || dist < best.dist)) {
+                best = { idx: i, dist };
+              }
+            }
+            if (!best) return null;
+            rightAmts[best.idx].used = true;
+            return rightAmts[best.idx].amount;
+          };
+
+          interface SpatialTx extends RawBankTx {
+            y: number;
+          }
+          const pageTxs: SpatialTx[] = [];
+          let cur: SpatialTx | null = null;
+          let inBody = false;
+
+          for (const ll of left) {
+            const txt = ll.text.trim();
+            if (/^Kontostand\/Rechnungsabschluss/i.test(txt)) {
+              const v = pickClosestAmt(ll.y, maxYDist * 1.5);
+              if (v !== null) spkClosing = v;
+              continue;
+            }
+            if (/^Datum\b|^Erläuterung/i.test(txt)) { inBody = true; continue; }
+            if (!inBody) continue;
+            if (/^Sparkasse Aschaffenburg|^\d+\s*\(AG\s*Aschaffenburg\)|^Anstalt des|^Telefon\b|^BIC:/i.test(txt)) {
+              if (cur) { pageTxs.push(cur); cur = null; }
+              break;
+            }
+            if (/^Kontostand\s+am\b/i.test(txt)) {
+              if (cur) { pageTxs.push(cur); cur = null; }
+              const v = pickClosestAmt(ll.y, maxYDist);
+              if (v !== null) {
+                if (/um\s+\d{2}:\d{2}\s+Uhr/i.test(txt)) spkClosing = v;
+                else if (spkOpening === undefined) spkOpening = v;
+              }
+              continue;
+            }
+
+            const typeMatch = txt.match(spkTypeRe);
+            const datePrefixMatch = txt.match(/^(\d{0,2}['.]?\d?)\.(\d{2})\.?20\d{2}\b/);
+            if (typeMatch && (datePrefixMatch || /^\.\d{2}\.20\d{2}\b/.test(txt) || /^(Kartenzahlungen|Basis-Lastschrift|Zahlungseingang)$/i.test(txt))) {
+              if (cur) pageTxs.push(cur);
+              let dayNum = prevDay;
+              let mo = inferredMonth;
+              if (datePrefixMatch) {
+                const rawD = datePrefixMatch[1].replace(/['.]/g, '');
+                mo = datePrefixMatch[2];
+                inferredMonth = mo;
+                if (rawD.length > 0) {
+                  let dVal = parseInt(rawD, 10);
+                  if (dVal < prevDay && dVal < 10) {
+                    const cands = [10 + dVal, 20 + dVal, 30 + dVal].filter((c) => c >= prevDay && c <= 31);
+                    if (cands.length > 0) dVal = cands[0];
+                  }
+                  if (dVal >= 1 && dVal <= 31) dayNum = dVal;
+                }
+              }
+              prevDay = dayNum;
+              const dd = String(dayNum).padStart(2, '0');
+              cur = {
+                y: ll.y,
+                buDay: dd,
+                buMonth: mo,
+                valDay: dd,
+                valMonth: mo,
+                type: typeMatch[1].trim(),
+                amount: 0,
+                bankSH: 'S',
+                details: [],
+              };
+            } else if (cur && cur.details.length < 5) {
+              cur.details.push(txt);
+            }
+          }
+          if (cur) pageTxs.push(cur);
+
+          const recLines: Array<{ date: string; amount: number; text: string }> = [];
+          let pageSum = 0;
+          for (const ptx of pageTxs) {
+            const val = pickClosestAmt(ptx.y, maxYDist);
+            if (val === null) continue;
+            ptx.amount = Math.abs(val);
+            ptx.bankSH = val >= 0 ? 'H' : 'S';
+            txs.push(ptx);
+            pageSum = Math.round((pageSum + val) * 100) / 100;
+            recLines.push({
+              date: `${ptx.buDay}.${ptx.buMonth}.`,
+              amount: val,
+              text: (ptx.details[0] || ptx.type).slice(0, 45),
+            });
+          }
+          if (recLines.length > 0) {
+            spkPageRecs.push({ page: pg.page, txCount: recLines.length, pageSum, lines: recLines });
+          }
+        }
+      } else {
+        // Columnar OCR format: split by page markers ("Sparkasse" or \f)
+        const rawPages = extractedText.split(/\f/).map((p) => p.trim()).filter(Boolean);
+        const pagesToScan = rawPages.length > 1 ? rawPages : extractedText.split(/(?=^Sparkasse\b)/m).filter(Boolean);
+        let prevDay = 1;
+        let inferredMonth = '01';
+        const mHint = extractedText.match(/Kontoauszug\s+(\d{1,2})[\/1](20\d{2})/i);
+        if (mHint) inferredMonth = mHint[1].padStart(2, '0');
+
+        for (const pageText of pagesToScan) {
+          const pLines = pageText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+          const datumIdx = pLines.findIndex((l) => /^Datum\s+Erläuterun/i.test(l));
+          const betraIdx = pLines.findIndex((l) => /^Betra[g]?\s+EUR/i.test(l));
+          if (datumIdx < 0 || betraIdx < 0) {
+            // Check Anlage / Rechnungsabschluss page for closing balance
+            for (let i = 0; i < pLines.length; i++) {
+              if (/Kontostand\/Rechnungsabschluss/i.test(pLines[i])) {
+                for (let j = i; j < Math.min(pLines.length, i + 8); j++) {
+                  const v = parseSpkAmt(pLines[j]);
+                  if (v !== null && /\d/.test(pLines[j]) && /[., ]\d{2}/.test(pLines[j])) {
+                    spkClosing = v;
+                  }
+                }
+              }
+            }
+            continue;
+          }
+
+          // Collect amounts after "Betra EUR" up to footer
+          const footerIdx = pLines.findIndex((l, i) => i > betraIdx && /Sparkasse Aschaffenburg|mzahl|Anlage/i.test(l));
+          const amtLines = pLines.slice(betraIdx + 1, footerIdx > 0 ? footerIdx : pLines.length);
+          const amts: number[] = [];
+          for (const al of amtLines) {
+            const v = parseSpkAmt(al);
+            if (v !== null) amts.push(v);
+          }
+
+          // Collect transactions between Datum Erläuterun and Seite X von Y / Betra EUR
+          const txEndIdx = pLines.findIndex((l, i) => i > datumIdx && (/^Seite\s+\d+\s+von\s+\d+/i.test(l) || i === betraIdx));
+          const txSection = pLines.slice(datumIdx + 1, txEndIdx > 0 ? txEndIdx : betraIdx);
+          const pageTxs: RawBankTx[] = [];
+          let cur: RawBankTx | null = null;
+          let hasOpeningRow = false;
+
+          for (const l of txSection) {
+            if (/^Kontostand\s+am\b/i.test(l)) {
+              if (/um\s+\d{2}:\d{2}\s+Uhr/i.test(l)) {
+                if (amts.length > 0) spkClosing = amts[amts.length - 1];
+              } else {
+                hasOpeningRow = true;
+                if (amts.length > 0 && spkOpening === undefined) spkOpening = amts[0];
+              }
+              if (cur) { pageTxs.push(cur); cur = null; }
+              continue;
+            }
+            if (/^1\.\s*(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+20\d{2}/i.test(l)) continue;
+
+            const typeMatch = l.match(spkTypeRe);
+            const datePrefixMatch = l.match(/^(\d{0,2}['.]?\d?)\.(\d{2})\.?20\d{2}\s+(.+)$/);
+            if (typeMatch && (datePrefixMatch || /^\.\d{2}\.20\d{2}\s+/.test(l) || /^(Kartenzahlungen|Basis-Lastschrift|Zahlungseingang)$/i.test(l))) {
+              if (cur) pageTxs.push(cur);
+              let dayNum = prevDay;
+              let mo = inferredMonth;
+              if (datePrefixMatch) {
+                const rawD = datePrefixMatch[1].replace(/['.]/g, '');
+                mo = datePrefixMatch[2];
+                inferredMonth = mo;
+                if (rawD.length > 0) {
+                  let dVal = parseInt(rawD, 10);
+                  if (dVal < prevDay && dVal < 10) {
+                    const cands = [10 + dVal, 20 + dVal, 30 + dVal].filter((c) => c >= prevDay && c <= 31);
+                    if (cands.length > 0) dVal = cands[0];
+                  }
+                  if (dVal >= 1 && dVal <= 31) dayNum = dVal;
+                }
+              }
+              prevDay = dayNum;
+              const dd = String(dayNum).padStart(2, '0');
+              cur = {
+                buDay: dd,
+                buMonth: mo,
+                valDay: dd,
+                valMonth: mo,
+                type: typeMatch[1].trim(),
+                amount: 0,
+                bankSH: 'S',
+                details: [],
+              };
+            } else if (cur && cur.details.length < 5) {
+              cur.details.push(l);
+            }
+          }
+          if (cur) pageTxs.push(cur);
+
+          const txAmts = hasOpeningRow ? amts.slice(1) : amts;
+          for (let i = 0; i < pageTxs.length && i < txAmts.length; i++) {
+            const val = txAmts[i];
+            pageTxs[i].amount = Math.abs(val);
+            pageTxs[i].bankSH = val >= 0 ? 'H' : 'S';
+            txs.push(pageTxs[i]);
+          }
+        }
+      }
+
+      if (txs.length > 0 && spkOpening !== undefined && spkClosing !== undefined) {
+        const netSum = txs.reduce((s, t) => s + (t.bankSH === 'H' ? t.amount : -t.amount), 0);
+        const calcClosing = Math.round((spkOpening + netSum) * 100) / 100;
+        const diff = Math.round((calcClosing - spkClosing) * 100) / 100;
+        if (Math.abs(diff) > 0.02) {
+          console.warn(`[Sparkasse Parser] Balance mismatch: opening (${spkOpening}) + lines (${netSum.toFixed(2)}) = ${calcClosing}, closing = ${spkClosing} (diff ${diff})`);
+        } else {
+          console.log(`[Sparkasse Parser] Balance verified: ${spkOpening} + ${netSum.toFixed(2)} = ${spkClosing}`);
+        }
+      }
+    }
 
     if (txs.length === 0) return null;
 
@@ -1665,8 +1985,30 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
     ];
     const monthLabel = germanMonthNames[statementMonth] || monthPadded;
 
-    // Map each transaction to a DATEV SKR03 BookingItem
-    const bookings: BookingItem[] = txs.map((tx) => {
+    // Opening / closing balance for bank reconciliation check (Volksbank/Sparkasse: "alter/neuer Kontostand ... 142.231,29 H")
+    const parseBalanceNear = (label: RegExp): number | undefined => {
+      const rawLines = extractedText.split(/\r?\n/);
+      for (let i = 0; i < rawLines.length; i++) {
+        if (!label.test(rawLines[i])) continue;
+        for (let j = i; j < Math.min(rawLines.length, i + 5); j++) {
+          const m = rawLines[j].match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s*([SH])\b/);
+          if (m) {
+            const val = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+            if (!isNaN(val)) return m[2] === 'S' ? -val : val;
+          }
+        }
+      }
+      return undefined;
+    };
+    const openingBalance = parseBalanceNear(/alter\s+Kontostand/i) ?? spkOpening;
+    const closingBalance = parseBalanceNear(/neuer\s+Kontostand/i) ?? spkClosing;
+    const holderInGruendung = /(?:i\.?\s*gr\.?|in\s+gründung)/i.test(extractedText);
+    const capitalAccount = clientRulesService.getStammkapital(clientId)?.account || '0800';
+    const priorCapital = priorCapitalBooked(dbService.getAll(), clientId, statementYear, statementMonth);
+    const bookingsSoFar: BookingItem[] = [];
+
+    // Map each transaction to a DATEV SKR03 BookingItem (splitting SecureGo "ENTG: 0,80 EUR Entgelt" fee to 4970)
+    const bookings: BookingItem[] = txs.flatMap((tx) => {
       // On German bank statements:
       // 'H' (Haben) = incoming money = Bank (1200) Soll ('S')
       // 'S' (Soll)  = outgoing money = Bank (1200) Haben ('H')
@@ -1676,292 +2018,59 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       let counterparty = (tx.details[0] || tx.type || '').trim();
       const purpose = tx.details.slice(1).join(' ').trim();
       const combined = `${tx.type} ${counterparty} ${purpose}`;
-      const lower = combined.toLowerCase();
+      const hasInstantFee =
+        sh === 'H' &&
+        tx.amount > 0.80 &&
+        /(?:entg|entgelt|gebühr)[:\s]*0[,.]80(?:\s*EUR|\b)/i.test(combined);
+      const atmFeeMatch =
+        sh === 'H'
+          ? combined.match(/Auszahlung\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s*EUR\s+Entgelt\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s*EUR/i)
+          : null;
+      const atmCashAmt = atmFeeMatch ? parseFloat(atmFeeMatch[1].replace(/\./g, '').replace(',', '.')) : 0;
+      const atmFeeAmt = atmFeeMatch ? parseFloat(atmFeeMatch[2].replace(/\./g, '').replace(',', '.')) : 0;
+      const hasAtmFee =
+        Boolean(atmFeeMatch) &&
+        atmCashAmt > 0 &&
+        atmFeeAmt > 0 &&
+        Math.abs(atmCashAmt + atmFeeAmt - tx.amount) < 0.02;
+      const mainAmount = hasAtmFee
+        ? atmCashAmt
+        : hasInstantFee
+        ? Math.round((tx.amount - 0.80) * 100) / 100
+        : tx.amount;
 
-      let gegenkonto = sh === 'S' ? '8400' : '3400';
-      let buCode = '';
-
-      // 1. Share capital (Stammkapital / Stammeinlage for GmbH in Gründung)
-      const isShareCapital =
-        sh === 'S' && (
-          /stammkapital|stammeinlage|kapitaleinzahlung|gründungskapital|gesellschaftsvertrag/i.test(lower) ||
-          (/(?:i\.?\s*gr\.?|in\s+gründung)/i.test(extractedText) && [12500, 25000].includes(tx.amount)) ||
-          (/\b(stammkapital|stammeinlage)\b/i.test(extractedText) && tx.amount >= 5000 && clientRulesService.isOwner(undefined, lower))
-        );
-
-      // 2. Loans & Shareholder balances (Darlehen / Kredit)
-      const isLoan = /\b(darlehen|kredit)\b/i.test(lower);
-
-      // 3. Customer contract cancellations & deposit/overpayment refunds (Storno / Rückzahlung / Überzahlung)
-      const isCustomerRefundOrStorno =
-        sh === 'H' && (
-          /(storno|rückzahlung|rueckzahlung|überzahlung|ueberzahlung|erstattung|widerruf|rückabwicklung|reklamation|refund)/i.test(lower) ||
-          /(?:kaufvertrag|anzahlung|rechnung).*(?:storno|rückzahlung|rueckzahlung|überzahlung|ueberzahlung)/i.test(lower)
-        );
-
-      // 4. Cash transit (Bar-Auszahlung, Geldautomat, etc. - NEVER match Bank11, financing, or vehicle purchases!)
-      const extractedVin = extractVinFromText(combined);
-      const hasVinInText =
-        Boolean(extractedVin) ||
-        /(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])/i.test(combined) ||
-        /(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{3}[A-HJ-NPR-Z0-9]{8}\d{6}(?![0-9])/i.test(combined);
-
-      const isCashTransit =
-        !hasVinInText &&
-        !/bank11|finanzierung|darlehen|auszahlung fuer|auszahlung für/i.test(lower) && (
-          /bar-auszahlung|auszahlung girocard|bareinzahlung|geldautomat\b|bargeldeinzahlung|barauszahlung/i.test(tx.type) ||
-          /bar-auszahlung|bareinzahlung|geldautomat\b/i.test(counterparty) ||
-          /bar-auszahlung|bareinzahlung|geldautomat\b/i.test(lower) ||
-          /crs weilbach|bad soden gaa|gaa \d/i.test(combined)
-        );
-
-      // 5. Vehicle purchases & sales (for automotive dealership)
-      const isVehiclePurchase =
-        /\b(kauf|anzahlung|restzahlung|differenzbetrag|fahrzeug|auto|pkw|kfz|polo|tesla|adam|vito|fiat|golf|corsa|astra|passat|audi|bmw|mercedes|opel|volkswagen|cupra|skoda|seat|porsche|land rover|range rover)\b/i.test(lower) ||
-        hasVinInText ||
-        /auto-|kfz-|car-/i.test(lower) ||
-        clientRulesService.isEuDealer(clientId, lower);
-
-      // 6. Bank statement fees & separate bank fee VAT breakdown (Anlage 1 PN:905)
-      // IMPORTANT: Do NOT trigger bank fee on large car purchase / vendor payments that happen to have instant transfer fee text
-      const isBankFeeVat =
-        (/^siehe anlage/i.test(lower) || (/pn:905/i.test(lower) && !/abschluss/i.test(lower)) || /entgeltabrechnung/i.test(lower)) &&
-        !/abschluss/i.test(lower) &&
-        tx.amount < 25;
-      const isBankFee =
-        (
-          /abschluss|kontoführung|bankgebühr|depotgebühr|jahrespreis|bankcard|debitkarte|kreditkarte|kartengebühr\b/i.test(tx.type.toLowerCase()) ||
-          (/abschluss|kontoführung|bankgebühr|depotgebühr|jahrespreis|kartengebühr/i.test(lower) && tx.amount < 150) ||
-          (/^siehe anlage/i.test(lower) && tx.amount < 150)
-        ) && !/kauf|fahrzeug|pkw|auto|storno|rückzahlung|rechnung|anzahlung/i.test(lower);
-
-      // 7. Notary & Legal advice
-      const isNotar = /\b(notar|notariat)\b/i.test(lower);
-      const isLegalOrTax = /\b(rechtsanwalt|anwalt|steuerberat|fintax|fibu|buchhaltung)\b/i.test(lower);
-
-      // 8. Court, Commercial register, Bailiff (Amtsgericht, Gerichtsvollzieher, Justizkasse)
-      const isCourtOrRegister =
-        /\b(amtsgericht|handelsregister|gerichtskasse|justizkasse|landgericht|zentrale mahnabteilung|gerichtsvollzieher|dr\s*ii)\b/i.test(lower);
-
-      // 9. Public administration & municipal fees (Bürgerbüro, Stadtkasse, Magistrat, Verkehrsabteilung, IHK, Landratsamt)
-      const isPublicAuthority =
-        /\b(buergerbuero|bürgerbüro|magistrat|stadtkasse|kreisverwaltung|landratsamt|main-taunus-kreis|stadt bochum|landeshauptstadt stuttgart|gemeindekasse|gemeinde|ihk|handwerkskammer|berufsgenossenschaft|stadtverwaltung|verkehrsabteilung|polizei|bussgeld|ordnungswidrigkeit)\b/i.test(lower);
-
-      // 10. Travel & Public Transport (Deutsche Bahn, Flug, Hotel) -> 4673 BU 8
-      const isTravelOrTransport =
-        /\b(db vertrieb|dz bank-db vertrieb|deutsche bahn|bahncard|lufthansa|flixbus|flixtrain|hotel|hotelbuchung|airbnb|taxi\b|fluggast)\b/i.test(lower);
-
-      // 11. Vehicle inspection & Workshop (TÜV, Dekra, Gutachter, Prüfstelle, Reparatur) -> 4540 BU 9
-      const isVehicleInspectionOrRepair =
-        /\b(tüv|tuev|dekra|fsp|gtü|küs|garantie|gutachten|prüfstelle|prüfbericht|stahlgruber|autoteile|kfz-teile|werkstatt|reparatur|reifen|vergölst|atu|porsche zentrum|audi zentrum|bmw autohaus|mercedes-benz autohaus)\b/i.test(lower) ||
-        (/\b(inspektion|wartung|ölwechsel|service)\b/i.test(lower) && tx.amount < 2000);
-
-      // 11b. Vehicle / Business Insurance (ARAG, Signal Iduna, Allianz, HUK, AXA, etc.) -> 4520 (no tax key)
-      const isInsurance =
-        /\b(arag|signal iduna|allianz|huk|axa|gothaer|provinzial|zurich|lvm|devk|continentale|barmenia|ergo|dkv|debeka|generali|vgh|helvetia|basler|kfz-versicherung|versicherung)\b/i.test(lower) &&
-        !/garantie/i.test(lower);
-
-      // 11c. Cost Refund / Storno reversal (e.g. FinTax Storno der Buchung) -> reverses original expense account
-      const isCostRefund =
-        sh === 'S' &&
-        /(storno|rückbuchung|rueckbuchung|rückerstattung|rueckerstattung|erstattung)/i.test(lower) &&
-        /\b(fintax|steuerberat|rechtsanwalt|fibu|buchhaltung)\b/i.test(lower);
-
-      // 12. Operating supplies & consumables (eBay, Globus, Baumarkt) -> 4980 BU 9
-      const isOperatingSupplies =
-        /\b(ebay by adyen|ebay|klarna.*ebay|globus sbw|galaxus|baumarkt|hornbach|bauhaus|action deutschland|tedi\b)\b/i.test(lower);
-
-      // 13. Car dealer financing payoff (BDK, Santander, Toyota Financial) -> 3200
-      const isFinancingPayoff =
-        /\b(bank deutsches kraftfahrzeuggewerbe|bdk|toyota financial|santander consumer|akf bank|targo bank)\b/i.test(lower);
-
-      // 14. Car financing payouts received (Bank11) -> 8400
-      const isCarFinancingPayout =
-        sh === 'S' && /\b(bank11|santander|bdk|autofinanzierung)\b/i.test(lower);
-
-      // 15. EU tax-free cross-border automotive trading (from client rules config) -> 8125 / 3200
-      const isEuCarDealer = clientRulesService.isEuDealer(clientId, lower);
-
-      // 16. Used vehicle purchase under § 25a Differenzbesteuerung -> 3200
-      const isUsedCarPurchase =
-        sh === 'H' && (
-          /\b(kauf tesla|kauf audi|kauf vw|kauf bmw|kauf pkw|fahrzeugankauf|ankaufvertrag)\b/i.test(lower) ||
-          clientRulesService.lookupPayee(clientId, lower) === '3200' ||
-          (/\b(kauf|anzahlung|restzahlung)\b/i.test(lower) && hasVinInText) ||
-          (hasVinInText && /pn:\d+/i.test(lower)) ||
-          (/(?:XP7|LRW|W0L|WAU|WDD|WVW)[A-Z0-9]{14,}/i.test(combined) && !clientRulesService.isOwner(clientId, lower))
-        );
-
-      // 17. Owner / Shareholder transactions (loaded from client settings config) -> 0730 / 1530
-      const isOwnerPrivate =
-        clientRulesService.isOwner(clientId, lower) &&
-        !/\b(lohn|gehalt|stammkapital|stammeinlage)\b/i.test(lower) &&
-        !/debitkarte|bankcard|kreditkarte|kartengebühr|depotgebühr|kontoführung/i.test(lower);
-
-      // 18. Fuel & service stations -> 4530 BU 9
-      const isFuel = /\b(aral|shell|esso|total|jet|avia|omv|tankstelle|agip|bft|minera|kraftstoff|couche-tard|circle k|westfalen|star tankstelle|hem\b|sprint|sb-tank)\b/i.test(lower);
-
-      // 19. Software & IT tools
-      const isSoftwareOrCloud =
-        /\b(adobe|google|microsoft|apple|openai|chatgpt|canva|lexware|datev|sevdesk|fastbill|hostinger|strato|ionos|hetzner|godaddy|aws|github)\b/i.test(lower);
-
-      // ── MATCHING HIERARCHY ──
-      // Deterministic German tax & SKR03 rules ALWAYS take precedence over learned supplier memory
-      if (isShareCapital) {
-        // Founding capital of GmbH (Stammkapital 0800) -> no tax
-        gegenkonto = '0800';
-        buCode = '';
-      } else if (isLoan) {
-        // Loans: outgoing loan to third party (1520) or repayment (0630 / 1890) -> no tax
-        gegenkonto = '1520';
-        buCode = '';
-      } else if (isCostRefund) {
-        // Reversal/storno of accounting/legal expense -> 4955 (BU 9)
-        gegenkonto = '4955';
-        buCode = '9';
-      } else if (isInsurance) {
-        // Vehicle / Business insurance (ARAG, Allianz, HUK, etc.) -> 4520 (no tax key)
-        gegenkonto = '4520';
-        buCode = '';
-      } else if (isCustomerRefundOrStorno) {
-        // Customer deposit refund or order cancellation -> reversal (3200 or 8400)
-        gegenkonto = isEuCarDealer ? '3200' : '8400';
-        buCode = '';
-      } else if (isCarFinancingPayout) {
-        // Bank11 car financing disbursement -> 8400 (or Debitor)
-        gegenkonto = '8400';
-        buCode = '';
-      } else if (isEuCarDealer && sh === 'S') {
-        // EU tax-free vehicle sale -> 8125 (Steuerfreie innergemeinschaftliche Lieferungen)
-        gegenkonto = '8125';
-        buCode = '';
-      } else if (isEuCarDealer && sh === 'H') {
-        // EU refund / return -> 3200
-        gegenkonto = '3200';
-        buCode = '';
-      } else if (isFinancingPayoff) {
-        // BDK financing payoff for purchased vehicle -> 3200 (§25a UStG)
-        gegenkonto = '3200';
-        buCode = '';
-      } else if (isUsedCarPurchase) {
-        // Used vehicle purchase under § 25a Differenzbesteuerung -> 3200 (no input VAT!)
-        gegenkonto = '3200';
-        buCode = '';
-      } else if (isCashTransit) {
-        // Cash transit 1360 (Geldtransit ATM withdrawals, teller cash)
-        gegenkonto = '1360';
-        buCode = '';
-        if (/kontostand/i.test(counterparty)) {
-          counterparty = tx.type;
-        }
-      } else if (isOwnerPrivate) {
-        // Shareholder clearing account for GmbH -> 0730 (or 1530)
-        gegenkonto = '0730';
-        buCode = '';
-      } else if (
-        sh === 'S' &&
-        (/siehe anlage 1/i.test(lower) || /differenzbesteuerung/i.test(lower) || /25a/i.test(lower) || clientRulesService.lookupPayee(clientId, lower) === '8193')
-      ) {
-        // §25a used car sale / customer deposit (Differenzbesteuerung) -> 8193
-        gegenkonto = '8193';
-        buCode = '';
-      } else if (clientRulesService.matchVendorRule(clientId, lower, tx.amount)) {
-        const vRule = clientRulesService.matchVendorRule(clientId, lower, tx.amount)!;
-        gegenkonto = vRule.account;
-        buCode = vRule.buCode;
-      } else if (isBankFeeVat) {
-        // 19% Vorsteuer breakdown on monthly bank fees -> 1576
-        gegenkonto = '1576';
-        buCode = '';
-      } else if (isBankFee) {
-        // Banking fees, card annual fees, account charges -> 4970
-        gegenkonto = '4970';
-        buCode = '';
-      } else if (isFuel) {
-        // Fuel / Gas stations (Aral, Minera, Shell, etc.) -> 4530 (BU 9)
-        gegenkonto = '4530';
-        buCode = '9';
-      } else if (isVehicleInspectionOrRepair) {
-        // Vehicle repairs, TÜV inspections, Dastgir expert reports -> 4540 (BU 9)
-        gegenkonto = '4540';
-        buCode = /garantie|versicherung|allianz|huk|arag/i.test(lower) ? '' : '9';
-      } else if (isOperatingSupplies) {
-        // Operating consumables / supplies (eBay by Adyen, Villmar & Pflug) -> 4980 (BU 9)
-        gegenkonto = '4980';
-        buCode = '9';
-      } else if (isTravelOrTransport) {
-        // Business travel / train tickets (DZ Bank-DB Vertrieb, flights) -> 4673 (BU 8)
-        gegenkonto = '4673';
-        buCode = '8';
-      } else if (isNotar) {
-        // Notary costs -> 4950 (Rechts- und Beratungskosten with 19% Vorsteuer BU 9)
-        gegenkonto = '4950';
-        buCode = '9';
-      } else if (isLegalOrTax) {
-        // Tax advisor, legal advisory, accounting -> 4955 (BU 9)
-        gegenkonto = '4955';
-        buCode = '9';
-      } else if (isCourtOrRegister || isPublicAuthority) {
-        // Official court, bailiff, city administration, registration fees (tax-exempt) -> 4380 / 4390
-        gegenkonto = '4390';
-        buCode = '';
-      } else if (isSoftwareOrCloud) {
-        // Software subscriptions & IT expenses -> 4964 (BU 9)
-        gegenkonto = '4964';
-        buCode = '9';
-      } else if (/\b(vattenfall|stadtwerke|enbw|e\.on|rwe|strom|gas|energie|rabot)\b/i.test(lower)) {
-        gegenkonto = '4240';
-        buCode = '9';
-      } else if (/\b(miete|pacht|immobilien)\b/i.test(lower)) {
-        gegenkonto = '4210';
-        buCode = '';
-      } else if (/\b(mobile\.de|autoscout24|kleinanzeigen|werbung|vistaprint)\b/i.test(lower)) {
-        gegenkonto = '4600';
-        buCode = '9';
-      } else if (/\b(vodafone|telekom|telefonica|o2|1&1|congstar|internet|telefon)\b/i.test(lower)) {
-        gegenkonto = '4920';
-        buCode = '9';
-      } else if (/\b(deutsche post|dhl|hermes|dpd|ups|gls|porto|briefmarke)\b/i.test(lower)) {
-        gegenkonto = '4910';
-        buCode = '';
-      } else if (/\b(lohn|gehalt|minijob|knappschaft|aok|tk |barmer|dak )\b/i.test(lower)) {
-        gegenkonto = '1740';
-        buCode = '';
-      } else if (/\b(hauptzollamt|kfz-steuer)\b/i.test(lower)) {
-        gegenkonto = '4510';
-        buCode = '';
-      } else if (isVehiclePurchase && sh === 'H' && (tx.amount >= 1500 || /\bdifferenzbetrag\b/i.test(lower))) {
-        // Outgoing vehicle purchase for resale (>= 1500 EUR or Differenzbetrag): default to 3200 (§25a UStG)
-        gegenkonto = '3200';
-        buCode = '';
-      } else if (isVehiclePurchase && sh === 'S') {
-        // Incoming vehicle sale to customer: default to 8400 (19% USt) unless §25a Differenzbesteuerung is explicitly indicated or matched via VIN
-        gegenkonto = '8400';
-        buCode = '';
-      } else {
-        // Fallback: Check learned supplier memory, then general SKR03 rule dictionary
-        const learned = supplierMemoryService.lookupSupplier(counterparty);
-        const generalMatch = skr03Mapper.suggestAccount(counterparty, purpose, 19);
-        if (learned && learned.skr03Account && !['1000', '1200', '3300', '4900'].includes(learned.skr03Account)) {
-          gegenkonto = learned.skr03Account;
-          buCode = learned.buSchluessel || '';
-        } else if (generalMatch && generalMatch.code && !['1000', '1200', '1400', '1600', '4900'].includes(generalMatch.code)) {
-          gegenkonto = generalMatch.code;
-          buCode = generalMatch.code.startsWith('4') && !['4970', '4520', '4510', '4910', '4390', '4210'].includes(generalMatch.code) ? '9' : '';
-        } else if (sh === 'H') {
-          // Outgoing payment fallback: Safe general expense 4900 (without tax key to avoid unlawful Vorsteuer deductions)
-          gegenkonto = '4900';
-          buCode = '';
-        } else {
-          // Incoming revenue fallback
-          gegenkonto = '8400';
-          buCode = '';
-        }
-      }
-
-      // Safeguard: 4970 (Nebenkosten des Geldverkehrs), 0730, and other exempt accounts must NEVER have a BU code!
-      if (['4970', '0730', '0800', '1360', '3200', '8125', '8193', '4520', '4510', '4910', '4390', '4210'].includes(gegenkonto)) {
-        buCode = '';
+      // ONE PLACE FOR RULES: every account decision is made by ruleEngine.decideAccount()
+      const txIndex = txs.indexOf(tx);
+      const isFirstCredit = tx.bankSH === 'H' && txs.findIndex((t) => t.bankSH === 'H') === txIndex;
+      const earlierCapital =
+        priorCapital +
+        bookingsSoFar.filter((b) => b.sh === 'S' && b.gegenkonto === capitalAccount).reduce((acc, b) => acc + b.amount, 0);
+      const decision = ruleEngine.decideAccount({
+        clientId,
+        phase: 'parse',
+        konto: '1200',
+        sh,
+        amount: mainAmount,
+        text: combined,
+        txType: tx.type,
+        counterparty,
+        purpose,
+        stammkapital: {
+          holderInGruendung,
+          isFirstCreditAfterZeroOpening: isFirstCredit && openingBalance !== undefined && Math.abs(openingBalance) < 0.005,
+          earlierBooked: earlierCapital,
+        },
+      });
+      const gegenkonto = decision.account;
+      const buCode = decision.buCode;
+      const reviewHint =
+        decision.reviewKind === 'STAMMKAPITAL'
+          ? { type: 'STAMMKAPITAL_UNCLEAR' as const, question: decision.question || '' }
+          : decision.reviewKind === 'MISSING_BELEG_INCOMING'
+          ? { type: 'MISSING_BELEG_INCOMING' as const, question: decision.question || '' }
+          : undefined;
+      if (decision.account === '1360' && /kontostand/i.test(counterparty)) {
+        counterparty = tx.type;
       }
 
       // Extract invoice / reference number for Belegfeld 1 with robust clean-up
@@ -1978,10 +2087,21 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         }
       }
 
-      // Construct clean Buchungstext (Counterparty + key purpose info, max 60 chars)
+      // Construct clean Buchungstext (strip ENTG 0,80 fee marker when split so it is never re-split)
       let buchungstext = counterparty;
-      if (purpose && !buchungstext.toLowerCase().includes(purpose.substring(0, 12).toLowerCase())) {
-        buchungstext = `${counterparty} - ${purpose}`;
+      if (hasAtmFee && atmFeeMatch) {
+        buchungstext = `${counterparty} - Auszahlung ${atmFeeMatch[1]} EUR`;
+      } else if (purpose) {
+        if (purpose.toLowerCase().startsWith(buchungstext.toLowerCase())) {
+          buchungstext = purpose;
+        } else if (!buchungstext.toLowerCase().includes(purpose.substring(0, 12).toLowerCase())) {
+          buchungstext = `${counterparty} - ${purpose}`;
+        }
+      }
+      if (hasInstantFee) {
+        buchungstext = buchungstext
+          .replace(/(?:securego\s*plus\s*)?(?:entg|entgelt|gebühr)[:\s]*0[,.]80\s*(?:eur)?\s*(?:entgelt|echtzeit[^ ]*)?/gi, '')
+          .replace(/\s*-\s*$/g, '');
       }
       buchungstext = buchungstext
         .replace(/neue[rn]?\s+kontostand.*$/i, '')
@@ -1991,14 +2111,10 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         .substring(0, 60);
       if (!buchungstext) buchungstext = tx.type;
 
-      // Determine if Belegfeld 2 should be marked 'KeineRechnung' for missing invoice / unclarified bank line
-      let belegfeld2 = '';
-      if (isUsedCarPurchase && !belegfeld1) {
-        belegfeld2 = 'KeineRechnung';
-      }
+      const belegfeld2 = '';
 
-      return {
-        amount: tx.amount,
+      const mainItem: BookingItem = {
+        amount: mainAmount,
         sh,
         konto: '1200',
         gegenkonto,
@@ -2008,30 +2124,62 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
         belegfeld2,
         buchungstext: buchungstext || tx.type,
         currency: 'EUR',
+        ...(reviewHint ? { reviewHint } : {}),
       };
+      bookingsSoFar.push(mainItem);
+      if (hasAtmFee) {
+        const atmFeeItem: BookingItem = {
+          amount: atmFeeAmt,
+          sh: 'H',
+          konto: '1200',
+          gegenkonto: '4970',
+          buCode: '',
+          belegdatum,
+          belegfeld1: '',
+          belegfeld2: '',
+          buchungstext: 'Geldautomat Auszahlung Entgelt',
+          currency: 'EUR',
+        };
+        bookingsSoFar.push(atmFeeItem);
+        return [mainItem, atmFeeItem];
+      }
+      if (hasInstantFee) {
+        const feeItem: BookingItem = {
+          amount: 0.80,
+          sh: 'H',
+          konto: '1200',
+          gegenkonto: '4970',
+          buCode: '',
+          belegdatum,
+          belegfeld1: '',
+          belegfeld2: '',
+          buchungstext: 'Echtzeit-Überweisung Entgelt (SecureGo)',
+          currency: 'EUR',
+        };
+        bookingsSoFar.push(feeItem);
+        return [mainItem, feeItem];
+      }
+      return [mainItem];
     });
 
     const sumSoll = txs.filter((t) => t.bankSH === 'S').reduce((s, t) => s + t.amount, 0);
     const sumHaben = txs.filter((t) => t.bankSH === 'H').reduce((s, t) => s + t.amount, 0);
     const totalTurnover = parseFloat((sumSoll + sumHaben).toFixed(2));
-
-    // Opening / closing balance for bank reconciliation check (Volksbank/Sparkasse: "alter/neuer Kontostand ... 142.231,29 H")
-    const parseBalanceNear = (label: RegExp): number | undefined => {
-      const rawLines = extractedText.split(/\r?\n/);
-      for (let i = 0; i < rawLines.length; i++) {
-        if (!label.test(rawLines[i])) continue;
-        for (let j = i; j < Math.min(rawLines.length, i + 5); j++) {
-          const m = rawLines[j].match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s*([SH])\b/);
-          if (m) {
-            const val = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
-            if (!isNaN(val)) return m[2] === 'S' ? -val : val;
+    const netBankSum = Math.round((sumHaben - sumSoll) * 100) / 100;
+    const calcClosing = openingBalance !== undefined ? Math.round((openingBalance + netBankSum) * 100) / 100 : netBankSum;
+    const bankDiff = closingBalance !== undefined ? Math.round((calcClosing - closingBalance) * 100) / 100 : 0;
+    const bankReconciliation =
+      spkPageRecs.length > 0 || (openingBalance !== undefined && closingBalance !== undefined)
+        ? {
+            openingBalance,
+            closingBalance,
+            calculatedClosing: calcClosing,
+            diff: bankDiff,
+            balanced: Math.abs(bankDiff) <= 0.01,
+            pages: spkPageRecs,
           }
-        }
-      }
-      return undefined;
-    };
-    const openingBalance = parseBalanceNear(/alter\s+Kontostand/i);
-    const closingBalance = parseBalanceNear(/neuer\s+Kontostand/i);
+        : undefined;
+
 
     return {
       document_type: 'BANK_STATEMENT',
@@ -2051,6 +2199,8 @@ Return ONLY valid JSON: { "results": [ { "id": 0, "category": "...", "confidence
       bookings,
       opening_balance: openingBalance,
       closing_balance: closingBalance,
+      ...(bankReconciliation ? { bank_reconciliation: bankReconciliation } : {}),
+      holder_in_gruendung: holderInGruendung,
     };
   },
 };

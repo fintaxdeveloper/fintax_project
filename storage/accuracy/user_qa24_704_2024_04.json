@@ -1,0 +1,53 @@
+{
+  "client_id": "user_qa24_704",
+  "year": 2024,
+  "month": 4,
+  "period": "2024_04",
+  "generated_at": "2026-11-20T12:55:03.442Z",
+  "total_bookings": 83,
+  "auto_correct": 78,
+  "auto_correct_pct": 93.98,
+  "current_accuracy_pct": 93.98,
+  "first_run_correct": 81,
+  "first_run_accuracy_pct": 97.59,
+  "first_run_changed": 2,
+  "resolved_by_question": 5,
+  "questions_asked": 4,
+  "questions_by_type": {
+    "beleg_fehlt": 2,
+    "entscheidung": 1,
+    "unreadable": 1
+  },
+  "user_changed": 2,
+  "goal_met": false,
+  "errors_by_category": {
+    "beleg:missing_incoming_invoice": 1,
+    "extraction:unreadable_or_changed_date": 1
+  },
+  "error_list": [
+    {
+      "category": "beleg:missing_incoming_invoice",
+      "cause": "Incoming payment had no matched QA24 invoice (system 8193, user 8193)",
+      "lineKey": "0504|35000.00|S|1200|volkswagenaktiengesellschaft#1",
+      "date": "05.04.",
+      "amount": 35000,
+      "text": "VOLKSWAGEN AKTIENGESELLSCHAFT - 0137161278 IM NAMEN DER SCHW",
+      "proposedAccount": "8193",
+      "finalAccount": "8193",
+      "proposedDate": "05.04.",
+      "finalDate": "05.04."
+    },
+    {
+      "category": "extraction:unreadable_or_changed_date",
+      "cause": "Contract/payment date was unreadable or changed by user (01.04. -> 08.04.)",
+      "lineKey": "0104|30.00|H|1000|funktaxenrufharburggmbhfahrt#1",
+      "date": "08.04.",
+      "amount": 30,
+      "text": "Funktaxenruf Harburg GmbH - Fahrtkosten / Reise",
+      "proposedAccount": "4673",
+      "finalAccount": "4673",
+      "proposedDate": "01.04.",
+      "finalDate": "08.04."
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSnackbar } from '../context/SnackbarContext';
 import type { Language } from '../translations';
 import { FileExplorer } from '../components/FileExplorer';
+import { openAuthenticatedFileInNewTab, downloadAuthenticatedFile, fetchAuthenticatedBlobUrl } from '../utils/authFile';
 import {
   ShieldCheck,
   Users,
@@ -135,6 +136,31 @@ export const AdminPortal: React.FC<{
   const [docTypeFilter, setDocTypeFilter] = useState('ALL');
   const [docStatusFilter, setDocStatusFilter] = useState('ALL');
   const [previewDoc, setPreviewDoc] = useState<ClientDocItem | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!previewDoc) {
+      setPreviewBlobUrl(null);
+      return;
+    }
+    const controller = new AbortController();
+    let createdUrl: string | null = null;
+    fetchAuthenticatedBlobUrl(`${API_BASE}/documents/${previewDoc.id}/view`, controller.signal)
+      .then((blobUrl) => {
+        createdUrl = blobUrl;
+        setPreviewBlobUrl(blobUrl);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          console.error('Preview fetch error:', err);
+          setPreviewBlobUrl(null);
+        }
+      });
+    return () => {
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [previewDoc]);
 
   // Modal State for adding a new user
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -1010,16 +1036,55 @@ export const AdminPortal: React.FC<{
 
                         <td style={{ padding: '0.875rem 1.25rem' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
-                            <span style={{
-                              background: doc.category.includes('01_FiBu') ? '#eff6ff' : doc.category.includes('02_LoBu') ? '#faf5ff' : '#fef3c7',
-                              color: doc.category.includes('01_FiBu') ? '#1d4ed8' : doc.category.includes('02_LoBu') ? '#7e22ce' : '#b45309',
-                              padding: '0.2rem 0.6rem',
-                              borderRadius: '0.375rem',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                            }}>
-                              {doc.category}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{
+                                background: doc.category.includes('01_FiBu') ? '#eff6ff' : doc.category.includes('02_LoBu') ? '#faf5ff' : '#fef3c7',
+                                color: doc.category.includes('01_FiBu') ? '#1d4ed8' : doc.category.includes('02_LoBu') ? '#7e22ce' : '#b45309',
+                                padding: '0.2rem 0.6rem',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                              }}>
+                                {doc.category}
+                              </span>
+                              {(() => {
+                                const rawCh = (doc as any).paymentChannel || (
+                                  (doc as any).uploadSlot === 'Kontoauszug' ? 'statement' :
+                                  (doc as any).uploadSlot === 'Bankbelege' ? 'bank' :
+                                  (doc as any).uploadSlot === 'Kassebelege' ? 'kasse' :
+                                  /kontoauszug|1200[-_ ]?bank/i.test(doc.original_filename || '') ? 'statement' :
+                                  /kasse/i.test(doc.original_filename || '') ? 'kasse' :
+                                  /bankbeleg/i.test(doc.original_filename || '') ? 'bank' :
+                                  'unknown'
+                                );
+                                const badgeMap: Record<string, { label: string; bg: string; color: string; border: string; icon: string }> = {
+                                  statement: { label: 'Kontoauszug', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe', icon: '🏛️' },
+                                  bank: { label: 'Bank', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0', icon: '💳' },
+                                  kasse: { label: 'Kasse', bg: '#fffbeb', color: '#b45309', border: '#fde68a', icon: '🪙' },
+                                  unknown: { label: 'Sonstiges', bg: '#f8fafc', color: '#475569', border: '#cbd5e1', icon: '📄' },
+                                };
+                                const cfg = badgeMap[rawCh] || badgeMap.unknown;
+                                return (
+                                  <span
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      color: cfg.color,
+                                      background: cfg.bg,
+                                      border: `1px solid ${cfg.border}`,
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3,
+                                    }}
+                                  >
+                                    <span>{cfg.icon}</span>
+                                    <span>{cfg.label}</span>
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             {doc.sub_types && doc.sub_types.length > 0 && (
                               <span style={{ fontSize: '0.75rem', color: '#475569' }}>
                                 {doc.sub_types.slice(0, 2).join(', ')}
@@ -1083,34 +1148,21 @@ export const AdminPortal: React.FC<{
                               {isDe ? 'Vorschau' : 'Preview'}
                             </button>
 
-                            {/* DATEV CSV Export */}
-                            <a
-                              href={`${API_BASE}/documents/${doc.id}/skr03-csv`}
-                              download
-                              title={isDe ? 'DATEV SKR03 EXTF CSV herunterladen' : 'Download DATEV SKR03 EXTF CSV'}
-                              style={{
-                                background: '#f0fdf4',
-                                color: '#16a34a',
-                                border: '1px solid #bbf7d0',
-                                padding: '0.4rem 0.65rem',
-                                borderRadius: '0.5rem',
-                                fontSize: '0.8125rem',
-                                fontWeight: 700,
-                                textDecoration: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.3rem',
+                            {/* Excel Preview Export */}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const base = (doc.original_filename || 'SKR03').replace(/\.[^.]+$/, '');
+                                  await downloadAuthenticatedFile(
+                                    `${API_BASE}/documents/${doc.id}/skr03-xlsx`,
+                                    `${base}_VORSCHAU.xlsx`
+                                  );
+                                } catch (err: any) {
+                                  error(err?.message || (isDe ? 'Excel-Vorschau fehlgeschlagen.' : 'Excel preview download failed.'));
+                                }
                               }}
-                            >
-                              <Download size={14} />
-                              CSV
-                            </a>
-
-                            {/* Excel Export */}
-                            <a
-                              href={`${API_BASE}/documents/${doc.id}/skr03-xlsx`}
-                              download
-                              title={isDe ? 'SKR03 Excel-Buchungsblatt herunterladen' : 'Download SKR03 Excel Workbook'}
+                              title={isDe ? 'Nur Lese-Vorschau (_VORSCHAU) – kein DATEV-Import' : 'Read-only preview (_VORSCHAU) – not for DATEV import'}
                               style={{
                                 background: '#faf5ff',
                                 color: '#7e22ce',
@@ -1119,15 +1171,15 @@ export const AdminPortal: React.FC<{
                                 borderRadius: '0.5rem',
                                 fontSize: '0.8125rem',
                                 fontWeight: 700,
-                                textDecoration: 'none',
+                                cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '0.3rem',
                               }}
                             >
                               <Download size={14} />
-                              XLSX
-                            </a>
+                              {isDe ? 'XLSX (Vorschau)' : 'Excel Preview'}
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1185,10 +1237,15 @@ export const AdminPortal: React.FC<{
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <a
-                    href={`${API_BASE}/documents/${previewDoc.id}/view`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await openAuthenticatedFileInNewTab(`${API_BASE}/documents/${previewDoc.id}/view`);
+                      } catch (err: any) {
+                        error(err?.message || (isDe ? 'Dokument konnte nicht geöffnet werden.' : 'Could not open document.'));
+                      }
+                    }}
                     style={{
                       background: '#eff6ff',
                       color: '#2563eb',
@@ -1197,7 +1254,7 @@ export const AdminPortal: React.FC<{
                       borderRadius: '0.375rem',
                       fontSize: '0.75rem',
                       fontWeight: 700,
-                      textDecoration: 'none',
+                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.35rem',
@@ -1205,7 +1262,7 @@ export const AdminPortal: React.FC<{
                   >
                     <ExternalLink size={13} />
                     {isDe ? 'In neuem Tab öffnen' : 'Open in New Tab'}
-                  </a>
+                  </button>
 
                   <button
                     type="button"
@@ -1229,16 +1286,22 @@ export const AdminPortal: React.FC<{
 
               {/* Modal Body */}
               <div style={{ flex: 1, backgroundColor: '#0f172a', position: 'relative' }}>
-                <iframe
-                  src={`${API_BASE}/documents/${previewDoc.id}/view`}
-                  title={previewDoc.original_filename}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    border: 'none',
-                    backgroundColor: '#ffffff',
-                  }}
-                />
+                {previewBlobUrl ? (
+                  <iframe
+                    src={previewBlobUrl}
+                    title={previewDoc.original_filename}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                      backgroundColor: '#ffffff',
+                    }}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: '0.9rem' }}>
+                    {isDe ? 'Vorschau wird geladen…' : 'Loading preview…'}
+                  </div>
+                )}
               </div>
 
               {/* Modal Footer */}
@@ -1262,26 +1325,19 @@ export const AdminPortal: React.FC<{
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <a
-                    href={`${API_BASE}/documents/${previewDoc.id}/skr03-csv`}
-                    download
-                    style={{
-                      background: '#f0fdf4',
-                      color: '#15803d',
-                      border: '1px solid #bbf7d0',
-                      padding: '0.35rem 0.75rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      textDecoration: 'none',
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const base = (previewDoc.original_filename || 'SKR03').replace(/\.[^.]+$/, '');
+                        await downloadAuthenticatedFile(
+                          `${API_BASE}/documents/${previewDoc.id}/skr03-xlsx`,
+                          `${base}_VORSCHAU.xlsx`
+                        );
+                      } catch (err: any) {
+                        error(err?.message || (isDe ? 'Excel-Vorschau fehlgeschlagen.' : 'Excel preview download failed.'));
+                      }
                     }}
-                  >
-                    📥 DATEV CSV
-                  </a>
-
-                  <a
-                    href={`${API_BASE}/documents/${previewDoc.id}/skr03-xlsx`}
-                    download
                     style={{
                       background: '#faf5ff',
                       color: '#7e22ce',
@@ -1290,11 +1346,11 @@ export const AdminPortal: React.FC<{
                       borderRadius: '0.375rem',
                       fontSize: '0.75rem',
                       fontWeight: 700,
-                      textDecoration: 'none',
+                      cursor: 'pointer',
                     }}
                   >
-                    📊 Excel XLSX
-                  </a>
+                    📊 {isDe ? 'Excel (Vorschau)' : 'Excel Preview'}
+                  </button>
 
                   <button
                     type="button"

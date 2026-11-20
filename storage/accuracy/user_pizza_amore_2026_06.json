@@ -1,0 +1,25 @@
+{
+  "client_id": "user_pizza_amore",
+  "year": 2026,
+  "month": 6,
+  "period": "2026_06",
+  "generated_at": "2026-11-20T12:55:04.997Z",
+  "total_bookings": 77,
+  "auto_correct": 54,
+  "auto_correct_pct": 70.13,
+  "current_accuracy_pct": 70.13,
+  "first_run_correct": 71,
+  "first_run_accuracy_pct": 92.21,
+  "first_run_changed": 6,
+  "resolved_by_question": 0,
+  "questions_asked": 25,
+  "questions_by_type": {
+    "beleg_fehlt": 2,
+    "entscheidung": 23,
+    "unreadable": 0
+  },
+  "user_changed": 0,
+  "goal_met": false,
+  "errors_by_category": {},
+  "error_list": []
+}

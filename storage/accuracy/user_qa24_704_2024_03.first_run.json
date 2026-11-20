@@ -1,0 +1,359 @@
+{
+  "client_id": "user_qa24_704",
+  "year": 2024,
+  "month": 3,
+  "period": "2024_03",
+  "captured_at": "2026-11-19T15:19:41.453Z",
+  "proposals": [
+    {
+      "amount": 110.53,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4950",
+      "buCode": "9",
+      "belegdatum": "0103",
+      "buchungstext": "Notar Keller - Rechnungsnummer: N 2024/12 SecureGo plus IBAN",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 594.15,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4950",
+      "buCode": "9",
+      "belegdatum": "0103",
+      "buchungstext": "Notar Keller - Rechnungsnummer: N 2024/11 SecureGo plus IBAN",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 27250,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "0503",
+      "buchungstext": "BILAR99E OY - LRW3E7FJ0MC333369 EREF: XIDTHAHRDAAI",
+      "belegfeld1": "02/2024"
+    },
+    {
+      "amount": 43850,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "0503",
+      "buchungstext": "Claudio Santos Lopes",
+      "belegfeld1": "01/2024"
+    },
+    {
+      "amount": 15000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0503",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 9,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "0603",
+      "buchungstext": "Ausgabe einer Debitkarte - Konto: 0099730811 BLZ: 50190000 P",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "0603",
+      "buchungstext": "Klaus Kilb - Miete SecureGo plus IBAN: DE1151050015015903302",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 20000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0603",
+      "buchungstext": "XP7YGCEL5PB056979 PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 38900,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "0703",
+      "buchungstext": "BILAR99E OY - LRWYGCEK0PC700861 EREF: XIDCYSJRDAAI",
+      "belegfeld1": "03/2024"
+    },
+    {
+      "amount": 7000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0703",
+      "buchungstext": "XP7YGCEL5PB056979 PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 27250,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0803",
+      "buchungstext": "LRW3E7FJ0MC333369 PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 9800,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1103",
+      "buchungstext": "Sarker, Abdus Sobur - Rechnungsnummer: 4/2024 Kauf: Opel Cor",
+      "belegfeld1": "4/2024"
+    },
+    {
+      "amount": 1150,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1103",
+      "buchungstext": "Sorin Iustin Neag - Kauf BMW X6 Teilzahlung SecureGo plus IB",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 34000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1203",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1580,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "0730",
+      "buCode": "",
+      "belegdatum": "1303",
+      "buchungstext": "Mechthild Köbrich - Yelda Qayumi SecureGo plus IBAN: DE53510",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 30000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1403",
+      "buchungstext": "Thomas Boidol - amg c63 zahlung",
+      "belegfeld1": "05/2024"
+    },
+    {
+      "amount": 200,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "1403",
+      "buchungstext": "Amtsgericht Wiesbaden - X099130009061X SecureGo plus IBAN: D",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 4500.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1403",
+      "buchungstext": "Mir mohammad zaeefi - Anzahlung Audi Q5 WAUZZZFYXJ2107753 Se",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 28900,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1503",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 18000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1903",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 13,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2703",
+      "buchungstext": "BUERGERBUERO HOFHEIM/TAUNUS - MAGISTRAT DER KREIS/HOFHEIM AM",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 4.91,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1576",
+      "buCode": "",
+      "belegdatum": "2803",
+      "buchungstext": "siehe Anlage 1 PN:905",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 25.85,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2803",
+      "buchungstext": "Abschluss lt. Anlage 2 PN:905",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 36,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2603",
+      "buchungstext": "Stadt Flörsheim am Main - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 36000,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1003",
+      "buchungstext": "Katmoua Younes - LRWYGCEK3PC640865",
+      "belegfeld1": "LRWYGCEK3PC640865"
+    },
+    {
+      "amount": 35000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "2203",
+      "buchungstext": " - WAUZZZF53JN011340",
+      "belegfeld1": "07/2024"
+    },
+    {
+      "amount": 11200,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0103",
+      "buchungstext": "Pfuhl, Gerhard - W0V0XEP68K4137673",
+      "belegfeld1": "W0V0XEP68K4137673"
+    },
+    {
+      "amount": 12600,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1203",
+      "buchungstext": "Boidol Thomas - Restbetrag (WDD2052861F594444)",
+      "belegfeld1": "05/2024"
+    },
+    {
+      "amount": 11500,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1103",
+      "buchungstext": "Sorin lustin Neag - Restbetrag (WBAFH01030L475185)",
+      "belegfeld1": "WBAFH01030L475185"
+    },
+    {
+      "amount": 33500,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0303",
+      "buchungstext": "Hasanova Aysel - WAUZZZF53JN011340",
+      "belegfeld1": "WAUZZZF53JN011340"
+    },
+    {
+      "amount": 40600,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0103",
+      "buchungstext": "Lena Hoffmeister - WDD2052861F594444",
+      "belegfeld1": "WDD2052861F594444"
+    },
+    {
+      "amount": 15000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0503",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 34000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1203",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 28900,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1503",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 18000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1903",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    }
+  ]
+}

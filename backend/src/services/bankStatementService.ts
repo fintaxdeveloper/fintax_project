@@ -106,7 +106,7 @@ Important Rules:
     }
 
     // B. If PDF text exists and regex didn't parse enough, feed directly to Ollama LLM
-    if (!rawData && extractedText && extractedText.length > 50 && AI_PROVIDER === 'ollama') {
+    if (ollamaClient.isEnabled() && !rawData && extractedText && extractedText.length > 50 && AI_PROVIDER === 'ollama') {
       try {
         console.log('[Bank Statement] Parsing statement text via local Ollama...');
         const promptWithText = `
@@ -127,7 +127,7 @@ ${extractedText.substring(0, 8000)}
     }
 
     // C. Image-based fallback for scanned images
-    if (!rawData && !isPdf && AI_PROVIDER === 'ollama') {
+    if (ollamaClient.isEnabled() && !rawData && !isPdf && AI_PROVIDER === 'ollama') {
       try {
         const fileBuffer = fs.readFileSync(filePath);
         const base64Data = fileBuffer.toString('base64');

@@ -8,10 +8,19 @@ import { pdfExtractor } from './pdfExtractor.js';
 
 const execFileAsync = promisify(execFile);
 
+export interface OcrLine {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+}
+
 export interface OcrPage {
   page: number;
   text: string;
   source: 'pdf_text' | 'tesseract' | 'winrt_ocr';
+  imageWidth?: number;
+  lines?: OcrLine[];
 }
 
 const STORAGE_DIR = path.resolve(process.cwd(), '../storage');
@@ -84,9 +93,10 @@ async function runWinRtOcrBatch(imgPaths: string[]): Promise<OcrPage[]> {
   const scriptPath = path.join(tmpDir, 'run_ocr.ps1');
   fs.writeFileSync(listPath, JSON.stringify(imgPaths), 'utf-8');
 
-  // Batch WinRT OCR script using File.OpenRead -> AsRandomAccessStream (verified ~250ms/page on CPU)
+  // Batch WinRT OCR script with 300-dpi upscale + grayscale contrast preprocessing + spatial line boxes
   const psScript = `
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
   $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name.StartsWith('IAsyncOperation')
@@ -110,8 +120,32 @@ $files = Get-Content -Raw -Encoding UTF8 '${listPath.replace(/\\/g, '\\\\')}' | 
 $out = @()
 foreach ($fp in $files) {
   $text = ''
+  $linesArr = @()
+  $imgW = 0
+  $tmpPre = "$fp.pre.png"
   try {
-    $fs = [System.IO.File]::OpenRead($fp)
+    $src = [System.Drawing.Bitmap]::FromFile($fp)
+    $scale = if ($src.Width -lt 2200) { [Math]::Min(2.5, 2400.0 / [Math]::Max(1, $src.Width)) } else { 1.0 }
+    $nw = [int]($src.Width * $scale)
+    $nh = [int]($src.Height * $scale)
+    $imgW = $nw
+    $dst = New-Object System.Drawing.Bitmap($nw, $nh)
+    $g = [System.Drawing.Graphics]::FromImage($dst)
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $cm = New-Object System.Drawing.Imaging.ColorMatrix
+    $c = 1.15; $t = 0.5 * (1.0 - $c)
+    $cm.Matrix00 = 0.299 * $c; $cm.Matrix01 = 0.299 * $c; $cm.Matrix02 = 0.299 * $c
+    $cm.Matrix10 = 0.587 * $c; $cm.Matrix11 = 0.587 * $c; $cm.Matrix12 = 0.587 * $c
+    $cm.Matrix20 = 0.114 * $c; $cm.Matrix21 = 0.114 * $c; $cm.Matrix22 = 0.114 * $c
+    $cm.Matrix40 = $t; $cm.Matrix41 = $t; $cm.Matrix42 = $t
+    $ia = New-Object System.Drawing.Imaging.ImageAttributes
+    $ia.SetColorMatrix($cm)
+    $g.DrawImage($src, (New-Object System.Drawing.Rectangle(0, 0, $nw, $nh)), 0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel, $ia)
+    $g.Dispose(); $src.Dispose()
+    $dst.Save($tmpPre, [System.Drawing.Imaging.ImageFormat]::Png)
+    $dst.Dispose()
+
+    $fs = [System.IO.File]::OpenRead($tmpPre)
     $stream = [System.IO.WindowsRuntimeStreamExtensions]::AsRandomAccessStream($fs)
     $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
     $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
@@ -121,12 +155,28 @@ foreach ($fp in $files) {
     if ($text) {
       $text = $text -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ' '
     }
+    foreach ($ln in $result.Lines) {
+      $w0 = $ln.Words | Select-Object -First 1
+      if ($w0) {
+        $lTxt = ($ln.Text -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ' ').Trim()
+        if ($lTxt) {
+          $linesArr += [PSCustomObject]@{
+            text = $lTxt
+            x = [int]$w0.BoundingRect.X
+            y = [int]$w0.BoundingRect.Y
+            width = [int]$w0.BoundingRect.Width
+          }
+        }
+      }
+    }
   } catch {
     $text = ''
+  } finally {
+    if (Test-Path $tmpPre) { Remove-Item $tmpPre -Force -ErrorAction SilentlyContinue }
   }
-  $out += [PSCustomObject]@{ file = $fp; text = $text }
+  $out += [PSCustomObject]@{ file = $fp; text = $text; imageWidth = $imgW; lines = $linesArr }
 }
-$out | ConvertTo-Json -Depth 4 -Compress
+$out | ConvertTo-Json -Depth 5 -Compress
 `.trim();
 
   fs.writeFileSync(scriptPath, psScript, 'utf-8');
@@ -146,6 +196,8 @@ $out | ConvertTo-Json -Depth 4 -Compress
       page: idx + 1,
       text: String(item?.text || '').trim(),
       source: 'winrt_ocr' as const,
+      ...(item?.imageWidth ? { imageWidth: Number(item.imageWidth) } : {}),
+      ...(Array.isArray(item?.lines) ? { lines: item.lines } : {}),
     }));
   } catch (err: any) {
     console.warn('[OCR Service] WinRT batch OCR error:', err?.message);
@@ -162,7 +214,12 @@ export const ocrService = {
    *  3. Local Tesseract (`-l deu+eng`) if installed on PATH
    *  4. Windows Native WinRT OCR (`Windows.Media.Ocr.OcrEngine`) batch CPU scan
    */
-  async extractPages(filePath: string, mimeType?: string, checksum?: string): Promise<OcrPage[]> {
+  async extractPages(
+    filePath: string,
+    mimeType?: string,
+    checksum?: string,
+    opts?: { forceRefresh?: boolean; requireSpatial?: boolean }
+  ): Promise<OcrPage[]> {
     if (!fs.existsSync(filePath)) return [];
 
     const hash =
@@ -171,7 +228,15 @@ export const ocrService = {
 
     const cache = loadCache();
     const cached = cache[hash];
-    if (cached && cached.v === CACHE_VERSION && Array.isArray(cached.pages) && cached.pages.length > 0) {
+    const hasSpatial = cached?.pages?.some((p) => Array.isArray(p.lines) && p.lines.length > 0);
+    if (
+      !opts?.forceRefresh &&
+      (!opts?.requireSpatial || hasSpatial) &&
+      cached &&
+      cached.v === CACHE_VERSION &&
+      Array.isArray(cached.pages) &&
+      cached.pages.length > 0
+    ) {
       return cached.pages;
     }
 
@@ -196,7 +261,7 @@ export const ocrService = {
     // Extract page images for scanned PDF or single image
     let base64Images: string[] = [];
     if (isPdf) {
-      base64Images = pdfExtractor.extractEmbeddedImages(filePath, 60);
+      base64Images = pdfExtractor.extractEmbeddedImages(filePath, 200);
     } else {
       base64Images = [fs.readFileSync(filePath).toString('base64')];
     }

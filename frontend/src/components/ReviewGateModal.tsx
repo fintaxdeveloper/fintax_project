@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { downloadAuthenticatedFile } from '../utils/authFile';
 
 export interface ReviewOption {
   gegenkonto: string;
@@ -51,11 +52,13 @@ export interface ReviewIssue {
     suggested_bu?: string;
   };
   suggest_upload?: string;
+  requiresDateInput?: boolean;
   resolved: boolean;
   resolution?: {
     action: string;
     gegenkonto?: string;
     buCode?: string;
+    belegdatum?: string;
     note?: string;
     resolved_by?: string;
     resolved_at: string;
@@ -90,7 +93,42 @@ export interface ReviewReport {
   block_reasons: string[];
   totals: { bank_net: number; kasse_net: number; transit_net: number; bank_rows: number };
   bookings: Array<any>;
+  accuracy?: {
+    client_id: string;
+    year: number;
+    month: number;
+    period: string;
+    total_bookings: number;
+    auto_correct: number;
+    auto_correct_pct: number;
+    current_accuracy_pct?: number;
+    first_run_correct?: number;
+    first_run_accuracy_pct?: number;
+    first_run_changed?: number;
+    resolved_by_question?: number;
+    questions_asked: number;
+    questions_by_type: {
+      beleg_fehlt: number;
+      entscheidung: number;
+      unreadable: number;
+    };
+    user_changed: number;
+    goal_met: boolean;
+    errors_by_category: Record<string, number>;
+    error_list: Array<{
+      category: string;
+      cause: string;
+      lineKey: string;
+      date: string;
+      amount: number;
+      text: string;
+      proposedAccount: string;
+      finalAccount: string;
+    }>;
+  };
   csv_ready: boolean;
+  locked?: boolean;
+  locked_at?: string;
 }
 
 interface ReviewGateModalProps {
@@ -116,9 +154,13 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
 }) => {
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
   const [rememberVendorMap, setRememberVendorMap] = useState<Record<string, boolean>>({});
+  const [dateInputMap, setDateInputMap] = useState<Record<string, string>>({});
+  const [amountInputMap, setAmountInputMap] = useState<Record<string, string>>({});
+  const [directionInputMap, setDirectionInputMap] = useState<Record<string, 'PURCHASE' | 'SALE'>>({});
   const [isAskingAi, setIsAskingAi] = useState(false);
   const [uploadingForIssue, setUploadingForIssue] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'ALL' | 'DECISION' | 'MISSING_BELEG'>('ALL');
 
   if (!isOpen || !report) return null;
@@ -131,9 +173,59 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
     setResolvingKey(issue.lineKey);
     setStatusMessage(null);
     try {
-      const targetAcc = customAcc || option.gegenkonto;
+      const isUnusedBeleg =
+        issue.lineKey.startsWith('UNUSED_BELEG:') || issue.title.startsWith('Ungebuchter Beleg');
+      const selectedDir =
+        directionInputMap[issue.lineKey] || (issue.booking.sh === 'S' ? 'SALE' : 'PURCHASE');
+      const targetAcc =
+        customAcc ||
+        (isUnusedBeleg && option.action !== 'EXCLUDE'
+          ? option.gegenkonto === '8193' || option.gegenkonto === '3200'
+            ? option.gegenkonto
+            : selectedDir === 'SALE'
+            ? '8193'
+            : '3200'
+          : option.gegenkonto);
+      const targetSh =
+        isUnusedBeleg && option.action !== 'EXCLUDE'
+          ? targetAcc === '8193'
+            ? 'S'
+            : 'H'
+          : undefined;
       const targetBu = option.buCode || (targetAcc === '4530' || targetAcc === '4540' ? '9' : '');
       const remember = Boolean(rememberVendorMap[issue.lineKey]);
+      const needsDate = Boolean(
+        isUnusedBeleg ||
+          issue.requiresDateInput ||
+          issue.title.includes('Vertrags-/Zahlungsdatum unleserlich')
+      );
+      const enteredDate = dateInputMap[issue.lineKey] || '';
+      if (needsDate && option.action !== 'EXCLUDE' && !enteredDate) {
+        alert(
+          isDe
+            ? 'Bitte geben Sie zuerst das Vertrags-/Zahlungsdatum ein.'
+            : 'Please enter the contract/payment date first.'
+        );
+        setResolvingKey(null);
+        return;
+      }
+
+      const rawEnteredAmt = amountInputMap[issue.lineKey];
+      const effectiveAmount =
+        rawEnteredAmt !== undefined && rawEnteredAmt.trim() !== ''
+          ? Number(rawEnteredAmt.trim().replace(',', '.'))
+          : Number(issue.booking.amount) || 0;
+      if (option.action !== 'EXCLUDE' && (isUnusedBeleg || !(issue.booking.amount > 0))) {
+        if (!Number.isFinite(effectiveAmount) || !(effectiveAmount > 0)) {
+          alert(
+            isDe
+              ? 'Ein Betrag von 0,00 € kann nicht gebucht werden. Bitte geben Sie einen gültigen Betrag (> 0,00 €) ein.'
+              : 'A 0.00 € booking cannot be confirmed. Please enter a valid amount (> 0.00 €).'
+          );
+          setResolvingKey(null);
+          return;
+        }
+      }
 
       const res = await fetch(`${apiBase}/review/resolve`, {
         method: 'POST',
@@ -145,6 +237,9 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
           action: option.action || 'SET_ACCOUNT',
           gegenkonto: targetAcc,
           buCode: targetBu,
+          ...(enteredDate ? { belegdatum: enteredDate } : {}),
+          ...(isUnusedBeleg && effectiveAmount > 0 ? { amount: effectiveAmount } : {}),
+          ...(targetSh ? { sh: targetSh } : {}),
           remember_vendor: remember,
           vendor_text: issue.booking.text,
           document_id: documentId,
@@ -220,6 +315,26 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
       alert(`Upload-Fehler: ${err.message}`);
     } finally {
       setUploadingForIssue(null);
+    }
+  };
+
+  const handleToggleMonthLock = async () => {
+    const endpoint = report.locked ? 'unlock-month' : 'lock-month';
+    const token = localStorage.getItem('fintax_token');
+    try {
+      const resp = await fetch(`${apiBase}/review/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ clientId: report.client_id || clientId, year: report.year, month: report.month }),
+      });
+      if (resp.ok) {
+        await onRefresh();
+      }
+    } catch (e) {
+      console.error('Month lock toggle error:', e);
     }
   };
 
@@ -309,6 +424,39 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
                   ? 'Freigegeben (Export bereit)'
                   : 'Approved (Export Ready)'}
               </span>
+              {report.locked && (
+                <span
+                  style={{
+                    background: 'rgba(59, 130, 246, 0.18)',
+                    color: '#60a5fa',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    padding: '3px 10px',
+                    borderRadius: 999,
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  🔒 {isDe ? 'Monat gesperrt' : 'Month Locked'}
+                </span>
+              )}
+              {(report.locked || !report.blocked) && (
+                <button
+                  onClick={handleToggleMonthLock}
+                  title={report.locked ? (isDe ? 'Monat entsperren, um mit neuen Regeln neu zu berechnen' : 'Unlock month to recalculate') : (isDe ? 'Monat einfrieren / sperren' : 'Lock approved month')}
+                  style={{
+                    background: report.locked ? 'rgba(245, 158, 11, 0.16)' : 'rgba(255,255,255,0.08)',
+                    color: report.locked ? '#fbbf24' : '#cbd5e1',
+                    border: report.locked ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255,255,255,0.14)',
+                    borderRadius: 8,
+                    padding: '3px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {report.locked ? (isDe ? '🔓 Entsperren' : '🔓 Unlock') : (isDe ? '🔒 Sperren' : '🔒 Lock')}
+                </button>
+              )}
             </div>
             <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
               Monat {String(report.month).padStart(2, '0')}/{report.year} • {report.total_bookings} Buchungen ({report.auto_booked} automatisch verifiziert)
@@ -338,6 +486,98 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
 
         {/* Scrollable Content Body */}
         <div style={{ padding: '22px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Monthly Accuracy Report Card */}
+          {report.accuracy && (
+            <div
+              style={{
+                background: report.accuracy.goal_met
+                  ? 'rgba(16, 185, 129, 0.08)'
+                  : 'rgba(245, 158, 11, 0.08)',
+                border: report.accuracy.goal_met
+                  ? '1px solid rgba(16, 185, 129, 0.35)'
+                  : '1px solid rgba(245, 158, 11, 0.35)',
+                borderRadius: 12,
+                padding: '12px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: '0.86rem', fontWeight: 700, color: '#f8fafc' }}>
+                    🎯 {isDe ? 'Genauigkeitsbericht (Accuracy Report)' : 'Accuracy Report'}
+                  </span>
+                  <span
+                    style={{
+                      background: report.accuracy.goal_met ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                      color: report.accuracy.goal_met ? '#34d399' : '#fbbf24',
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {report.accuracy.goal_met
+                      ? isDe
+                        ? 'Ziel erreicht (0 Systemfehler & ≥ 97%)'
+                        : 'Goal met (0 errors & ≥ 97%)'
+                      : isDe
+                      ? 'Ziel prüfen (Ziel: 0 Systemfehler & ≥ 97%)'
+                      : 'Check goal (target: 0 errors & ≥ 97%)'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: '0.82rem', color: '#cbd5e1' }}>
+                  <span>
+                    <strong>{isDe ? 'Buchungen:' : 'Total:'}</strong> {report.accuracy.total_bookings}
+                  </span>
+                  {report.accuracy.first_run_accuracy_pct !== undefined && (
+                    <span>
+                      <strong>{isDe ? 'First-Run:' : 'First-Run:'}</strong>{' '}
+                      <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                        {report.accuracy.first_run_correct}/{report.accuracy.total_bookings} ({report.accuracy.first_run_accuracy_pct.toFixed(1)}%)
+                      </span>
+                    </span>
+                  )}
+                  <span>
+                    <strong>{isDe ? 'Aktuell (Auto-Korrekt):' : 'Current Accuracy:'}</strong>{' '}
+                    <span style={{ color: '#34d399', fontWeight: 700 }}>
+                      {report.accuracy.auto_correct}/{report.accuracy.total_bookings} ({(report.accuracy.current_accuracy_pct ?? report.accuracy.auto_correct_pct).toFixed(1)}%)
+                    </span>
+                  </span>
+                  {report.accuracy.resolved_by_question !== undefined && (
+                    <span>
+                      <strong>{isDe ? 'Per Frage gelöst:' : 'Resolved by Q:'}</strong> {report.accuracy.resolved_by_question}
+                    </span>
+                  )}
+                  <span>
+                    <strong>{isDe ? 'Fragen:' : 'Questions:'}</strong> {report.accuracy.questions_asked}{' '}
+                    <span style={{ color: '#94a3b8' }}>
+                      (Beleg fehlt: {report.accuracy.questions_by_type.beleg_fehlt} • Entscheidung:{' '}
+                      {report.accuracy.questions_by_type.entscheidung} • Unleserlich:{' '}
+                      {report.accuracy.questions_by_type.unreadable})
+                    </span>
+                  </span>
+                  <span>
+                    <strong>{isDe ? 'Vom Nutzer geändert (Systemfehler):' : 'User-Changed:'}</strong>{' '}
+                    <span style={{ color: report.accuracy.user_changed === 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                      {report.accuracy.user_changed}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              {report.accuracy.error_list && report.accuracy.error_list.length > 0 && (
+                <div style={{ fontSize: '0.78rem', color: '#fca5a5', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 6 }}>
+                  {report.accuracy.error_list.map((err, i) => (
+                    <div key={i}>
+                      • <strong>[{err.category}]</strong> {err.date} ({err.amount.toFixed(2)} €) „{err.text.slice(0, 40)}“:{' '}
+                      {err.proposedAccount} → {err.finalAccount} — {err.cause}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {/* Status Alert Banner */}
           {statusMessage && (
             <div
@@ -357,6 +597,31 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
               <button
                 onClick={() => setStatusMessage(null)}
                 style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {exportError && (
+            <div
+              style={{
+                background: 'rgba(239, 68, 68, 0.16)',
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                borderRadius: 12,
+                padding: '12px 16px',
+                fontSize: '0.88rem',
+                color: '#fca5a5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
+              <span>❌ {exportError}</span>
+              <button
+                onClick={() => setExportError(null)}
+                style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer' }}
               >
                 ✕
               </button>
@@ -691,6 +956,109 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
                         </div>
                       )}
 
+                      {/* Input fields for Ungebuchter Beleg (Betrag EUR, Datum, Richtung) or unreadable Date */}
+                      {(issue.lineKey.startsWith('UNUSED_BELEG:') ||
+                        issue.title.startsWith('Ungebuchter Beleg') ||
+                        issue.requiresDateInput ||
+                        issue.title.includes('Vertrags-/Zahlungsdatum unleserlich')) && (
+                        <div
+                          style={{
+                            background: 'rgba(245, 158, 11, 0.1)',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            borderRadius: 10,
+                            padding: '10px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          {(issue.lineKey.startsWith('UNUSED_BELEG:') || issue.title.startsWith('Ungebuchter Beleg')) && (
+                            <>
+                              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24' }}>
+                                💶 {isDe ? 'Betrag (EUR):' : 'Amount (EUR):'}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                placeholder="z.B. 12600.00"
+                                value={
+                                  amountInputMap[issue.lineKey] !== undefined
+                                    ? amountInputMap[issue.lineKey]
+                                    : issue.booking.amount > 0
+                                    ? String(issue.booking.amount)
+                                    : ''
+                                }
+                                onChange={(e) =>
+                                  setAmountInputMap({ ...amountInputMap, [issue.lineKey]: e.target.value })
+                                }
+                                style={{
+                                  background: '#0f172a',
+                                  color: '#ffffff',
+                                  border: '1px solid rgba(251, 191, 36, 0.5)',
+                                  borderRadius: 6,
+                                  padding: '5px 10px',
+                                  fontSize: '0.84rem',
+                                  width: 130,
+                                }}
+                              />
+                              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24' }}>
+                                ⇄ {isDe ? 'Richtung:' : 'Direction:'}
+                              </label>
+                              <select
+                                value={
+                                  directionInputMap[issue.lineKey] ||
+                                  (issue.booking.sh === 'S' ? 'SALE' : 'PURCHASE')
+                                }
+                                onChange={(e) =>
+                                  setDirectionInputMap({
+                                    ...directionInputMap,
+                                    [issue.lineKey]: e.target.value as 'PURCHASE' | 'SALE',
+                                  })
+                                }
+                                style={{
+                                  background: '#0f172a',
+                                  color: '#ffffff',
+                                  border: '1px solid rgba(251, 191, 36, 0.5)',
+                                  borderRadius: 6,
+                                  padding: '5px 10px',
+                                  fontSize: '0.84rem',
+                                }}
+                              >
+                                <option value="PURCHASE">
+                                  {isDe ? 'Ankauf (3200 an 1000)' : 'Purchase (3200 to 1000)'}
+                                </option>
+                                <option value="SALE">
+                                  {isDe ? 'Verkauf (1000 an 8193)' : 'Sale (1000 to 8193)'}
+                                </option>
+                              </select>
+                            </>
+                          )}
+                          <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24' }}>
+                            📅 {isDe ? 'Vertrags-/Zahlungsdatum:' : 'Contract/Payment Date:'}
+                          </label>
+                          <input
+                            type="date"
+                            value={dateInputMap[issue.lineKey] || ''}
+                            min={`${report.year}-${String(report.month).padStart(2, '0')}-01`}
+                            max={`${report.year}-${String(report.month).padStart(2, '0')}-31`}
+                            onChange={(e) => setDateInputMap({ ...dateInputMap, [issue.lineKey]: e.target.value })}
+                            style={{
+                              background: '#0f172a',
+                              color: '#ffffff',
+                              border: '1px solid rgba(251, 191, 36, 0.5)',
+                              borderRadius: 6,
+                              padding: '5px 10px',
+                              fontSize: '0.84rem',
+                            }}
+                          />
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                            {isDe ? 'Wird für die bestätigte Buchung verwendet' : 'Used for the confirmed booking'}
+                          </span>
+                        </div>
+                      )}
+
                       {/* Action Choice Buttons */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8' }}>
@@ -840,11 +1208,11 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
             gap: 16,
           }}
         >
-          <div style={{ fontSize: '0.85rem' }}>
+          <div style={{ fontSize: '0.85rem', flex: 1, minWidth: 0 }}>
             {report.blocked ? (
               <span style={{ color: '#f87171', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>🔒</span>
-                <span>{report.block_reasons[0] || (isDe ? 'DATEV Export gesperrt' : 'DATEV export blocked')}</span>
+                <span>{report.block_reasons.join(' • ') || (isDe ? 'DATEV Export gesperrt' : 'DATEV export blocked')}</span>
               </span>
             ) : (
               <span style={{ color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -871,55 +1239,41 @@ export const ReviewGateModal: React.FC<ReviewGateModalProps> = ({
               {isDe ? 'Schließen' : 'Close'}
             </button>
 
-            {documentId ? (
-              <a
-                href={report.blocked ? undefined : `${apiBase}/documents/${documentId}/skr03-csv?token=${encodeURIComponent(localStorage.getItem('fintax_token') || '')}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  background: report.blocked ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
-                  color: report.blocked ? '#94a3b8' : '#ffffff',
-                  padding: '10px 22px',
-                  borderRadius: 10,
-                  fontSize: '0.92rem',
-                  fontWeight: 700,
-                  textDecoration: 'none',
-                  cursor: report.blocked ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  boxShadow: report.blocked ? 'none' : '0 4px 16px rgba(16, 185, 129, 0.4)',
-                  pointerEvents: report.blocked ? 'none' : 'auto',
-                }}
-              >
-                <span>{report.blocked ? '🔒' : '⬇️'}</span>
-                <span>{isDe ? 'DATEV EXTF CSV herunterladen' : 'Download DATEV CSV'}</span>
-              </a>
-            ) : (
-              <a
-                href={report.blocked ? undefined : `${apiBase}/export/agenda-skr03?token=${encodeURIComponent(localStorage.getItem('fintax_token') || '')}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  background: report.blocked ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
-                  color: report.blocked ? '#94a3b8' : '#ffffff',
-                  padding: '10px 22px',
-                  borderRadius: 10,
-                  fontSize: '0.92rem',
-                  fontWeight: 700,
-                  textDecoration: 'none',
-                  cursor: report.blocked ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  boxShadow: report.blocked ? 'none' : '0 4px 16px rgba(16, 185, 129, 0.4)',
-                  pointerEvents: report.blocked ? 'none' : 'auto',
-                }}
-              >
-                <span>{report.blocked ? '🔒' : '⬇️'}</span>
-                <span>{isDe ? 'DATEV EXTF CSV herunterladen' : 'Download DATEV CSV'}</span>
-              </a>
-            )}
+            <button
+              type="button"
+              disabled={report.blocked}
+              onClick={async () => {
+                if (report.blocked) return;
+                const url = documentId
+                  ? `${apiBase}/documents/${documentId}/skr03-csv`
+                  : `${apiBase}/review/export-csv?client_id=${encodeURIComponent(report.client_id || clientId)}&year=${report.year}&month=${report.month}`;
+                const fallback = `EXTF_Buchungen_${report.year}_${String(report.month).padStart(2, '0')}.csv`;
+                setExportError(null);
+                try {
+                  await downloadAuthenticatedFile(url, fallback);
+                } catch (err: any) {
+                  setExportError(err?.message || (isDe ? 'CSV-Export fehlgeschlagen.' : 'CSV download failed.'));
+                  await onRefresh();
+                }
+              }}
+              style={{
+                background: report.blocked ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
+                color: report.blocked ? '#94a3b8' : '#ffffff',
+                border: 'none',
+                padding: '10px 22px',
+                borderRadius: 10,
+                fontSize: '0.92rem',
+                fontWeight: 700,
+                cursor: report.blocked ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                boxShadow: report.blocked ? 'none' : '0 4px 16px rgba(16, 185, 129, 0.4)',
+              }}
+            >
+              <span>{report.blocked ? '🔒' : '⬇️'}</span>
+              <span>{isDe ? 'DATEV EXTF CSV herunterladen' : 'Download DATEV CSV'}</span>
+            </button>
           </div>
         </div>
       </div>

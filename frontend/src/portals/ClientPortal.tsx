@@ -29,10 +29,10 @@ import {
   Upload,
   FileImage,
   FileSpreadsheet,
-  Download,
   Mail,
   ChevronRight,
 } from 'lucide-react';
+import { openAuthenticatedFileInNewTab, downloadAuthenticatedFile } from '../utils/authFile';
 
 const API_BASE = 'http://127.0.0.1:5000/api';
 
@@ -48,6 +48,8 @@ interface DocumentRecord {
   status: string;
   category?: string;
   sub_types?: string[];
+  paymentChannel?: 'statement' | 'bank' | 'kasse' | 'unknown' | string;
+  uploadSlot?: string;
   staff_notes?: string;
   expiry_date?: string;
   expiry_info?: {
@@ -78,6 +80,8 @@ interface DocumentRecord {
     target_folder?: string;
     review_blocked?: boolean;
     review_open_issues?: number;
+    real_booking_count?: number;
+    matched_booking_count?: number;
   };
   relative_path?: string;
 }
@@ -605,19 +609,19 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
     },
     ACCOUNTING: {
       title: isDe ? 'Finanzbuchhaltung einreichen' : 'Submit Financial Accounting Documents',
-      hasMonthYear: false,
+      hasMonthYear: true,
       folderCategory: '01_FiBu',
-      notePlaceholder: isDe ? 'z.B. Eingangsrechnungen und Deutsche Bank Auszug für aktuellen Monat...' : 'e.g. Incoming vendor invoices and bank statement for current month...',
+      notePlaceholder: isDe ? 'z.B. Kontoauszug, Bankbelege oder Kassebelege für den Monat...' : 'e.g. Bank statement, Bankbelege or Kassebelege for the month...',
       col1: isDe ? [
-        'Kontoauszüge',
-        'Ausgangsrechnungen',
-        'Bewirtungsbelege',
+        'Kontoauszug',
+        'Bankbelege',
+        'Kassebelege',
         'Sonstiges',
       ] : [
-        'Bank Statements',
-        'Incoming Invoices (Purchase Invoices)',
-        'Outgoing Invoices (Sales Invoices)',
-        'Cash Receipts',
+        'Kontoauszug',
+        'Bankbelege',
+        'Kassebelege',
+        'Other',
       ],
       col2: isDe ? [
         'Eingangsrechnungen',
@@ -724,6 +728,12 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
         formData.append('client_id', user?.id || 'user_client_1');
         formData.append('notes', note);
         formData.append('sub_types', JSON.stringify(selectedTypes));
+        if (activeModal === 'ACCOUNTING') {
+          const slot = selectedTypes.find((s) => s === 'Kontoauszug' || s === 'Bankbelege' || s === 'Kassebelege');
+          const channel = slot === 'Kassebelege' || /kasse/i.test(file.name) ? 'kasse' : 'bank';
+          formData.append('paymentChannel', channel);
+          if (slot) formData.append('uploadSlot', slot);
+        }
         if (config.hasMonthYear) {
           formData.append('month', selectedMonth);
           formData.append('year', selectedYear);
@@ -2485,7 +2495,11 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                     const isPdf = (doc.mime_type || '').includes('pdf') || doc.original_filename.toLowerCase().endsWith('.pdf');
                     const cleanSupplier = cleanSupplierName(doc.extracted_data?.supplier_name);
                     const folderBadge = getFolderBadgeLabel(doc);
-                    const bookingsCount = doc.extracted_data?.bookings?.length || 1;
+                    const bookingsCount =
+                      typeof doc.extracted_data?.real_booking_count === 'number'
+                        ? doc.extracted_data.real_booking_count
+                        : (doc.extracted_data?.bookings?.length ?? 0);
+                    const matchedCount = doc.extracted_data?.matched_booking_count ?? 0;
                     const skrCode = doc.extracted_data?.skr03_account_code;
 
                     return (
@@ -2587,6 +2601,47 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
 
                         {/* 2. VAULT & SKR03 PILLS (NO WRAP) */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                          {/* Payment Channel Badge (Requirement 4) */}
+                          {(() => {
+                            const rawCh = doc.paymentChannel || (
+                              doc.uploadSlot === 'Kontoauszug' ? 'statement' :
+                              doc.uploadSlot === 'Bankbelege' ? 'bank' :
+                              doc.uploadSlot === 'Kassebelege' ? 'kasse' :
+                              /kontoauszug|1200[-_ ]?bank/i.test(doc.original_filename || '') ? 'statement' :
+                              /kasse/i.test(doc.original_filename || '') ? 'kasse' :
+                              /bankbeleg/i.test(doc.original_filename || '') ? 'bank' :
+                              'unknown'
+                            );
+                            const badgeMap: Record<string, { label: string; bg: string; color: string; border: string; icon: string }> = {
+                              statement: { label: 'Kontoauszug', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe', icon: '🏛️' },
+                              bank: { label: 'Bank', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0', icon: '💳' },
+                              kasse: { label: 'Kasse', bg: '#fffbeb', color: '#b45309', border: '#fde68a', icon: '🪙' },
+                              unknown: { label: 'Sonstiges', bg: '#f8fafc', color: '#475569', border: '#cbd5e1', icon: '📄' },
+                            };
+                            const cfg = badgeMap[rawCh] || badgeMap.unknown;
+                            return (
+                              <span
+                                style={{
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  color: cfg.color,
+                                  background: cfg.bg,
+                                  border: `1px solid ${cfg.border}`,
+                                  padding: '4px 9px',
+                                  borderRadius: 6,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={`Zahlungsweg: ${cfg.label}`}
+                              >
+                                <span>{cfg.icon}</span>
+                                <span>{cfg.label}</span>
+                              </span>
+                            );
+                          })()}
+
                           <span
                             style={{
                               fontSize: '0.74rem',
@@ -2605,7 +2660,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                             📁 {folderBadge}
                           </span>
 
-                          {skrCode && (
+                          {(skrCode || typeof doc.extracted_data?.real_booking_count === 'number') && (
                             <span
                               style={{
                                 fontSize: '0.74rem',
@@ -2621,7 +2676,25 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              ✓ SKR03: {skrCode} • {bookingsCount} {isDe ? 'Buchungen' : 'Bookings'}
+                              {bookingsCount > 0 ? (
+                                <>
+                                  ✓ SKR03: {skrCode || '—'} • {bookingsCount}{' '}
+                                  {isDe
+                                    ? bookingsCount === 1 ? 'Buchung' : 'Buchungen'
+                                    : bookingsCount === 1 ? 'Booking' : 'Bookings'}
+                                </>
+                              ) : matchedCount > 0 ? (
+                                <>
+                                  ✓{' '}
+                                  {isDe
+                                    ? `0 Buchungen (${matchedCount} Bank zugeordnet)`
+                                    : `0 Bookings (${matchedCount} matched to Bank)`}
+                                </>
+                              ) : (
+                                <>
+                                  SKR03: {skrCode || '—'} • 0 {isDe ? 'Buchungen' : 'Bookings'}
+                                </>
+                              )}
                             </span>
                           )}
                         </div>
@@ -2670,26 +2743,36 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                           </div>
                         </div>
 
-                        {/* 4. ACTIONS (EXCEL / CSV / VIEW) */}
+                        {/* 4. ACTIONS (EXCEL PREVIEW / REVIEW / VIEW) */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                           {(doc.category === '01_FiBu' || doc.extracted_data?.skr03_account_code) && (
                             <>
-                              <a
-                                href={`${API_BASE}/documents/${doc.id}/skr03-xlsx`}
-                                download
-                                title={isDe ? 'Konvertierte SKR03 Excel herunterladen' : 'Download converted SKR03 Excel (.xlsx)'}
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const base = (doc.original_filename || 'SKR03').replace(/\.[^.]+$/, '');
+                                    await downloadAuthenticatedFile(
+                                      `${API_BASE}/documents/${doc.id}/skr03-xlsx`,
+                                      `${base}_VORSCHAU.xlsx`
+                                    );
+                                  } catch (err: any) {
+                                    error(err?.message || (isDe ? 'Excel-Vorschau fehlgeschlagen.' : 'Excel preview download failed.'));
+                                  }
+                                }}
+                                title={isDe ? 'Nur Lese-Vorschau (_VORSCHAU) – kein DATEV-Import' : 'Read-only preview (_VORSCHAU) – not for DATEV import'}
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: 5,
                                   color: '#15803d',
-                                  textDecoration: 'none',
                                   fontWeight: 600,
                                   fontSize: '0.75rem',
                                   background: '#f0fdf4',
                                   padding: '7px 11px',
                                   borderRadius: 8,
                                   border: '1px solid #bbf7d0',
+                                  cursor: 'pointer',
                                   transition: 'all 0.15s ease',
                                   whiteSpace: 'nowrap',
                                 }}
@@ -2697,34 +2780,10 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                                 onMouseLeave={(e) => { e.currentTarget.style.background = '#f0fdf4'; }}
                               >
                                 <FileSpreadsheet size={13} />
-                                <span>Excel</span>
-                              </a>
-                              <a
-                                href={`${API_BASE}/documents/${doc.id}/skr03-csv`}
-                                download
-                                title={isDe ? 'Konvertierte SKR03 CSV herunterladen' : 'Download converted SKR03 CSV'}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 5,
-                                  color: '#047857',
-                                  textDecoration: 'none',
-                                  fontWeight: 600,
-                                  fontSize: '0.75rem',
-                                  background: '#ecfdf5',
-                                  padding: '7px 11px',
-                                  borderRadius: 8,
-                                  border: '1px solid #a7f3d0',
-                                  transition: 'all 0.15s ease',
-                                  whiteSpace: 'nowrap',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = '#d1fae5'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = '#ecfdf5'; }}
-                              >
-                                <Download size={13} />
-                                <span>CSV</span>
-                              </a>
+                                <span>{isDe ? 'Excel (Vorschau)' : 'Excel (Preview)'}</span>
+                              </button>
                               <button
+                                type="button"
                                 onClick={() => openReviewForDoc(doc.id)}
                                 title={isDe ? 'DATEV-Prüfbericht & Freigabe' : 'DATEV Review Gate & Approval'}
                                 style={{
@@ -2750,23 +2809,28 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                               </button>
                             </>
                           )}
-                          <a
-                            href={`${API_BASE}/documents/${doc.id}/file`}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await openAuthenticatedFileInNewTab(`${API_BASE}/documents/${doc.id}/file`);
+                              } catch (err: any) {
+                                error(err?.message || (isDe ? 'Dokument konnte nicht geöffnet werden.' : 'Could not open document.'));
+                              }
+                            }}
                             title={isDe ? 'Originaldokument ansehen' : 'View original file'}
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 5,
                               color: '#2563eb',
-                              textDecoration: 'none',
                               fontWeight: 600,
                               fontSize: '0.75rem',
                               background: '#eff6ff',
                               padding: '7px 12px',
                               borderRadius: 8,
                               border: '1px solid #bfdbfe',
+                              cursor: 'pointer',
                               transition: 'all 0.15s ease',
                               whiteSpace: 'nowrap',
                             }}
@@ -2775,7 +2839,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                           >
                             <Eye size={13} />
                             <span>{isDe ? 'Ansehen' : 'View'}</span>
-                          </a>
+                          </button>
                         </div>
                       </div>
                     );
@@ -3813,10 +3877,15 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                             {/* Right: Modern Action Buttons Group */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                               {/* View / Download */}
-                              <a
-                                href={`${API_BASE}/documents/${doc.id}/file`}
-                                target="_blank"
-                                rel="noreferrer"
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await openAuthenticatedFileInNewTab(`${API_BASE}/documents/${doc.id}/file`);
+                                  } catch (err: any) {
+                                    error(err?.message || (isDe ? 'Dokument konnte nicht geöffnet werden.' : 'Could not open document.'));
+                                  }
+                                }}
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -3828,7 +3897,6 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                                   color: '#1e293b',
                                   fontSize: '0.82rem',
                                   fontWeight: 600,
-                                  textDecoration: 'none',
                                   cursor: 'pointer',
                                   transition: 'all 0.15s ease',
                                 }}
@@ -3843,7 +3911,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({
                               >
                                 <Eye size={14} />
                                 <span>{isDe ? 'Ansehen' : 'View'}</span>
-                              </a>
+                              </button>
 
                               {/* Edit / Replace */}
                               <button

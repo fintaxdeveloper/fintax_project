@@ -3,6 +3,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../authentication/models/user_model.dart';
 import '../widgets/home_app_bar.dart';
 import '../widgets/home_card.dart';
+import '../widgets/home_folder_grid.dart';
 
 class DashboardScreen extends StatelessWidget {
   final UserModel user;
@@ -22,12 +23,8 @@ class DashboardScreen extends StatelessWidget {
               const SizedBox(height: 24),
               const Text('Dashboard Key Metrics', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
               const SizedBox(height: 16),
-              GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
+              HomeFolderGrid(
+                tileHeight: 110, // these cards have no subtitle/action
                 children: [
                   HomeFolderCard(
                     icon: Icons.receipt_long_rounded,

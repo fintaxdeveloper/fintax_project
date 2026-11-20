@@ -1,0 +1,829 @@
+{
+  "client_id": "user_qa24_704",
+  "year": 2024,
+  "month": 4,
+  "period": "2024_04",
+  "captured_at": "2026-11-19T15:19:41.511Z",
+  "proposals": [
+    {
+      "amount": 16.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0304",
+      "buchungstext": "LANDRATSAMT MAIN-TAUNUS-KRE",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 36,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0304",
+      "buchungstext": "Stadt flörsheim - Gebührenliste Gewerbeamt Nr. 30-Ru-85/2024",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "0304",
+      "buchungstext": "Klaus Kilb - Miete SecureGo plus IBAN: DE1151050015015903302",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 38000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "0404",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - LRWYGCEK3PC640865 Zahlung",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 10000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1600",
+      "buCode": "",
+      "belegdatum": "0404",
+      "buchungstext": "Opel Service Kaiser - Opel Adam WOLOMAP08H6064558 E UR Entge",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "0404",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 35000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "0504",
+      "buchungstext": "VOLKSWAGEN AKTIENGESELLSCHAFT - 0137161278 IM NAMEN DER SCHW",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 10000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0504",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 10000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0504",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 12000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0504",
+      "buchungstext": "RANGROVER MOVIK PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 30900,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "0804",
+      "buchungstext": "Autohaus am Steinheimer Tor GmbH - R.Nr. 07/2024 Audi Q5 WAU",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 881.2,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0804",
+      "buchungstext": "Mobile.de - 823425 SecureGo plus IBAN: DE9850110800616150541",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 20000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0804",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 700,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "0904",
+      "buchungstext": "Gerd Zeller - Miete SecureGo plus IBAN: DE205007002406103436",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 50000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "1504",
+      "buchungstext": "MAKOT GMBH - Rechnungsnummer: 10/2024 EREF: CCB.106.EE.POS00",
+      "belegfeld1": "10/2024"
+    },
+    {
+      "amount": 153,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "1504",
+      "buchungstext": "Ingenieurburo Dastgir",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 10000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1504",
+      "buchungstext": "Nina Ziegler - Kauf Opel Adam Ec htzeit-Ueberweisung IBAN: D",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "1504",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 12500,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1504",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 16000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1604",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 38200,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "1704",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - XP7YGCEK7NB021767 Zahlung",
+      "belegfeld1": "11/2024"
+    },
+    {
+      "amount": 44000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "1704",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - XP7YGCEL3PB054213 Zahlung",
+      "belegfeld1": "09/2024"
+    },
+    {
+      "amount": 28000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1704",
+      "buchungstext": "Ryan Sanie Ghomie - Audi Q5 WAUZZZFY8K20714114 SecureGo plus",
+      "belegfeld1": "WAUZZZFY8K2081414"
+    },
+    {
+      "amount": 468,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "1804",
+      "buchungstext": "Remante - Auftrag: 24010652 SecureGo plus IBAN: CZ3403000000",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 894.19,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "0730",
+      "buCode": "",
+      "belegdatum": "1804",
+      "buchungstext": "Abdul Rahman Qayumi - Echtzeit-Ueberwei sung IBAN: DE4950050",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "1804",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 5000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1804",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5635",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 45000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2204",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 8800,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "2304",
+      "buchungstext": "Jonas Hlawatczek - Kauf Opel Corsa E chtzeit-Ueberweisung IB",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2304",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2.7,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2404",
+      "buchungstext": "DZ Bank-.Main-Kinzig-Kreis - Vorg: 100602683-32346369 GIROPA",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2.7,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2404",
+      "buchungstext": "LANDESHAUPTSTADT STUTTGART-Landeshauptstadt Stuttgart - Best",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 38.89,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4980",
+      "buCode": "9",
+      "belegdatum": "2404",
+      "buchungstext": "EBAY BY ADYEN - FRG8TG39ZHSLPK42 eBay O 15-11479-22359 TAN1:",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2500,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "2404",
+      "buchungstext": "Jonas Hlawatczek - Restzahlung Opel Corsa En tgelt Echtzeit-",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2404",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2.7,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2504",
+      "buchungstext": "DZ Bank-.Stadt Bochum - Vorg: 100602683-32400641 GIROPAY0014",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2.7,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2504",
+      "buchungstext": "LANDESHAUPTSTADT MNCHEN-Landeshauptstadt Munchen - it( - Bes",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 44300,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "2604",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - XP7YGCEL1PB045428 Zahlung",
+      "belegfeld1": "12/2024"
+    },
+    {
+      "amount": 1000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2604",
+      "buchungstext": "DEUTSCHE BANK - Auszahlung 1000,00 EUR",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 5.95,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2604",
+      "buchungstext": "Geldautomat Auszahlung Entgelt",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1059.1,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3800",
+      "buCode": "9",
+      "belegdatum": "2604",
+      "buchungstext": "Chandler logistics gmbh - Rechnungsnummer 2477586 SecureGo p",
+      "belegfeld1": "2477586"
+    },
+    {
+      "amount": 11850,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "Leonard Vogt - Zahlung Teil 1 Tesla M3P Leonard Vogt ABWA: V",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 23000,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "Torsten Feike - Leonard Vogt 2.Teilzahlung TeslaM3P",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 38800,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "8125",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "OY FORTIA AUTOMOTIVE AB - XP7YGCEL1PB045428 Zahlung",
+      "belegfeld1": "13/2024"
+    },
+    {
+      "amount": 10000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "Mir mohammad zaeefi - Zahlung 2 Audi Q5 WAUZZZFYXJ2107753 Se",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 35500,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "Oualid El jarbouchi - Tesla Model Y XP7YGCEEKONB032304 Echtz",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.8,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "Echtzeit-Überweisung Entgelt (SecureGo)",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 48000,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "BAR-AUSZAHLUNG PN:5705",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 6.49,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1576",
+      "buCode": "",
+      "belegdatum": "3004",
+      "buchungstext": "siehe Anlage 1 PN:905",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 34.15,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "3004",
+      "buchungstext": "Abschluss lt. Anlage 2 PN:905",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 340,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4360",
+      "buCode": "",
+      "belegdatum": "3004",
+      "buchungstext": "Tuban Systems - Rechnungsnummer 0424-00B050 SecureGo plus IB",
+      "belegfeld1": "0424-00B050"
+    },
+    {
+      "amount": 32000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "3004",
+      "buchungstext": "Autohaus am Steinheimer Tor GmbH - WDC2533091F169633",
+      "belegfeld1": "14/2024"
+    },
+    {
+      "amount": 12600,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "2704",
+      "buchungstext": "Valentin Laukert - W0V0MAP08J6027667",
+      "belegfeld1": "W0V0MAP08J6027667"
+    },
+    {
+      "amount": 20.09,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2404",
+      "buchungstext": "Shell Station - Kraftstoff",
+      "belegfeld1": "1740/005/00001"
+    },
+    {
+      "amount": 57.9,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "2304",
+      "buchungstext": "Deutsche Bahn - Fahrtkosten / Reise",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 15.03,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2304",
+      "buchungstext": "Freie Tankstelle - Kraftstoff",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 20.12,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "1704",
+      "buchungstext": "JET-Tankstelle 5932 - Kraftstoff",
+      "belegfeld1": "585386"
+    },
+    {
+      "amount": 33500,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1604",
+      "buchungstext": "Barbara Dendor - LRW3E7ECXMC422465",
+      "belegfeld1": "LRW3E7ECXMC422465"
+    },
+    {
+      "amount": 10300,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1504",
+      "buchungstext": "Schelberger Horst - W0V0XEP68K4166861",
+      "belegfeld1": "W0V0XEP68K4166861"
+    },
+    {
+      "amount": 43000,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1504",
+      "buchungstext": "Heinz Paulis - Fahrzeugeinkauf",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 38.35,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "1304",
+      "buchungstext": "Deutsche Bahn - Fahrtkosten / Reise",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 20,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "1304",
+      "buchungstext": "Shell Station - Kraftstoff",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2000,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1304",
+      "buchungstext": "Ziegler Nina - Baranteil (W0V0MAP08J6027667)",
+      "belegfeld1": "W0V0MAP08J6027667"
+    },
+    {
+      "amount": 48500,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1004",
+      "buchungstext": "Chunderlich Peter - WBAJU410808B35889",
+      "belegfeld1": "WBAJU410808B35889"
+    },
+    {
+      "amount": 37000,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "1004",
+      "buchungstext": "Dörr Jana - XP7YGCEK7NB021767",
+      "belegfeld1": "XP7YGCEK7NB021767"
+    },
+    {
+      "amount": 40.06,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0804",
+      "buchungstext": "SB Tankstelle - Kraftstoff",
+      "belegfeld1": "8744/006/00002"
+    },
+    {
+      "amount": 30,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0104",
+      "buchungstext": "Funktaxenruf Harburg GmbH - Fahrtkosten / Reise",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 70.1,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4673",
+      "buCode": "8",
+      "belegdatum": "0804",
+      "buchungstext": "Deutsche Bahn - Fahrtkosten / Reise",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 42000,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0604",
+      "buchungstext": "Krazcv Aleksandar - XP7YGCEL3PB054213",
+      "belegfeld1": "XP7YGCEL3PB054213"
+    },
+    {
+      "amount": 9500,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0304",
+      "buchungstext": "Schraier Ursula - Fahrzeugeinkauf",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 3000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "8193",
+      "buCode": "",
+      "belegdatum": "0204",
+      "buchungstext": "Autohaus am Steinheimer Tor GmbH - Baranteil (WAUZZZFY8K2081",
+      "belegfeld1": "08/2024"
+    },
+    {
+      "amount": 5000,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "0104",
+      "buchungstext": "Zaefi Mir Mohammad - Baranteil (WAUZZZ8FY8KZ01419)",
+      "belegfeld1": "WAUZZZ8FY8KZ01419"
+    },
+    {
+      "amount": 1500,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "3200",
+      "buCode": "",
+      "belegdatum": "2004",
+      "buchungstext": "Oualid El Jarbouehi - Restbetrag (XP7YGCEK0NB032304)",
+      "belegfeld1": "XP7YGCEK0NB032304"
+    },
+    {
+      "amount": 10000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0504",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 10000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0504",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 20000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "0804",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 12500,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1504",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 16000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1604",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 5000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "1804",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 45000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2204",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 1000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2604",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    },
+    {
+      "amount": 48000,
+      "sh": "S",
+      "konto": "1000",
+      "gegenkonto": "1360",
+      "buCode": "",
+      "belegdatum": "2904",
+      "buchungstext": "Bareinzahlung Kasse - Auszahlung",
+      "belegfeld1": "KASSE-BAR"
+    }
+  ]
+}

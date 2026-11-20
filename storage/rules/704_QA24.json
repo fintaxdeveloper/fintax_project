@@ -74,7 +74,9 @@
       "bilar99e",
       "oy fortia",
       "fortia automotive",
+      "fortia",
       "drive4ever",
+      "perigord",
       "transiett",
       "tg transiett",
       "auto zuyd",
@@ -104,13 +106,14 @@
     { "pattern": "tanja scheurer", "account": "4390", "bu_code": "" },
     { "pattern": "intec ag", "account": "3200", "bu_code": "" },
     { "pattern": "smarttarif24", "account": "70001", "bu_code": "" },
-    { "pattern": "dastgir|ingenieurbüro dastgir|ingenieurburo dastgir|fsp|gthling kaufmann|göthling|heinrich göbel|autohaus goebel|gehlsen|auto-teile-de|macoil|mr\\.?\\s*wash|getriebe sur|getriebe service sur|eha mainz|eha autoschilder|buffalo gmbh", "account": "4540", "bu_code": "9" },
+    { "pattern": "dastgir|ingenieurbüro dastgir|ingenieurburo dastgir|auto\\s*wessel|fsp|gthling kaufmann|göthling|heinrich göbel|autohaus goebel|gehlsen|auto-teile-de|macoil|mr\\.?\\s*wash|getriebe sur|getriebe service sur|eha mainz|eha autoschilder|buffalo gmbh", "account": "4540", "bu_code": "9" },
     { "pattern": "roth-tankstelle|ts022 ffmborsigallee", "account": "4530", "bu_code": "9" },
     { "pattern": "villmar|canis lupus|öhlschläger|ohlschlaeger|ebay|15-11900-39159|12-11907-72439", "account": "4980", "bu_code": "9" },
     { "pattern": "birlik markt", "account": "4673", "bu_code": "8" },
     { "pattern": "cardeluxe", "account": "4964", "bu_code": "9" },
     { "pattern": "maihan", "account": "0730", "bu_code": "" }
   ],
+  "stammkapital": { "total": 25000, "account": "0800" },
   "starting_balances": {
     "2024": {
       "1000": 0.0,

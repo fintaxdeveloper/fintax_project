@@ -1,0 +1,51 @@
+{
+  "user_qa24_704__2024_02": {
+    "scope": "user_qa24_704__2024_02",
+    "client_id": "user_qa24_704",
+    "year": 2024,
+    "month": 2,
+    "locked": true,
+    "locked_at": "2026-11-18T17:48:49.219Z",
+    "locked_by": "golden:approve",
+    "bookings": [
+      {
+        "amount": 12500,
+        "sh": "S",
+        "konto": "1200",
+        "gegenkonto": "0800",
+        "buCode": "",
+        "belegdatum": "2102",
+        "belegfeld1": "",
+        "belegfeld2": "",
+        "buchungstext": "ABDUL RAHMAN QAYUMI",
+        "currency": "EUR"
+      },
+      {
+        "amount": 0.11,
+        "sh": "H",
+        "konto": "1200",
+        "gegenkonto": "1576",
+        "buCode": "",
+        "belegdatum": "2902",
+        "belegfeld1": "",
+        "belegfeld2": "",
+        "buchungstext": "siehe Anlage 1 PN:905",
+        "currency": "EUR"
+      },
+      {
+        "amount": 0.6,
+        "sh": "H",
+        "konto": "1200",
+        "gegenkonto": "4970",
+        "buCode": "",
+        "belegdatum": "2902",
+        "belegfeld1": "",
+        "belegfeld2": "",
+        "buchungstext": "Abschluss lt. Anlage 2 PN:905",
+        "currency": "EUR"
+      }
+    ],
+    "opening_balance": 0,
+    "closing_balance": 12499.29
+  }
+}

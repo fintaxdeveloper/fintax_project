@@ -1,0 +1,1129 @@
+{
+  "client_id": "user_pizza_amore",
+  "year": 2026,
+  "month": 6,
+  "period": "2026_06",
+  "captured_at": "2026-11-19T16:38:45.851Z",
+  "proposals": [
+    {
+      "amount": 1484.22,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4900",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "Mercedes-Benz Bank AG Ref. 1117408877/71375991:OBB-NN777: - ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 974.34,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "Churfränkische Grundvermögen GmbH 8020.0005.004 DATUM 01.06.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 743,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4210",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "Dieter Jakob Miete inkl. Nebenkosten",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 630,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "Allianz Lebensversic Vertrag AL-9517795537 01.06.26 - 30.06.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 204.4,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0106",
+      "buchungstext": "WAURIG GMBH/ZUM HAARSTRAUCH 6-10/HA MMERSBACH/DE 2026-05-30T",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 123.35,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0106",
+      "buchungstext": "LIDL SAGT DANKE/10bernburg/DE 2026-05-30T09:06 Debitk2 2030-",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 61.53,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "bft Obernburg/10bernburg1DE 2026-05-29T09:27 Debitk.2 2030-1",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 58.39,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "bft Obernburg//Obernburg/DE 2026-05-31T13:13 Debitk.2 2030-1",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 53.59,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0106",
+      "buchungstext": "LIDL SAGT DANKE/1Elsenfe1d/DE 2026-05-30T13:04 Debitk.2 2030",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 44.21,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "bft Obernburg/10bernburg/DE 2026-05-30T09:18 Debitk2 2030-12",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 42,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4920",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "Telefonica Germany GmbH + co. OHG Kd-Nr.: 6110220553, Rq-Nr.",
+      "belegfeld1": "6110220553"
+    },
+    {
+      "amount": 1500,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4900",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "SB.EINZAHLUNG GR.WALLSTA GA 2508101.06.26 15.47.07 050179805",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 606.25,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4900",
+      "buCode": "",
+      "belegdatum": "0206",
+      "buchungstext": "REIS 802481 DATUM 02.06.2026, 18.14 UHR",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 271.33,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0206",
+      "buchungstext": "PayPal (Europe) Sari et CIE SCA OrderYOYO Deutschland GmbH 2",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2109.24,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1410",
+      "buCode": "",
+      "belegdatum": "0206",
+      "buchungstext": "DERDENGELDEN TAKEAWAYCOM AUSZAHLUNG PO-20577718752 31-05-202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 167.2,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "",
+      "belegdatum": "0306",
+      "buchungstext": "AS-9519510518 Kfz-Versicherun OBB-NN 777 - 03.06.26 - 02.07.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 40.15,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0306",
+      "buchungstext": "bft WorthilWorth1DE 2026-06-02T21:54 Debitk2 2030-12",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 123.54,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0506",
+      "buchungstext": "REWE SAGT DANKE. 446521761Am Suedkr e/Grosswallstadt IDE 202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 65.31,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4540",
+      "buCode": "9",
+      "belegdatum": "0506",
+      "buchungstext": "KT1048 CAR PARTS KLEINWALLSTADT//KI einwallstadt]DE 2026-06-",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 46.97,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0506",
+      "buchungstext": "LIDL SAGT DANKEJ/E1senfeld/DE 2026-06-03T12:36 Debitk.2 2030",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 25.18,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0506",
+      "buchungstext": "ALDI SE + CO. KG/BAHNHOFSTR. 1 INEL SENFELD/DE 2026-06-03T12",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 678.9,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4900",
+      "buCode": "",
+      "belegdatum": "0806",
+      "buchungstext": "REIS 802766 DATUM 06.06.2026. 16.23 UHR",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 77.63,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0806",
+      "buchungstext": "LIDL SAGT DANKE//Obernburg/DE 2026-06-06T12:44 Debitk.2 2030",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 63.03,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "0806",
+      "buchungstext": "RundfunkARD. ZDF, DRadio RF53X710334525 DATUM 06.06.2026.16.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 62.4,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0806",
+      "buchungstext": "bft Obernburg//Obernburg/DE 2026-06-07T15:06 Debitk.2 2030-1",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 54.56,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0806",
+      "buchungstext": "bft Obernburg//Obernburg/DE 2026-06-07T15•.21 Debitk.2 2030-",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 58.46,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0806",
+      "buchungstext": "LIDL SAGT DANKE//Obernburg/DE 2026-06-05T11:10 Debitk.2 2030",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 194.78,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "0906",
+      "buchungstext": "LIDL SAGT DANKE//Obernburg/DE 2026-06-08T07:14 Debitk.2 2030",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 2067.45,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0906",
+      "buchungstext": "PayPal (Europe) Sari et CIE SCA OrderYOYO Deutschland GmbH 2",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 162,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "",
+      "belegdatum": "0906",
+      "buchungstext": "DERDENGELDEN TAKEAWAYCOM AUSZAHLUNG PO-20644197652 07-06-202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 90.03,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "1006",
+      "buchungstext": "Getreidemühle Knecht 5276024 DATUM 10.06.2026, 15.53 UHR - -",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 31.4,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "1006",
+      "buchungstext": "ALDI SE + CO. KG/BAHNHOFSTR. 1 SENFELD/DE 2026-06-09T12:42 D",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 12,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4925",
+      "buCode": "9",
+      "belegdatum": "1106",
+      "buchungstext": "IONOS SE KD-Nr. 1<313498481/ RG-Nr. 100188254 894 0020008662",
+      "belegfeld1": "100188254"
+    },
+    {
+      "amount": 92.7,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4520",
+      "buCode": "",
+      "belegdatum": "1206",
+      "buchungstext": "Allianz Vertra AS-6097990727 Kfz.Versicherun MIL-MN 888 - 12",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 31.24,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "1206",
+      "buchungstext": "OEZ BEREKET SUPERMARKT//ELSENFELD/D E 2026-06-1 IT13:29 Debi",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 20,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4510",
+      "buCode": "",
+      "belegdatum": "1206",
+      "buchungstext": "Bundeskasse Kfz-Steuer fuer MIL MN 888 fuer die Zeit vom 12.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 525,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4240",
+      "buCode": "9",
+      "belegdatum": "1506",
+      "buchungstext": "VATTENFALL EUROPE SALES S/836664084512/601813907423 Hauptst ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 482.25,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "1506",
+      "buchungstext": "AOK Bayern - Die Gesundheits kasse 0229775616 OB-M230888134 ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 257.22,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "1506",
+      "buchungstext": "REWE SAGT DANKE. 446521761Am Suedkr e/Grosswa11stadt IDE 202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 101.97,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4260",
+      "buCode": "9",
+      "belegdatum": "1506",
+      "buchungstext": "TOOM BM SAGT DANKE 1356366711m Hoen inglElsenfeld IDE 2026-0",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 92.48,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "1506",
+      "buchungstext": "WAURIG GMBH/ZUM HAARSTRAUCH 6-10/HA MMERSBACH/DE 2026-06-13T",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 77.35,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "1506",
+      "buchungstext": "LIDL SAGT DANKE/Planstr.13/Elsenfel d/DE 2026-06-13T11:51 De",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 69.31,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4520",
+      "buCode": "",
+      "belegdatum": "1506",
+      "buchungstext": "Allianz Versicherungs-AG Vertra AS-9509888386 Kfz•Versicheru",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 60.01,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "1506",
+      "buchungstext": "bft Obernburg//Obernburg/DE 2026-06-12T20:48 Debitk.2 2030-1",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 33.19,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "1506",
+      "buchungstext": "LIDL SAGT DANKE/lm weidig 2410bernb urgiDE 2026-06-13T12:20 ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 70.93,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "1506",
+      "buchungstext": "STICHTING CUSTODIAN UBER PAYMENTS POP SVCS, DOB , 20260608 -",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1608.82,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1410",
+      "buCode": "",
+      "belegdatum": "1606",
+      "buchungstext": "DERDENGELDEN TAKEAWAYCOM AUSZAHLUNG PO-20708629582 14-06-202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 109.08,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "1706",
+      "buchungstext": "PayPal (Europe) Sari et CIE SCA OrderYOYO Deutschland GmbH 2",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 70.68,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "1706",
+      "buchungstext": "bft Obernbur //Obernbur IDE 2026-06-17TIO:21 Debitk.2 2030-1",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 46,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4920",
+      "buCode": "9",
+      "belegdatum": "1906",
+      "buchungstext": "Telefonica Germany GmbH + co. OHG Kd.Nr.: 6096878271, Ra-Nr.",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 11,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4925",
+      "buCode": "9",
+      "belegdatum": "1906",
+      "buchungstext": "IONOS SE KD-Nc. K313498481/ RG.Nr. 100188778 981 00200086629",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 297.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4950",
+      "buCode": "9",
+      "belegdatum": "2206",
+      "buchungstext": "Fintax 2026151733-1 DATUM 22.06.2026, 18.22 UHR",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 209.65,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2206",
+      "buchungstext": "REWE SAGT DANKE. 44652176/Am Suedkr e/Grosswa11stadt IDE 202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 108.23,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2206",
+      "buchungstext": "WAURIG GMBH/ZUM HAARSTRAUCH 6-10/HA MMERSBACH/DE 2026-06-20T",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 58.44,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2206",
+      "buchungstext": "LIDL SAGT DANKE/lm Weidig 2410bernb urgiDE 2026-06-20T11:28 ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 52.03,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2206",
+      "buchungstext": "bft Obernburg//Obernburg/DE 2026-06-20T17:06 Debitk.2 2030-1",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 16.2,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2206",
+      "buchungstext": "ALDI SE + CO. KG/IM WEIDIG 1210BERN BURG AM MAIN/DE 2026-06-",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 154,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "2206",
+      "buchungstext": "STICHTING CUSTODIAN UBER PAYMENTS POP SVCS, DOB , 20260615 -",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 49.29,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4520",
+      "buCode": "",
+      "belegdatum": "2306",
+      "buchungstext": "ALLIANZ VERSICHERUNGS-AG MUNCHEN ALLIANZ VERSICHERUNGS.AG MU",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 95.05,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "2306",
+      "buchungstext": "PayPal (Europe) sari et CIE SCA OrderYOYO Deutschland GmbH 2",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1337.38,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1410",
+      "buCode": "",
+      "belegdatum": "2306",
+      "buchungstext": "DERDENGELDEN TAKEAWAYCOM AUSZAHLUNG PO-20775931412 21-06-202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 50.16,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2506",
+      "buchungstext": "bft Worth/morth/DE 2026-06-24T21:20 Debitk.2 2030-12",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 261.21,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "1800",
+      "buCode": "",
+      "belegdatum": "2606",
+      "buchungstext": "Knappschaft.Bahn-See 6174814079 OB-76273868 EUR 261,21. BEIT",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 56.71,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "2606",
+      "buchungstext": "bft Obernburg//Obernburg/DE 2026-06-25T21:10 Debitk.2 2030-1",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 26.5,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2606",
+      "buchungstext": "LIDL SAGT DANKE/lm Weidig 2410bernb urgiDE 2026-06-25T15:51 ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 562.6,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2906",
+      "buchungstext": "Mike Hering Fleischgroßhandel GmbH/ [FRANKFURT/DE 2026-06-27",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 144.13,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2906",
+      "buchungstext": "REWE SAGT DANKE. 44652176/Am Suedkr e/Grosswallstadt IDE 202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 75.51,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2906",
+      "buchungstext": "LIDL SAGT DANKE/Planstr.13/Elsenfel dlDE 2026-06-27T12:23 De",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 68.43,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2906",
+      "buchungstext": "WAURIG GMBH/ZUM HAARSTRAUCH 6-1 OIHA MMERSBACH/DE 2026-06-27",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 19.44,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "2906",
+      "buchungstext": "ALDI SE + CO. KG/IM WEIDIG 1210BERN BURG AM MAIN/DE 2026-06-",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 58.2,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "2906",
+      "buchungstext": "STICHTING CUSTODIAN UBER PAYMENTS POP SVCS, DOB , 20260622 -",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1484.22,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4900",
+      "buCode": "",
+      "belegdatum": "3006",
+      "buchungstext": "Mercedes-Benz Bank AG Ref. 1117408877/71375991:OBB.NN777: - ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 73.03,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4920",
+      "buCode": "9",
+      "belegdatum": "3006",
+      "buchungstext": "Telefonica Germany GmbH + co. OHG Kd-Nr.: 6065782241, Rg.Nr.",
+      "belegfeld1": "6065782241"
+    },
+    {
+      "amount": 46.4,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "4970",
+      "buCode": "",
+      "belegdatum": "3006",
+      "buchungstext": "siehe Anlage Nr. 1",
+      "belegfeld1": "30"
+    },
+    {
+      "amount": 36.27,
+      "sh": "H",
+      "konto": "1200",
+      "gegenkonto": "3300",
+      "buCode": "8",
+      "belegdatum": "3006",
+      "buchungstext": "LIDL SAGT DANKE/lm Weidig 2410bernb urgiDE 2026-06-29T07:16 ",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 322.81,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "3006",
+      "buchungstext": "PayPal (Europe) sari et CIE SCA OrderYOYO Deutschland GmbH 2",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 1417.96,
+      "sh": "S",
+      "konto": "1200",
+      "gegenkonto": "1410",
+      "buCode": "",
+      "belegdatum": "3006",
+      "buchungstext": "DERDENGELDEN TAKEAWAYCOM AUSZAHLUNG PO-20837799102 28-06-202",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 432.03,
+      "sh": "S",
+      "konto": "1410",
+      "gegenkonto": "8400",
+      "buCode": "",
+      "belegdatum": "1406",
+      "buchungstext": "Finanzbericht Online 19% 2026-06-14",
+      "belegfeld1": "POS"
+    },
+    {
+      "amount": 94,
+      "sh": "S",
+      "konto": "1410",
+      "gegenkonto": "8300",
+      "buCode": "",
+      "belegdatum": "1606",
+      "buchungstext": "Finanzbericht Online 7% 2026-06-16",
+      "belegfeld1": "POS"
+    },
+    {
+      "amount": 252.89,
+      "sh": "S",
+      "konto": "1410",
+      "gegenkonto": "8300",
+      "buCode": "",
+      "belegdatum": "1906",
+      "buchungstext": "Finanzbericht Online 7% 2026-06-19",
+      "belegfeld1": "POS"
+    },
+    {
+      "amount": 391.28,
+      "sh": "S",
+      "konto": "1410",
+      "gegenkonto": "8300",
+      "buCode": "",
+      "belegdatum": "2006",
+      "buchungstext": "Finanzbericht Online 7% 2026-06-20",
+      "belegfeld1": "POS"
+    },
+    {
+      "amount": 319.39,
+      "sh": "S",
+      "konto": "1410",
+      "gegenkonto": "8300",
+      "buCode": "",
+      "belegdatum": "2206",
+      "buchungstext": "Finanzbericht Online 7% 2026-06-22",
+      "belegfeld1": "POS"
+    },
+    {
+      "amount": 36.06,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0806",
+      "buchungstext": "ordersmart Gebühren",
+      "belegfeld1": "R2476149"
+    },
+    {
+      "amount": 107.22,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "1506",
+      "buchungstext": "ordersmart Gebühren",
+      "belegfeld1": "R2490673"
+    },
+    {
+      "amount": 3.75,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "1506",
+      "buchungstext": "ordersmart Gebühren",
+      "belegfeld1": "R2490673"
+    },
+    {
+      "amount": 36.06,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2206",
+      "buchungstext": "ordersmart Gebühren",
+      "belegfeld1": "R2511753"
+    },
+    {
+      "amount": 36.06,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2906",
+      "buchungstext": "ordersmart Gebühren",
+      "belegfeld1": "R2519221"
+    },
+    {
+      "amount": 10.52,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0607",
+      "buchungstext": "ordersmart Gebühren",
+      "belegfeld1": "R2531958"
+    },
+    {
+      "amount": 31,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "lieferando Gebühren",
+      "belegfeld1": "345242422"
+    },
+    {
+      "amount": 14,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "lieferando Gebühren",
+      "belegfeld1": "347553672"
+    },
+    {
+      "amount": 21,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "lieferando Gebühren",
+      "belegfeld1": "347969502"
+    },
+    {
+      "amount": 28,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "lieferando Gebühren",
+      "belegfeld1": "348874292"
+    },
+    {
+      "amount": 27.07,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4950",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "ubereats Gebühren (§13b Steuerberater)",
+      "belegfeld1": "UBEREATS"
+    },
+    {
+      "amount": 10.65,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4950",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "ubereats Gebühren (§13b Steuerberater)",
+      "belegfeld1": "UBEREATS"
+    },
+    {
+      "amount": 12.07,
+      "sh": "H",
+      "konto": "1410",
+      "gegenkonto": "4950",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "ubereats Gebühren (§13b Steuerberater)",
+      "belegfeld1": "UBEREATS"
+    },
+    {
+      "amount": 300.4,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0206",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 3.99,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 344.67,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "1106",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 439.5,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "1506",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 15,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "1806",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 16.86,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2106",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 82.5,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2506",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 0.99,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2606",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 189.2,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "2806",
+      "buchungstext": "Pizza Amore Finanzbericht - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 31,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "LIEFERANDO - Gebühr",
+      "belegfeld1": "345242422"
+    },
+    {
+      "amount": 14,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "LIEFERANDO - Gebühr",
+      "belegfeld1": "347553672"
+    },
+    {
+      "amount": 28,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "LIEFERANDO - Gebühr",
+      "belegfeld1": "348874292"
+    },
+    {
+      "amount": 305.52,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4600",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "uber Eats - Gebühr",
+      "belegfeld1": "DA679SC9"
+    },
+    {
+      "amount": 154,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "UBEREATS - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 58.2,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "UBEREATS - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 70.93,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4390",
+      "buCode": "",
+      "belegdatum": "0106",
+      "buchungstext": "UBEREATS - Gebühr",
+      "belegfeld1": ""
+    },
+    {
+      "amount": 57.63,
+      "sh": "H",
+      "konto": "1000",
+      "gegenkonto": "4530",
+      "buCode": "9",
+      "belegdatum": "0106",
+      "buchungstext": "bft Tankstelle - Kraftstoff",
+      "belegfeld1": ""
+    }
+  ]
+}
