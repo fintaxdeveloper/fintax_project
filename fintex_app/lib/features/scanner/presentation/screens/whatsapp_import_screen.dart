@@ -69,6 +69,8 @@ class _WhatsAppImportScreenState extends State<WhatsAppImportScreen> {
     if (res['success'] == true) {
       AppSnackbar.success(context, '✓ "${selected['title']}" via WhatsApp erfolgreich importiert!');
       Navigator.pop(context, true);
+    } else {
+      AppSnackbar.error(context, res['error']?.toString() ?? 'Upload fehlgeschlagen');
     }
   }
 

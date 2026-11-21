@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/theme/app_theme.dart';
 import 'core/l10n/translations.dart';
-import 'features/authentication/presentation/screens/login_screen.dart';
+import 'features/splash/presentation/screens/splash_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +26,7 @@ class FinTaxApp extends StatelessWidget {
           title: Tr.get('appTitle'),
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
-          home: const LoginScreen(),
+          home: const SplashScreen(),
         );
       },
     );

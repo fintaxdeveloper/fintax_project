@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/l10n/translations.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/screen_title_header.dart';
 import '../../../../models/document_item.dart';
@@ -61,7 +64,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
   Future<void> _loadDocuments() async {
     setState(() => _loading = true);
-    final docs = await ApiService.fetchClientDocuments();
+    final docs = await ApiService.fetchClientDocuments(clientId: widget.user.id);
     if (!mounted) return;
     setState(() {
       _allDocuments = docs;
@@ -79,11 +82,63 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     if (res == true) _loadDocuments();
   }
 
-  void _openWhatsAppImport() {
-    Navigator.push(
+  Future<void> _openPdfFilePicker() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'csv', 'xlsx'],
+        allowMultiple: true,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      int uploaded = 0;
+      int failed = 0;
+      for (final pf in result.files) {
+        List<int>? bytes = pf.bytes;
+        if (bytes == null && pf.path != null && pf.path!.isNotEmpty) {
+          bytes = await File(pf.path!).readAsBytes();
+        }
+        if (bytes == null) {
+          failed++;
+          continue;
+        }
+        final res = await ApiService.uploadDocument(
+          filename: pf.name,
+          category: _folder.categoryKey,
+          clientId: widget.user.id,
+          bytes: bytes,
+        );
+        if (res['success'] == true) {
+          uploaded++;
+        } else {
+          failed++;
+        }
+      }
+      if (!mounted) return;
+      if (uploaded > 0) {
+        AppSnackbar.success(
+          context,
+          Tr.currentLang == 'de'
+              ? '$uploaded Datei(en) hochgeladen!'
+              : '$uploaded file(s) uploaded!',
+        );
+        _loadDocuments();
+      }
+      if (failed > 0) {
+        AppSnackbar.error(context, Tr.get('uploadFailed'));
+      }
+    } catch (e) {
+      if (mounted) AppSnackbar.error(context, 'File upload error: $e');
+    }
+  }
+
+  Future<void> _openWhatsAppImport() async {
+    final res = await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => WhatsAppImportScreen(user: widget.user)),
     );
+    if (res == true) _loadDocuments();
   }
 
   @override
@@ -147,7 +202,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                             fileLabel: Tr.get('quickFile'),
                             whatsAppLabel: Tr.get('quickWhatsApp'),
                             onScan: _openCameraScan,
-                            onFile: _openCameraScan,
+                            onFile: _openPdfFilePicker,
                             onWhatsApp: _openWhatsAppImport,
                           ),
                           const SizedBox(height: 22),

@@ -24,8 +24,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _identifierController = TextEditingController(text: '20418');
-  final _passwordController = TextEditingController(text: 'client123');
+  final _identifierController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
@@ -38,39 +38,181 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    if (_identifierController.text.trim().isEmpty || _passwordController.text.trim().isEmpty) {
+    final identifier = _identifierController.text.trim();
+    final password = _passwordController.text.trim();
+    if (identifier.isEmpty || password.isEmpty) {
       setState(() => _errorMessage = Tr.get('invalidCredentials'));
       return;
     }
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-    final res = await ApiService.login(
-      _identifierController.text.trim(),
-      _passwordController.text.trim(),
-    );
+    final res = await ApiService.login(identifier, password);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (res['success'] == true && res['user'] != null) {
-      final UserModel user = res['user'];
-      AuthService.instance.setUser(user);
-
-      if (res['message'] != null) {
-        AppSnackbar.info(context, res['message']);
-      }
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => user.isFirstLogin
-              ? FirstLoginScreen(user: user)
-              : MainShell(user: user),
-        ),
+    if (res['success'] == true && res['requires2FA'] == true && res['tempToken'] != null) {
+      await _showOtpDialog(
+        tempToken: res['tempToken'].toString(),
+        maskedEmail: (res['maskedEmail'] ?? identifier).toString(),
+        initialOtp: (res['demoOtp'] ?? '').toString(),
+        password: password,
       );
-    } else {
-      setState(() => _errorMessage = res['error'] ?? Tr.get('invalidCredentials'));
+      return;
     }
+
+    if (res['success'] == true && res['user'] != null) {
+      _completeLogin(res['user'] as UserModel, password, res['message']?.toString());
+    } else {
+      setState(() => _errorMessage = res['error']?.toString() ?? Tr.get('invalidCredentials'));
+    }
+  }
+
+  void _completeLogin(UserModel user, String password, String? message) {
+    AuthService.instance.setUser(user);
+    if (message != null && message.isNotEmpty) {
+      AppSnackbar.info(context, message);
+    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => user.isFirstLogin
+            ? FirstLoginScreen(user: user, initialPassword: password)
+            : MainShell(user: user),
+      ),
+    );
+  }
+
+  Future<void> _showOtpDialog({
+    required String tempToken,
+    required String maskedEmail,
+    required String initialOtp,
+    required String password,
+  }) async {
+    final otpController = TextEditingController(text: initialOtp);
+    String currentOtpDisplay = initialOtp;
+    String? otpError;
+    bool verifying = false;
+    bool resending = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('2FA Security Code', style: TextStyle(fontWeight: FontWeight.w800)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Code sent to $maskedEmail',
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  if (currentOtpDisplay.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECFDF5),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Generated Code: $currentOtpDisplay',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF14532D),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: otpController,
+                    maxLength: 6,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 6),
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: '123456',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  if (otpError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(otpError!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: resending
+                      ? null
+                      : () async {
+                          setDialogState(() => resending = true);
+                          final r = await ApiService.resendOtp(tempToken);
+                          setDialogState(() {
+                            resending = false;
+                            if (r['success'] == true && r['demoOtp'] != null) {
+                              currentOtpDisplay = r['demoOtp'].toString();
+                              otpController.text = currentOtpDisplay;
+                              otpError = null;
+                            } else {
+                              otpError = r['error']?.toString();
+                            }
+                          });
+                        },
+                  child: Text(resending ? '...' : 'Resend'),
+                ),
+                TextButton(
+                  onPressed: verifying ? null : () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: verifying
+                      ? null
+                      : () async {
+                          final code = otpController.text.trim();
+                          if (code.length < 6) {
+                            setDialogState(() => otpError = 'Please enter the 6-digit code.');
+                            return;
+                          }
+                          setDialogState(() {
+                            verifying = true;
+                            otpError = null;
+                          });
+                          final v = await ApiService.verifyOtp(tempToken, code);
+                          if (v['success'] == true && v['user'] != null) {
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) {
+                              _completeLogin(v['user'] as UserModel, password, v['message']?.toString());
+                            }
+                          } else {
+                            setDialogState(() {
+                              verifying = false;
+                              otpError = v['error']?.toString() ?? 'Invalid code';
+                            });
+                          }
+                        },
+                  child: Text(verifying ? '...' : 'Verify'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    otpController.dispose();
   }
 
   void _toggleLanguage() {
@@ -136,10 +278,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         AuthTextField(
                           controller: _identifierController,
-                          labelText: Tr.get('clientNumber'),
-                          hintText: '20418',
+                          labelText: '${Tr.get('clientNumber')} / E-Mail',
+                          hintText: 'qa24@fintax.de / 726',
                           prefixIcon: Icons.badge_outlined,
-                          keyboardType: TextInputType.number,
+                          keyboardType: TextInputType.emailAddress,
                         ),
                         const SizedBox(height: 18),
 

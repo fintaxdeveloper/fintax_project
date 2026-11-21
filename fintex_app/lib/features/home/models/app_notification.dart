@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/l10n/translations.dart';
 import '../../../core/theme/app_colors.dart';
 
 enum NotificationType { document, deadline, message, review, payroll, tax }
@@ -39,17 +40,39 @@ class AppNotification {
   final NotificationType type;
   final String titleKey;
   final String bodyKey;
+  final String? titleEn;
+  final String? titleDe;
+  final String? bodyEn;
+  final String? bodyDe;
   final DateTime time;
   bool isRead;
 
   AppNotification({
     required this.id,
     required this.type,
-    required this.titleKey,
-    required this.bodyKey,
+    this.titleKey = '',
+    this.bodyKey = '',
+    this.titleEn,
+    this.titleDe,
+    this.bodyEn,
+    this.bodyDe,
     required this.time,
     this.isRead = false,
   });
+
+  String get resolvedTitle {
+    if (titleEn != null || titleDe != null) {
+      return Tr.currentLang == 'de' ? (titleDe ?? titleEn ?? '') : (titleEn ?? titleDe ?? '');
+    }
+    return Tr.get(titleKey);
+  }
+
+  String get resolvedBody {
+    if (bodyEn != null || bodyDe != null) {
+      return Tr.currentLang == 'de' ? (bodyDe ?? bodyEn ?? '') : (bodyEn ?? bodyDe ?? '');
+    }
+    return Tr.get(bodyKey);
+  }
 
   /// Dummy data until the backend provides a notifications endpoint.
   static List<AppNotification> demo() {

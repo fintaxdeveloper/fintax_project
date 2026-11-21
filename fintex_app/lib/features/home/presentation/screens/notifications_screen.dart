@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/l10n/translations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../../models/document_item.dart';
+import '../../../../models/todo_task.dart';
+import '../../../../services/api_service.dart';
 import '../../../authentication/models/user_model.dart';
 import '../../models/app_notification.dart';
 import '../widgets/notification_filter_bar.dart';
@@ -24,8 +27,84 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'filterMessages',
   ];
 
-  final List<AppNotification> _items = AppNotification.demo();
+  final List<AppNotification> _items = [];
+  bool _loading = true;
   int _filter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    setState(() => _loading = true);
+    final results = await Future.wait([
+      ApiService.fetchClientDocuments(clientId: widget.user.id),
+      ApiService.fetchTasks(clientId: widget.user.id),
+      ApiService.fetchCorrespondence(),
+    ]);
+    if (!mounted) return;
+
+    final docs = results[0] as List<DocumentItem>;
+    final tasks = results[1] as List<TodoTask>;
+    final letters = results[2] as List<Map<String, dynamic>>;
+
+    final built = <AppNotification>[];
+
+    for (final doc in docs.take(10)) {
+      DateTime ts;
+      try {
+        ts = DateTime.parse(doc.date);
+      } catch (_) {
+        ts = DateTime.now();
+      }
+      final isReview = doc.status == 'NEEDS_ATTENTION' || doc.status == 'READY_FOR_REVIEW';
+      built.add(AppNotification(
+        id: 'doc_${doc.id}',
+        type: isReview ? NotificationType.review : NotificationType.document,
+        titleEn: isReview ? 'Document needs review' : 'Document processed',
+        titleDe: isReview ? 'Beleg in Prüfung' : 'Beleg verarbeitet',
+        bodyEn: '${doc.originalFilename} (${doc.status})',
+        bodyDe: '${doc.originalFilename} (${doc.status})',
+        time: ts,
+        isRead: !isReview, titleKey: '', bodyKey: '',
+      ));
+    }
+
+    for (final t in tasks) {
+      built.add(AppNotification(
+        id: 'task_${t.id}',
+        type: NotificationType.deadline,
+        titleEn: t.title,
+        titleDe: t.title,
+        bodyEn: t.description ?? 'Due: ${t.deadline}',
+        bodyDe: t.description ?? 'Fällig: ${t.deadline}',
+        time: DateTime.now(),
+        isRead: t.isCompleted, titleKey: '', bodyKey: '',
+      ));
+    }
+
+    for (final l in letters.take(5)) {
+      built.add(AppNotification(
+        id: 'corr_${l['id'] ?? built.length}',
+        type: NotificationType.tax,
+        titleEn: (l['letter_type'] ?? 'Tax Correspondence').toString(),
+        titleDe: (l['letter_type'] ?? 'Finanzamt-Schreiben').toString(),
+        bodyEn: (l['ai_summary'] ?? l['sender'] ?? '').toString(),
+        bodyDe: (l['ai_summary'] ?? l['sender'] ?? '').toString(),
+        time: DateTime.now(),
+        isRead: false,
+      ));
+    }
+
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(built);
+      _loading = false;
+    });
+  }
 
   int get _unreadCount => _items.where((n) => !n.isRead).length;
 
@@ -92,8 +171,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _refresh() async {
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (mounted) setState(() {});
+    await _loadNotifications();
   }
 
   @override
@@ -123,7 +201,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     onChanged: (i) => setState(() => _filter = i),
                   ),
                   const SizedBox(height: 8),
-                  if (visible.isEmpty)
+                  if (_loading)
+                    const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+                    )
+                  else if (visible.isEmpty)
                     EmptyState(
                       icon: Icons.notifications_off_outlined,
                       title: Tr.get('noNotifications'),
@@ -251,8 +334,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
             child: NotificationTile(
               notification: n,
-              title: Tr.get(n.titleKey),
-              body: Tr.get(n.bodyKey),
+              title: n.resolvedTitle,
+              body: n.resolvedBody,
               timeLabel: _timeLabel(n.time),
               onTap: () => setState(() => n.isRead = true),
             ),

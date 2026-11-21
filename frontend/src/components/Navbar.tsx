@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import type { UserRole } from '../context/AuthContext';
 import type { Language } from '../translations';
 import fintaxLogo from '../assets/fintax_logo.jpeg';
-import { Menu } from 'lucide-react';
+import { Menu, UserCog } from 'lucide-react';
+import { ProfileEditModal, resolveAvatarUrl } from './ProfileEditModal';
 
 interface NavbarProps {
   lang: Language;
@@ -20,6 +21,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, activePortal, logout } = useAuth();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const avatarSrc = resolveAvatarUrl(user?.profile_image);
 
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
@@ -235,8 +238,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   justifyContent: 'center',
                   fontSize: '0.8125rem',
                   fontWeight: 700,
+                  overflow: 'hidden',
                 }}>
-                  {user.name.charAt(0).toUpperCase()}
+                  {avatarSrc ? (
+                    <img src={avatarSrc} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    user.name.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div className="fintax-user-profile-meta" style={{ textAlign: 'left' }}>
                   <div style={{
@@ -298,7 +306,36 @@ export const Navbar: React.FC<NavbarProps> = ({
                           Mandant: {user.clientNumber}
                         </div>
                       )}
+                      {(user.phone || user.city) && (
+                        <div style={{ fontSize: '0.6875rem', color: '#475569', marginTop: '2px' }}>
+                          {[user.phone, user.city].filter(Boolean).join(' • ')}
+                        </div>
+                      )}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => { setShowProfileMenu(false); setShowEditProfile(true); }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.625rem 0.875rem',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#1e293b',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        borderRadius: '8px',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                      onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <UserCog size={16} color="#2563eb" />
+                      {lang === 'de' ? 'Profil bearbeiten' : 'Edit Profile'}
+                    </button>
                     <button
                       type="button"
                       onClick={() => { logout(); setShowProfileMenu(false); }}
@@ -367,6 +404,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
       </div>
+      {showEditProfile && (
+        <ProfileEditModal lang={lang} onClose={() => setShowEditProfile(false)} />
+      )}
     </header>
   );
 };

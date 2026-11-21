@@ -9,6 +9,9 @@ export interface UserRecord {
   name: string;
   role: 'CLIENT' | 'STAFF' | 'ADMIN';
   client_number?: string;
+  phone?: string;
+  city?: string;
+  profile_image?: string;
   is_active: boolean;
   first_login_done?: boolean;
   privacy_accepted_at?: string;
@@ -69,6 +72,21 @@ export const adminService = {
           END;
           BEGIN
             ALTER TABLE users ADD COLUMN privacy_accepted_at TIMESTAMP WITH TIME ZONE;
+          EXCEPTION
+            WHEN duplicate_column THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE users ADD COLUMN phone VARCHAR(64);
+          EXCEPTION
+            WHEN duplicate_column THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE users ADD COLUMN city VARCHAR(128);
+          EXCEPTION
+            WHEN duplicate_column THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE users ADD COLUMN profile_image TEXT;
           EXCEPTION
             WHEN duplicate_column THEN NULL;
           END;
@@ -301,7 +319,9 @@ export const adminService = {
   // 1b. Get user profile (for first-login check)
   async getUserProfile(userId: string): Promise<any> {
     const res = await pool.query(
-      'SELECT id, email, name, role, is_active, first_login_done, privacy_accepted_at, client_number, created_at FROM users WHERE id = $1',
+      `SELECT id, email, name, role, is_active, first_login_done, privacy_accepted_at, client_number,
+              COALESCE(phone, '') as phone, COALESCE(city, '') as city, COALESCE(profile_image, '') as profile_image,
+              created_at FROM users WHERE id = $1`,
       [userId]
     );
     return res.rows[0] || null;
@@ -446,6 +466,57 @@ export const adminService = {
     await this.recordAudit(adminId, 'USER_UPDATED', 'USERS', ip, {
       updated_user_id: id,
       changed_fields: Object.keys(updates),
+    });
+
+    return res.rows[0];
+  },
+
+  // 3b. Self-Service Profile Update (Name, Phone, City, Profile Image)
+  async updateUserProfile(
+    userId: string,
+    updates: { name?: string; phone?: string; city?: string; profile_image?: string },
+    ip = '127.0.0.1'
+  ): Promise<UserRecord | null> {
+    await this.initTables();
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (updates.name !== undefined && updates.name.trim().length > 0) {
+      fields.push(`name = $${idx++}`);
+      values.push(updates.name.trim());
+    }
+    if (updates.phone !== undefined) {
+      fields.push(`phone = $${idx++}`);
+      values.push(updates.phone.trim());
+    }
+    if (updates.city !== undefined) {
+      fields.push(`city = $${idx++}`);
+      values.push(updates.city.trim());
+    }
+    if (updates.profile_image !== undefined) {
+      fields.push(`profile_image = $${idx++}`);
+      values.push(updates.profile_image.trim());
+    }
+
+    if (fields.length === 0) return null;
+
+    values.push(userId);
+    const query = `
+      UPDATE users
+      SET ${fields.join(', ')}
+      WHERE id = $${idx}
+      RETURNING id, email, name, role, COALESCE(client_number, '') as client_number,
+                COALESCE(phone, '') as phone, COALESCE(city, '') as city,
+                COALESCE(profile_image, '') as profile_image,
+                is_active, COALESCE(first_login_done, false) as first_login_done,
+                privacy_accepted_at, created_at
+    `;
+    const res = await pool.query(query, values);
+    if (res.rows.length === 0) return null;
+
+    await this.recordAudit(userId, 'PROFILE_UPDATED', 'USERS', ip, {
+      changed_fields: Object.keys(updates).filter((k) => (updates as any)[k] !== undefined),
     });
 
     return res.rows[0];

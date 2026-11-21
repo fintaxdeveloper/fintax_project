@@ -11,6 +11,7 @@ class RecentDocument {
   final String time;
   final RecentDocStatus status;
   final bool isImage;
+  final VoidCallback? onTap;
 
   const RecentDocument({
     required this.name,
@@ -18,6 +19,7 @@ class RecentDocument {
     required this.time,
     required this.status,
     this.isImage = false,
+    this.onTap,
   });
 }
 
@@ -133,9 +135,12 @@ class _RecentDocumentTile extends StatelessWidget {
     final fileColor = doc.isImage ? AppColors.purpleIcon : AppColors.redText;
     final fileBg = doc.isImage ? AppColors.purpleBox : AppColors.redBox;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
+    return InkWell(
+      onTap: doc.onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
         children: [
           // File type icon
           Container(
@@ -200,6 +205,7 @@ class _RecentDocumentTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }

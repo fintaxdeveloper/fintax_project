@@ -28,21 +28,50 @@ class DocumentItem {
   });
 
   factory DocumentItem.fromJson(Map<String, dynamic> json) {
-    final ext = json['extracted_data'] ?? {};
+    final ext = json['extracted_data'] is Map ? Map<String, dynamic>.from(json['extracted_data']) : <String, dynamic>{};
+    final rawCat = (json['category'] ?? '01_FiBu').toString();
+    final normalizedCat = _normalizeCategory(rawCat);
     return DocumentItem(
-      id: json['id'] ?? '',
-      originalFilename: json['original_filename'] ?? 'Dokument.pdf',
-      category: json['category'] ?? '01_FiBu',
-      sectionName: json['sectionName'] ?? 'Finanzbuchhaltung',
+      id: (json['id'] ?? '').toString(),
+      originalFilename: (json['original_filename'] ?? 'Dokument.pdf').toString(),
+      category: normalizedCat,
+      sectionName: (json['sectionName'] ?? _sectionNameFor(normalizedCat)).toString(),
       totalAmount: ext['total_amount'] != null ? (ext['total_amount'] as num).toDouble() : null,
-      supplierName: ext['supplier_name'],
-      invoiceNumber: ext['invoice_number'],
-      date: ext['invoice_date'] ?? json['uploaded_at'] ?? '',
-      status: json['status'] ?? 'PROCESSING',
-      isDuplicate: json['is_duplicate'] ?? false,
-      sizeBytes: json['size_bytes'] ?? 1024,
-      mimeType: json['mime_type'],
+      supplierName: ext['supplier_name']?.toString(),
+      invoiceNumber: ext['invoice_number']?.toString(),
+      date: (ext['invoice_date'] ?? json['uploaded_at'] ?? '').toString(),
+      status: (json['status'] ?? 'PROCESSING').toString(),
+      isDuplicate: json['is_duplicate'] == true,
+      sizeBytes: json['size_bytes'] is num ? (json['size_bytes'] as num).toInt() : 1024,
+      mimeType: json['mime_type']?.toString(),
     );
+  }
+
+  static String _normalizeCategory(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('stammdaten') || lower.contains('gruendung') || lower.contains('gründung') || lower.contains('formation')) {
+      return '00_Gruendung';
+    }
+    if (lower.contains('lobu') || lower.contains('lohn') || lower.contains('payroll') || lower.startsWith('02_')) {
+      return '02_LoBu';
+    }
+    if (lower.contains('schrift') || lower.contains('corresp') || lower.startsWith('03_') || lower == '00_schriftverkehr') {
+      return '00_Schriftverkehr';
+    }
+    return '01_FiBu';
+  }
+
+  static String _sectionNameFor(String cat) {
+    switch (cat) {
+      case '00_Gruendung':
+        return 'Stammdaten';
+      case '02_LoBu':
+        return 'Lohnbuchhaltung';
+      case '00_Schriftverkehr':
+        return 'Schriftverkehr';
+      default:
+        return 'Finanzbuchhaltung';
+    }
   }
 
   String get formattedSize {

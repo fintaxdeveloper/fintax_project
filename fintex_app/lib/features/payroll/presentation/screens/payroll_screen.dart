@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/section_title.dart';
 import '../../../../models/todo_task.dart';
 import '../../../../services/api_service.dart';
@@ -19,23 +20,53 @@ class PayrollScreen extends StatefulWidget {
 }
 
 class _PayrollScreenState extends State<PayrollScreen> {
-  late List<PayrollEmployee> _employees;
+  List<PayrollEmployee> _employees = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _employees = ApiService.getDemoEmployees();
+    _loadEmployees();
   }
 
-  void _openAddEmployee() async {
+  Future<void> _loadEmployees() async {
+    setState(() => _loading = true);
+    final list = await ApiService.fetchPayrollEmployees(clientId: widget.user.id);
+    if (!mounted) return;
+    setState(() {
+      _employees = list;
+      _loading = false;
+    });
+  }
+
+  Future<void> _openAddEmployee() async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => NewEmployeeScreen(user: widget.user)),
     );
     if (result != null && result is PayrollEmployee) {
       if (!mounted) return;
-      setState(() => _employees.insert(0, result));
       AppSnackbar.success(context, 'Mitarbeiter ${result.name} angelegt!');
+      _loadEmployees();
+    }
+  }
+
+  Future<void> _submitQuickPayroll(PayrollEmployee emp, String type, String label) async {
+    final now = DateTime.now();
+    final period = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final res = await ApiService.submitPayroll(
+      clientId: widget.user.id,
+      employeeName: emp.name,
+      submissionType: type,
+      period: period,
+      data: {'position': emp.position, 'email': emp.email ?? '', 'note': label},
+    );
+    if (!mounted) return;
+    if (res['success'] == true) {
+      AppSnackbar.success(context, '$label für ${emp.name} übermittelt!');
+      _loadEmployees();
+    } else {
+      AppSnackbar.error(context, res['error']?.toString() ?? 'Übermittlung fehlgeschlagen');
     }
   }
 
@@ -48,11 +79,11 @@ class _PayrollScreenState extends State<PayrollScreen> {
         employee: emp,
         onSickNote: () {
           Navigator.pop(ctx);
-          AppSnackbar.info(context, 'AU / Krankmeldung für ${emp.name} hochladen...');
+          _submitQuickPayroll(emp, 'SICK_NOTE', 'AU / Krankmeldung');
         },
         onTimesheet: () {
           Navigator.pop(ctx);
-          AppSnackbar.info(context, 'Stundenzettel für ${emp.name} hochladen...');
+          _submitQuickPayroll(emp, 'HOURS_OVERTIME', 'Stundenzettel');
         },
       ),
     );
@@ -67,58 +98,75 @@ class _PayrollScreenState extends State<PayrollScreen> {
       appBar: AppBar(
         title: const Text('Lohnbuchhaltung (LoBu)'),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: PayrollSummaryBox(
-                    label: 'Mitarbeiter',
-                    value: '${_employees.length}',
-                    color: AppColors.primary,
+      body: RefreshIndicator(
+        color: AppColors.sectionPayroll,
+        onRefresh: _loadEmployees,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: PayrollSummaryBox(
+                      label: 'Mitarbeiter',
+                      value: '${_employees.length}',
+                      color: AppColors.primary,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: PayrollSummaryBox(
-                    label: 'Aktiv',
-                    value: '$activeCount',
-                    color: AppColors.success,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: PayrollSummaryBox(
+                      label: 'Aktiv',
+                      value: '$activeCount',
+                      color: AppColors.success,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: PayrollSummaryBox(
-                    label: 'Frist LoBu',
-                    value: '25. Nov',
-                    color: AppColors.warning,
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: PayrollSummaryBox(
+                      label: 'Frist LoBu',
+                      value: '25. Mon.',
+                      color: AppColors.warning,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
+                ],
+              ),
+              const SizedBox(height: 20),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const SectionTitle('Personalstamm (4 Mitarbeiter)'),
-                TextButton.icon(
-                  onPressed: _openAddEmployee,
-                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-                  label: const Text('Neu'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SectionTitle('Personalstamm (${_employees.length} Mitarbeiter)'),
+                  TextButton.icon(
+                    onPressed: _openAddEmployee,
+                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                    label: const Text('Neu'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
 
-            ..._employees.map((emp) => EmployeeListTile(
-                  employee: emp,
-                  onTap: () => _showEmployeeDetails(emp),
-                )),
-          ],
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.all(40),
+                  child: Center(child: CircularProgressIndicator(color: AppColors.sectionPayroll)),
+                )
+              else if (_employees.isEmpty)
+                const EmptyState(
+                  icon: Icons.people_outline_rounded,
+                  title: 'Noch keine Mitarbeiter eingereicht',
+                  subtitle: 'Tippen Sie auf "Neuer Mitarbeiter", um Lohndaten an die Kanzlei zu senden.',
+                )
+              else
+                ..._employees.map((emp) => EmployeeListTile(
+                      employee: emp,
+                      onTap: () => _showEmployeeDetails(emp),
+                    )),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

@@ -42,10 +42,10 @@ class _SectionDetailScreenState extends State<SectionDetailScreen> {
 
   Future<void> _loadDocs() async {
     setState(() => _loading = true);
-    final all = await ApiService.fetchClientDocuments();
+    final all = await ApiService.fetchClientDocuments(clientId: widget.user.id);
     if (!mounted) return;
     setState(() {
-      _documents = all.where((d) => d.category == widget.categoryKey || widget.categoryKey == '01_FiBu').toList();
+      _documents = all.where((d) => d.category == widget.categoryKey).toList();
       _loading = false;
     });
   }

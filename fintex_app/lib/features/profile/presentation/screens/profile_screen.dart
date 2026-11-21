@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/l10n/translations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../services/api_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../authentication/models/user_model.dart';
 import '../../../authentication/presentation/screens/login_screen.dart';
@@ -10,6 +11,7 @@ import '../widgets/logout_confirm_dialog.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final UserModel user;
@@ -21,6 +23,32 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _pushNotifications = true;
+  late UserModel _user;
+
+  @override
+  void initState() {
+    super.initState();
+    _user = AuthService.instance.currentUser ?? widget.user;
+    _refreshFromServer();
+  }
+
+  Future<void> _refreshFromServer() async {
+    final data = await ApiService.fetchProfile(_user.id);
+    if (!mounted || data == null) return;
+    final refreshed = UserModel.fromJson(data, _user.token);
+    AuthService.instance.setUser(refreshed);
+    setState(() => _user = refreshed);
+  }
+
+  Future<void> _openEditProfile() async {
+    final updated = await Navigator.push<UserModel>(
+      context,
+      MaterialPageRoute(builder: (_) => EditProfileScreen(user: _user)),
+    );
+    if (updated != null && mounted) {
+      setState(() => _user = updated);
+    }
+  }
 
   void _handleLogout() {
     showDialog(
@@ -51,6 +79,107 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _openChangePasswordDialog(String currentLang) async {
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    bool saving = false;
+    String? err;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Text(Tr.get('changePassword'), style: const TextStyle(fontWeight: FontWeight.w800)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: currentCtrl,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: currentLang == 'en' ? 'Current password' : 'Aktuelles Passwort',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: newCtrl,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: currentLang == 'en' ? 'New password' : 'Neues Passwort',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: currentLang == 'en' ? 'Confirm password' : 'Passwort bestätigen',
+                ),
+              ),
+              if (err != null) ...[
+                const SizedBox(height: 10),
+                Text(err!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: Text(Tr.get('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (newCtrl.text.trim().length < 6) {
+                        setDialogState(() => err = currentLang == 'en'
+                            ? 'Password must be at least 6 characters.'
+                            : 'Mindestens 6 Zeichen erforderlich.');
+                        return;
+                      }
+                      if (newCtrl.text.trim() != confirmCtrl.text.trim()) {
+                        setDialogState(() => err = currentLang == 'en'
+                            ? 'Passwords do not match.'
+                            : 'Passwörter stimmen nicht überein.');
+                        return;
+                      }
+                      setDialogState(() {
+                        saving = true;
+                        err = null;
+                      });
+                      final res = await ApiService.changePassword(
+                        userId: widget.user.id,
+                        currentPassword: currentCtrl.text.trim(),
+                        newPassword: newCtrl.text.trim(),
+                      );
+                      if (res['success'] == true) {
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (mounted) {
+                          AppSnackbar.success(
+                            context,
+                            currentLang == 'en' ? 'Password updated!' : 'Passwort erfolgreich geändert!',
+                          );
+                        }
+                      } else {
+                        setDialogState(() {
+                          saving = false;
+                          err = res['error']?.toString() ?? 'Error';
+                        });
+                      }
+                    },
+              child: Text(saving ? '...' : (currentLang == 'en' ? 'Save' : 'Speichern')),
+            ),
+          ],
+        ),
+      ),
+    );
+    currentCtrl.dispose();
+    newCtrl.dispose();
+    confirmCtrl.dispose();
+  }
+
   void _onPushNotificationsChanged(bool val, String currentLang) {
     setState(() => _pushNotifications = val);
     AppSnackbar.info(
@@ -71,23 +200,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(
-            title: Text('${Tr.get('profile')} (${widget.user.clientNumber})'),
+            title: Text('${Tr.get('profile')} (${_user.clientNumber})'),
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
             child: Column(
               children: [
-                ProfileHeader(user: widget.user),
+                ProfileHeader(user: _user, onEditTap: _openEditProfile),
                 const SizedBox(height: 24),
 
                 SettingsSection(
                   title: Tr.get('accountSecurity'),
                   children: [
                     SettingsTile(
+                      icon: Icons.person_outline_rounded,
+                      title: currentLang == 'en' ? 'Edit Profile' : 'Profil bearbeiten',
+                      subtitle: currentLang == 'en'
+                          ? 'Name, photo, phone & city'
+                          : 'Name, Foto, Telefon & Stadt',
+                      onTap: _openEditProfile,
+                    ),
+                    const Divider(),
+                    SettingsTile(
                       icon: Icons.lock_outline_rounded,
                       title: Tr.get('changePassword'),
                       subtitle: Tr.get('lastChanged30Days'),
-                      onTap: () => AppSnackbar.info(context, currentLang == 'en' ? 'Password change initiated.' : 'Passwortänderung initiiert.'),
+                      onTap: () => _openChangePasswordDialog(currentLang),
                     ),
                     const Divider(),
                     SettingsTile(

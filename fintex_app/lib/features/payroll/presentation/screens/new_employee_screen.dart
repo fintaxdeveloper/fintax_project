@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../../../models/todo_task.dart';
+import '../../../../services/api_service.dart';
 import '../../../authentication/models/user_model.dart';
 import '../widgets/labeled_text_field.dart';
 
@@ -18,6 +20,7 @@ class _NewEmployeeScreenState extends State<NewEmployeeScreen> {
   final _positionController = TextEditingController();
   final _emailController = TextEditingController();
   final _startDateController = TextEditingController(text: '01.11.2026');
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -28,21 +31,48 @@ class _NewEmployeeScreenState extends State<NewEmployeeScreen> {
     super.dispose();
   }
 
-  void _submit() {
-    if (_nameController.text.trim().isEmpty || _positionController.text.trim().isEmpty) {
+  Future<void> _submit() async {
+    final name = _nameController.text.trim();
+    final position = _positionController.text.trim();
+    if (name.isEmpty || position.isEmpty) {
+      AppSnackbar.warning(context, 'Bitte Name und Position ausfüllen.');
       return;
     }
 
-    final emp = PayrollEmployee(
-      id: 'emp_${DateTime.now().millisecondsSinceEpoch}',
-      name: _nameController.text.trim(),
-      position: _positionController.text.trim(),
-      employeeId: 'MA-00${DateTime.now().second}',
-      startDate: _startDateController.text.trim(),
-      email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
+    setState(() => _submitting = true);
+    final now = DateTime.now();
+    final period = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final empCode = 'MA-${(now.millisecondsSinceEpoch % 1000).toString().padLeft(3, '0')}';
+
+    final res = await ApiService.submitPayroll(
+      clientId: widget.user.id,
+      employeeName: name,
+      submissionType: 'NEW_HIRE',
+      period: period,
+      data: {
+        'position': position,
+        'email': _emailController.text.trim(),
+        'start_date': _startDateController.text.trim(),
+        'employee_id': empCode,
+      },
     );
 
-    Navigator.pop(context, emp);
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    if (res['success'] == true) {
+      final emp = PayrollEmployee(
+        id: 'emp_${now.millisecondsSinceEpoch}',
+        name: name,
+        position: position,
+        employeeId: empCode,
+        startDate: _startDateController.text.trim(),
+        email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
+      );
+      Navigator.pop(context, emp);
+    } else {
+      AppSnackbar.error(context, res['error']?.toString() ?? 'Mitarbeiter konnte nicht gespeichert werden.');
+    }
   }
 
   @override
@@ -66,7 +96,7 @@ class _NewEmployeeScreenState extends State<NewEmployeeScreen> {
             LabeledTextField(
               label: 'Position / Funktion *',
               controller: _positionController,
-              hintText: 'z.B. Vertiebsassistenz',
+              hintText: 'z.B. Vertriebsassistenz',
             ),
             const SizedBox(height: 16),
             LabeledTextField(
@@ -83,8 +113,8 @@ class _NewEmployeeScreenState extends State<NewEmployeeScreen> {
             ),
             const SizedBox(height: 28),
             PrimaryActionButton(
-              label: 'Mitarbeiter anlegen',
-              onPressed: _submit,
+              label: _submitting ? 'Wird gespeichert...' : 'Mitarbeiter anlegen',
+              onPressed: _submitting ? () {} : _submit,
               backgroundColor: AppColors.sectionPayroll,
             ),
           ],

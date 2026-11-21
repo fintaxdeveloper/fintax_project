@@ -58,10 +58,10 @@ app.use(
 );
 app.use(express.json());
 
-// Global JWT Protection: every /api route requires authentication except login/OTP/health
+// Global JWT Protection: every /api route requires authentication except login/OTP/health/public avatars
 const PUBLIC_API_PATHS = new Set(['/health', '/auth/login', '/auth/verify-otp', '/auth/resend-otp']);
 app.use('/api', (req: AuthenticatedRequest, res, next) => {
-  if (PUBLIC_API_PATHS.has(req.path)) return next();
+  if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith('/auth/avatar/')) return next();
   return requireAuth(req, res, next);
 });
 
@@ -219,6 +219,9 @@ app.get('/api/auth/profile', async (req, res) => {
       name: profile.name,
       role: profile.role,
       client_number: profile.client_number,
+      phone: profile.phone || '',
+      city: profile.city || '',
+      profile_image: profile.profile_image || '',
       first_login_done: profile.first_login_done || false,
       privacy_accepted: !!profile.privacy_accepted_at,
       privacy_accepted_at: profile.privacy_accepted_at,
@@ -226,6 +229,109 @@ app.get('/api/auth/profile', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// PUT / POST /api/auth/profile - Update logged-in user's profile (name, phone, city, profile_image)
+const handleUpdateProfile = async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const targetUserId = req.user?.role === 'ADMIN' && req.body.userId
+      ? String(req.body.userId)
+      : req.user?.id;
+    if (!targetUserId) {
+      return res.status(401).json({ error: 'Nicht autorisiert.' });
+    }
+    const { name, phone, city, profile_image } = req.body;
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const updated = await adminService.updateUserProfile(
+      targetUserId,
+      { name, phone, city, profile_image },
+      ip
+    );
+    if (!updated) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden oder keine Änderungen.' });
+    }
+    return res.json({
+      success: true,
+      message: 'Profil erfolgreich aktualisiert (Profile updated successfully).',
+      user: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        clientNumber: updated.client_number || undefined,
+        phone: updated.phone || '',
+        city: updated.city || '',
+        profile_image: updated.profile_image || '',
+        first_login_done: updated.first_login_done || false,
+        privacy_accepted: !!updated.privacy_accepted_at,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+app.put('/api/auth/profile', handleUpdateProfile);
+app.post('/api/auth/profile', handleUpdateProfile);
+
+// POST /api/auth/profile/avatar - Upload user profile image (JPEG/PNG/WebP)
+const AVATARS_DIR = path.resolve(process.cwd(), '../storage/avatars');
+if (!fs.existsSync(AVATARS_DIR)) {
+  fs.mkdirSync(AVATARS_DIR, { recursive: true });
+}
+app.post('/api/auth/profile/avatar', upload.single('avatar'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Nicht autorisiert.' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Kein Profilbild ausgewählt (No avatar file uploaded).' });
+    }
+    const ext = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg';
+    const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const finalName = `${safeUserId}_${Date.now()}${safeExt}`;
+    const destPath = path.join(AVATARS_DIR, finalName);
+    fs.copyFileSync(req.file.path, destPath);
+    try { fs.unlinkSync(req.file.path); } catch {}
+
+    const avatarUrl = `/api/auth/avatar/${finalName}`;
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const updated = await adminService.updateUserProfile(userId, { profile_image: avatarUrl }, ip);
+
+    return res.json({
+      success: true,
+      profile_image: avatarUrl,
+      user: updated ? {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        clientNumber: updated.client_number || undefined,
+        phone: updated.phone || '',
+        city: updated.city || '',
+        profile_image: updated.profile_image || avatarUrl,
+        first_login_done: updated.first_login_done || false,
+        privacy_accepted: !!updated.privacy_accepted_at,
+      } : undefined,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/auth/avatar/:filename - Serve uploaded user avatar image
+app.get('/api/auth/avatar/:filename', (req, res) => {
+  const safeName = path.basename(req.params.filename || '');
+  if (!safeName || safeName.includes('..')) {
+    return res.status(400).end();
+  }
+  const filePath = path.join(AVATARS_DIR, safeName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).end();
+  }
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return res.sendFile(filePath);
 });
 
 // POST /api/auth/change-password - First-login password change (PDF requirement)

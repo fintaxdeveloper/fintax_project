@@ -130,7 +130,7 @@ class _AppLogoCard extends StatelessWidget {
         ],
       ),
       child: Image.asset(
-        'assets/images/fintax_logo.jpeg',
+        'assets/images/fintax_logo.png',
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => const Center(
           child: Text(

@@ -8,6 +8,9 @@ export interface User {
   name: string;
   role: UserRole;
   clientNumber?: string;
+  phone?: string;
+  city?: string;
+  profile_image?: string;
   first_login_done?: boolean;
   privacy_accepted?: boolean;
 }
@@ -32,6 +35,8 @@ interface AuthContextType {
   logout: () => void;
   switchPortal: (portal: UserRole) => void;
   refreshProfile: () => Promise<void>;
+  updateProfile: (updates: { name?: string; phone?: string; city?: string }) => Promise<{ success: boolean; error?: string }>;
+  uploadAvatar: (file: File) => Promise<{ success: boolean; profile_image?: string; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -158,13 +163,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshProfile = async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`${API_BASE}/auth/profile?userId=${encodeURIComponent(user.id)}`);
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/auth/profile?userId=${encodeURIComponent(user.id)}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setUser((prev) => {
           if (!prev) return null;
           const updated: User = {
             ...prev,
+            name: data.name || prev.name,
+            phone: data.phone ?? prev.phone ?? '',
+            city: data.city ?? prev.city ?? '',
+            profile_image: data.profile_image ?? prev.profile_image ?? '',
             first_login_done: data.first_login_done,
             privacy_accepted: data.privacy_accepted,
           };
@@ -174,6 +185,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e) {
       console.warn('Could not refresh user profile:', e);
+    }
+  };
+
+  const updateProfile = async (updates: { name?: string; phone?: string; city?: string }) => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/auth/profile`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Profil konnte nicht gespeichert werden.' };
+      }
+      if (data.user) {
+        setUser((prev) => {
+          const merged: User = { ...(prev || data.user), ...data.user };
+          localStorage.setItem('fintax_user', JSON.stringify(merged));
+          return merged;
+        });
+      }
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Netzwerkfehler' };
+    }
+  };
+
+  const uploadAvatar = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/auth/profile/avatar`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Bild-Upload fehlgeschlagen.' };
+      }
+      setUser((prev) => {
+        if (!prev) return null;
+        const merged: User = {
+          ...prev,
+          ...(data.user || {}),
+          profile_image: data.profile_image || data.user?.profile_image || prev.profile_image,
+        };
+        localStorage.setItem('fintax_user', JSON.stringify(merged));
+        return merged;
+      });
+      return { success: true, profile_image: data.profile_image };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Upload-Fehler' };
     }
   };
 
@@ -207,6 +275,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         switchPortal,
         refreshProfile,
+        updateProfile,
+        uploadAvatar,
       }}
     >
       {children}

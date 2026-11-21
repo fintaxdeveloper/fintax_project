@@ -3,7 +3,7 @@ class AppConstants {
 
   static const String appName = 'FinTax Consulting';
   static const String appVersion = '1.0.0';
-  static const String apiBaseUrl = 'http://127.0.0.1:5000/api';
+  static const String apiBaseUrl = 'https://fintax.westpointtrading.com/api';
 
   // Folder section keys
   static const String sectionFormation = '00_Gruendung';

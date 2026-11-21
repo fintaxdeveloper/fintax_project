@@ -16,6 +16,9 @@ export interface AuthUser {
   name: string;
   role: 'CLIENT' | 'STAFF' | 'ADMIN';
   clientNumber?: string;
+  phone?: string;
+  city?: string;
+  profile_image?: string;
   first_login_done?: boolean;
   privacy_accepted?: boolean;
 }
@@ -173,6 +176,9 @@ export const authService = {
       const dbQueryPromise = pool.query(
         `SELECT id, email, password_hash, name, role, is_active, 
                 COALESCE(client_number, '') as client_number,
+                COALESCE(phone, '') as phone,
+                COALESCE(city, '') as city,
+                COALESCE(profile_image, '') as profile_image,
                 COALESCE(first_login_done, false) as first_login_done,
                 (privacy_accepted_at IS NOT NULL) as privacy_accepted
          FROM users 
@@ -234,6 +240,9 @@ export const authService = {
       name: dbUser.name,
       role: dbUser.role as any,
       clientNumber: dbUser.client_number || undefined,
+      phone: dbUser.phone || undefined,
+      city: dbUser.city || undefined,
+      profile_image: dbUser.profile_image || undefined,
       first_login_done: (isStaffOrAdmin || isPreActivatedClient) ? true : (dbUser.first_login_done || false),
       privacy_accepted: (isStaffOrAdmin || isPreActivatedClient) ? true : (dbUser.privacy_accepted || false),
     };

@@ -6,11 +6,9 @@ import '../../../authentication/models/user_model.dart';
 /// teal→gold ring, name, email and client chips on a light pastel card.
 class ProfileHeader extends StatelessWidget {
   final UserModel user;
+  final VoidCallback? onEditTap;
 
-  /// Dummy photo until users can upload their own.
-  static const String dummyAvatarUrl = 'https://i.pravatar.cc/300?img=12';
-
-  const ProfileHeader({super.key, required this.user});
+  const ProfileHeader({super.key, required this.user, this.onEditTap});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +17,7 @@ class ProfileHeader extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(22),
         gradient: const LinearGradient(
           colors: [AppColors.primaryLight, AppColors.surface],
           begin: Alignment.topCenter,
@@ -29,90 +27,139 @@ class ProfileHeader extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: AppColors.primary.withValues(alpha: 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(22),
         child: Stack(
           children: [
             // Soft decorative circles
             Positioned(
-              top: -40,
-              right: -30,
-              child: _Blob(size: 130, color: AppColors.accentGold.withValues(alpha: 0.12)),
+              top: -34,
+              right: -26,
+              child: _Blob(
+                size: 100,
+                color: AppColors.accentGold.withValues(alpha: 0.12),
+              ),
             ),
             Positioned(
-              top: 30,
-              left: -45,
-              child: _Blob(size: 100, color: AppColors.primary.withValues(alpha: 0.06)),
+              top: 24,
+              left: -36,
+              child: _Blob(
+                size: 76,
+                color: AppColors.primary.withValues(alpha: 0.06),
+              ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 26, 20, 22),
-              child: Column(
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  _Avatar(initials: user.initials),
-                  const SizedBox(height: 14),
-                  Text(
-                    user.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
+                  GestureDetector(
+                    onTap: onEditTap,
+                    child: _Avatar(
+                      initials: user.initials,
+                      avatarUrl: user.resolvedAvatarUrl,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.mail_outline_rounded, size: 15, color: AppColors.textSecondary),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          user.email,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w500,
-                          ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                user.displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                            if (onEditTap != null)
+                              IconButton(
+                                onPressed: onEditTap,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                icon: const Icon(Icons.edit_rounded, size: 18, color: AppColors.primary),
+                                tooltip: 'Edit Profile',
+                              ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _InfoChip(
-                        icon: Icons.badge_outlined,
-                        label: 'Mandant ${user.clientNumber}',
-                        color: AppColors.primary,
-                        background: AppColors.surface,
-                      ),
-                      if (company != null && company.isNotEmpty)
-                        _InfoChip(
-                          icon: Icons.business_rounded,
-                          label: company,
-                          color: AppColors.indigoIcon,
-                          background: AppColors.indigoBox,
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.mail_outline_rounded,
+                              size: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                user.email,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      const _InfoChip(
-                        icon: Icons.verified_rounded,
-                        label: 'Verified',
-                        color: AppColors.success,
-                        background: AppColors.successLight,
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _InfoChip(
+                              icon: Icons.badge_outlined,
+                              label: 'Mandant ${user.clientNumber}',
+                              color: AppColors.primary,
+                              background: AppColors.surface,
+                            ),
+                            if (company != null && company.isNotEmpty)
+                              _InfoChip(
+                                icon: Icons.business_rounded,
+                                label: company,
+                                color: AppColors.indigoIcon,
+                                background: AppColors.indigoBox,
+                              ),
+                            if (user.phone != null && user.phone!.isNotEmpty)
+                              _InfoChip(
+                                icon: Icons.phone_outlined,
+                                label: user.phone!,
+                                color: AppColors.textPrimary,
+                                background: AppColors.surface,
+                              ),
+                            if (user.city != null && user.city!.isNotEmpty)
+                              _InfoChip(
+                                icon: Icons.location_on_outlined,
+                                label: user.city!,
+                                color: AppColors.indigoIcon,
+                                background: AppColors.indigoBox,
+                              ),
+                            const _InfoChip(
+                              icon: Icons.verified_rounded,
+                              label: 'Verified',
+                              color: AppColors.success,
+                              background: AppColors.successLight,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -126,7 +173,8 @@ class ProfileHeader extends StatelessWidget {
 
 class _Avatar extends StatelessWidget {
   final String initials;
-  const _Avatar({required this.initials});
+  final String? avatarUrl;
+  const _Avatar({required this.initials, this.avatarUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -142,19 +190,23 @@ class _Avatar extends StatelessWidget {
       alignment: Alignment.center,
       child: Text(
         initials,
-        style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
 
     return SizedBox(
-      width: 104,
-      height: 104,
+      width: 76,
+      height: 76,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           // Gradient ring
           Container(
-            padding: const EdgeInsets.all(3.5),
+            padding: const EdgeInsets.all(2.5),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
@@ -165,40 +217,49 @@ class _Avatar extends StatelessWidget {
               boxShadow: [
                 BoxShadow(
                   color: AppColors.primary.withValues(alpha: 0.25),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
+                  blurRadius: 12,
+                  offset: const Offset(0, 5),
                 ),
               ],
             ),
             child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(2.5),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
               child: ClipOval(
-                child: Image.network(
-                  ProfileHeader.dummyAvatarUrl,
-                  width: 91,
-                  height: 91,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) =>
-                      progress == null ? child : fallback,
-                  errorBuilder: (context, error, stackTrace) => fallback,
-                ),
+                child: avatarUrl != null && avatarUrl!.isNotEmpty
+                    ? Image.network(
+                        avatarUrl!,
+                        width: 66,
+                        height: 66,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) =>
+                            progress == null ? child : fallback,
+                        errorBuilder: (context, error, stackTrace) => fallback,
+                      )
+                    : SizedBox(width: 66, height: 66, child: fallback),
               ),
             ),
           ),
           // Camera / edit badge
           Positioned(
-            right: 0,
-            bottom: 2,
+            right: -2,
+            bottom: 0,
             child: Container(
-              width: 32,
-              height: 32,
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
                 color: AppColors.accentGold,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
+                border: Border.all(color: Colors.white, width: 2),
               ),
-              child: const Icon(Icons.camera_alt_rounded, size: 15, color: Colors.white),
+              child: const Icon(
+                Icons.camera_alt_rounded,
+                size: 11,
+                color: Colors.white,
+              ),
             ),
           ),
         ],
@@ -223,7 +284,7 @@ class _InfoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(20),
@@ -232,11 +293,15 @@ class _InfoChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 5),
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
